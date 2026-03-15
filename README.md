@@ -1,3 +1,5 @@
+![Context PDF Screenshot](img/Screenshot.png)
+
 # Context-PDF
 PDF chat assistant powered by retrieval‑augmented generation
 
@@ -100,4 +102,3 @@ Make sure your API key has access and your billing is active.
 - Multi‑document workspace
 - Source citations per answer
 - Streaming responses in UI
-
