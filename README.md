@@ -1,6 +1,6 @@
-![Context PDF Screenshot](img/Screenshot.png)
+![AskMyDoc Screenshot](img/Screenshot.png)
 
-# Context-PDF
+# AskMyDoc
 PDF chat assistant powered by retrieval‑augmented generation
 
 Upload a PDF and ask questions grounded in its content. This project uses a retrieval‑augmented generation (RAG) pipeline: text is extracted from the PDF, chunked, embedded with OpenAI, stored locally in ChromaDB, and retrieved at question time to keep answers aligned with the document.

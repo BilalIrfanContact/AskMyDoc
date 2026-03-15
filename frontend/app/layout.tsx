@@ -6,7 +6,7 @@ const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
 const sora = Sora({ subsets: ["latin"], variable: "--font-sora" });
 
 export const metadata: Metadata = {
-  title: "PDF AI Chatbot",
+  title: "AskMyDoc",
   description: "Upload a PDF and chat with it using AI."
 };
 

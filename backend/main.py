@@ -14,7 +14,7 @@ from .routers import upload, chat
 
 load_dotenv()
 
-app = FastAPI(title="PDF AI Chatbot")
+app = FastAPI(title="AskMyDoc")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,4 +35,4 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    return {"message": "PDF AI Chatbot API. Use /health, /upload, /chat endpoints."}
+    return {"message": "AskMyDoc API. Use /health, /upload, /chat endpoints."}

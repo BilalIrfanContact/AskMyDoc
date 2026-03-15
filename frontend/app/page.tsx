@@ -75,7 +75,7 @@ export default function Home() {
       <header className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70 dark:bg-white/10 dark:text-mist/70">
-            Context PDF
+            AskMyDoc
           </div>
           <button
             type="button"
@@ -86,7 +86,7 @@ export default function Home() {
           </button>
         </div>
         <h1 className="font-[var(--font-fraunces)] text-4xl text-ink md:text-5xl dark:text-mist">
-          Context PDF
+          AskMyDoc
         </h1>
         <p className="max-w-2xl text-base text-ink/70 md:text-lg dark:text-mist/70">
           Upload any PDF and ask questions. The assistant answers only from the document using retrieval-augmented generation.
