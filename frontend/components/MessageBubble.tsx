@@ -11,8 +11,8 @@ export default function MessageBubble({ role, content }: MessageBubbleProps) {
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm md:text-base ${
           isUser
-            ? "bg-ink text-white"
-            : "bg-white/90 text-ink border border-ink/10"
+            ? "bg-ink text-white dark:bg-mist/10 dark:text-mist"
+            : "bg-white/90 text-ink border border-ink/10 dark:bg-white/10 dark:text-mist dark:border-white/10"
         }`}
       >
         {content}

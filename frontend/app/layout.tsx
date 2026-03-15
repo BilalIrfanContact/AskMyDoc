@@ -18,6 +18,18 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${sora.variable}`}>
       <body className="min-h-screen font-[var(--font-sora)]">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(() => {
+  const stored = localStorage.getItem("theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const shouldUseDark = stored ? stored === "dark" : prefersDark;
+  document.documentElement.classList.toggle("dark", shouldUseDark);
+})();
+            `
+          }}
+        />
         {children}
       </body>
     </html>
