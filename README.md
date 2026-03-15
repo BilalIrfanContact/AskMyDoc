@@ -1,4 +1,4 @@
-![AskMyDoc Screenshot](img/Screenshot.png)
+![AskMyDoc Screenshot](img/askmydoc-screenshot.png)
 
 # AskMyDoc
 PDF chat assistant powered by retrieval‑augmented generation
