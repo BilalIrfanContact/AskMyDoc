@@ -1,10 +1,6 @@
 # Context-PDF
 PDF chat assistant powered by retrieval‑augmented generation
 
-# PDF AI Chatbot
-
-Full-stack app that lets you upload a PDF and ask questions grounded in its content using retrieval-augmented generation (RAG).
-
 ## Features
 - Upload a PDF and index it locally with ChromaDB
 - Ask natural-language questions in a chat UI
