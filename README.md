@@ -1,63 +1,103 @@
 # Context-PDF
 PDF chat assistant powered by retrieval‑augmented generation
 
-# PDF AI Chatbot
+Upload a PDF and ask questions grounded in its content. This project uses a retrieval‑augmented generation (RAG) pipeline: text is extracted from the PDF, chunked, embedded with OpenAI, stored locally in ChromaDB, and retrieved at question time to keep answers aligned with the document.
 
-Full-stack app that lets you upload a PDF and ask questions grounded in its content using retrieval-augmented generation (RAG).
 
 ## Features
-- Upload a PDF and index it locally with ChromaDB
-- Ask natural-language questions in a chat UI
-- Answers are constrained to the document content
+- PDF upload with local indexing
+- Conversational Q&A with document‑only answers
+- Chunk count and stored count indicator after upload
+- Local vector store, no external DB required
 
-## Structure
-- `backend/` FastAPI + LangChain + ChromaDB
-- `frontend/` Next.js (App Router) + Tailwind
+## Architecture Overview
+1. **Upload**: PDF is sent to `/upload`.
+2. **Extract**: `pdfplumber` extracts text.
+3. **Chunk**: text is split into overlapping chunks.
+4. **Embed**: chunks are embedded using `text-embedding-3-small`.
+5. **Store**: embeddings are stored in ChromaDB under a unique `document_id`.
+6. **Query**: questions are embedded and matched against stored chunks.
+7. **Answer**: `gpt-4o-mini` answers using only retrieved context.
+
+## Tech Stack
+**Backend**
+- FastAPI
+- pdfplumber
+- LangChain + langchain‑chroma
+- ChromaDB (local persistence)
+- OpenAI API (embeddings + chat completion)
+
+**Frontend**
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+
+## Project Structure
+- `backend/`
+- `backend/routers/`
+- `backend/services/`
+- `backend/models/`
+- `frontend/`
+- `frontend/app/`
+- `frontend/components/`
 
 ## Quick Start
 
-### Backend
-1. Create a virtualenv and install deps:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r backend/requirements.txt
-   ```
-2. Add your key:
-   ```bash
-   cp backend/.env.example backend/.env
-   ```
-3. Run the API:
-   ```bash
-   uvicorn backend.main:app --reload
-   ```
+### 1) Backend
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+uvicorn backend.main:app --reload
+```
 
-### Frontend
-1. Install deps:
-   ```bash
-   cd frontend
-   npm install
-   ```
-2. Start the dev server:
-   ```bash
-   npm run dev
-   ```
+### 2) Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Environment
-Frontend expects the backend at `http://localhost:8000`. To change it, set:
+Visit `http://localhost:3000`.
+
+## Environment Variables
+**Backend**
+```
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Frontend**
 ```
 NEXT_PUBLIC_API_BASE=http://localhost:8000
 ```
 
 ## API
-- `POST /upload` → upload and index a PDF
-- `POST /chat` → ask a question for a given `document_id`
-- `GET /health` → health check
+`POST /upload`  
+Accepts a PDF file (multipart form). Returns a `document_id` plus chunk counts.
 
-## Notes
-- Uploading a PDF returns a `document_id` that is used for subsequent questions.
-- The assistant only answers from retrieved chunks.
-- Scanned/image-only PDFs require OCR (not included).
+`POST /chat`  
+Body: `{ "document_id": "<uuid>", "question": "..." }`
 
-## Security
-- Never commit `backend/.env`.
+`GET /health`  
+Basic health check.
+
+## Data Handling
+- PDFs are processed in memory and not stored by default.
+- Embeddings are persisted locally in `backend/chroma_db/`.
+- Answers are generated strictly from retrieved chunks.
+
+
+## OpenAI Usage
+This project uses:
+- `text-embedding-3-small` for embeddings
+- `gpt-4o-mini` for chat responses
+
+Make sure your API key has access and your billing is active.
+
+## Roadmap
+- OCR fallback for scanned PDFs
+- Multi‑document workspace
+- Source citations per answer
+- Streaming responses in UI
+
