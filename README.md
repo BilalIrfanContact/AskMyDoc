@@ -36,14 +36,6 @@ Built to understand how RAG pipelines work end-to-end from text extraction and c
 - TypeScript
 - Tailwind CSS
 
-## Project Structure
-- `backend/`
-- `backend/routers/`
-- `backend/services/`
-- `backend/models/`
-- `frontend/`
-- `frontend/app/`
-- `frontend/components/`
 
 ## Quick Start
 
