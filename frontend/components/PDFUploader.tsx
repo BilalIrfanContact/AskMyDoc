@@ -20,13 +20,13 @@ export default function PDFUploader({
   resetSignal
 }: PDFUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [status, setStatus] = useState<string>("No PDF uploaded yet.");
+  const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<UploadStage>("idle");
   const [fileInfo, setFileInfo] = useState<{ name: string; size: string } | null>(null);
 
   useEffect(() => {
-    setStatus("No PDF uploaded yet.");
+    setStatus("");
     setLoading(false);
     setStage("idle");
     setFileInfo(null);
@@ -54,6 +54,7 @@ export default function PDFUploader({
       setStage("uploading");
       setFileInfo({ name: file.name, size: formatBytes(file.size) });
       setStatus("Uploading and indexing your PDF...");
+
       const response = await uploadPdf(file);
       onUploaded(response.document_id, {
         fileName: file.name,
@@ -61,6 +62,7 @@ export default function PDFUploader({
         chunkCount: response.chunk_count,
         storedCount: response.stored_count
       });
+
       setStage("ready");
       setStatus("PDF indexed and ready for questions.");
     } catch (error) {
@@ -73,44 +75,34 @@ export default function PDFUploader({
   };
 
   return (
-    <div className="glass-panel rounded-3xl p-6 shadow-glow dark:shadow-glowDark">
-      <p className="font-[var(--font-fraunces)] text-xl text-ink dark:text-mist">Upload a PDF</p>
-      <p className="mt-2 text-sm text-ink/70 dark:text-mist/70">
-        Drag and drop a PDF, or click to browse. We will extract the text and set up the chat instantly.
+    <div className="uploader-wrap">
+      <h3 style={{fontSize: "25px", color: "var(--color-near-black)", marginBottom: "8px"}}>Upload PDF</h3>
+      <p className="text-olive">
+        Select one document, then build a local index for grounded question answering.
       </p>
 
-      <div
-        className="mt-6 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-ink/20 bg-white/80 px-4 py-6 transition hover:border-ink/40 dark:border-white/20 dark:bg-white/10 dark:hover:border-white/40"
+      <button
+        type="button"
+        className="upload-drop"
         onClick={() => fileInputRef.current?.click()}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") fileInputRef.current?.click();
-        }}
+        aria-label="Choose PDF file"
       >
-        <div>
-          <p className="text-sm font-semibold text-ink dark:text-mist">Choose a PDF</p>
-          <p className="text-xs text-ink/60 dark:text-mist/60">Max 20MB recommended</p>
-        </div>
-        <span className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white dark:bg-mist/20 dark:text-mist">
-          {loading ? "Uploading" : "Browse"}
+        <span style={{ fontSize: "16px", fontWeight: "500", color: "var(--color-near-black)" }}>
+          Choose PDF
         </span>
-      </div>
+        <span className="text-olive" style={{fontSize: "14px"}}>Maximum 20MB recommended</span>
+      </button>
 
       {stage === "uploading" ? (
-        <div className="mt-4">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-ink/10">
-            <div className="h-full w-2/3 animate-pulse rounded-full bg-tide" />
-          </div>
-          <p className="mt-2 text-xs text-ink/60 dark:text-mist/60">Indexing in progress…</p>
+        <div className="upload-progress" aria-live="polite">
+          <div className="upload-progress-fill" />
         </div>
       ) : null}
 
       {fileInfo ? (
-        <div className="mt-4 rounded-2xl border border-ink/10 bg-white/70 px-4 py-3 text-sm text-ink/70 dark:border-white/10 dark:bg-white/10 dark:text-mist/70">
-          <p className="font-semibold text-ink dark:text-mist">Document</p>
-          <p>{fileInfo.name}</p>
-          <p className="text-xs text-ink/60 dark:text-mist/60">{fileInfo.size}</p>
+        <div className="upload-meta">
+          <span style={{color: "var(--color-near-black)"}}>{fileInfo.name}</span>
+          <span className="uploader-status">{fileInfo.size}</span>
         </div>
       ) : null}
 
@@ -118,18 +110,18 @@ export default function PDFUploader({
         ref={fileInputRef}
         type="file"
         accept="application/pdf"
-        className="hidden"
+        style={{display: 'none'}}
         onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
       />
 
-      <p className="mt-4 text-sm text-ink/70 dark:text-mist/70">{status}</p>
+      {status ? (
+        <p className="uploader-status" style={{color: stage === 'error' ? 'var(--color-error)' : 'var(--color-olive-gray)', marginTop: '8px'}}>
+          {status}
+        </p>
+      ) : null}
 
       {activeDocumentId ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="mt-4 w-full rounded-full border border-ink/20 bg-white/80 px-4 py-2 text-sm font-semibold text-ink transition hover:border-ink/40 dark:border-white/20 dark:bg-white/10 dark:text-mist dark:hover:border-white/40"
-        >
+        <button type="button" onClick={onClear} className="btn-ghost" style={{marginTop: "16px"}}>
           Clear document
         </button>
       ) : null}
