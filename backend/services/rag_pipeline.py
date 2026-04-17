@@ -1,3 +1,4 @@
+import os
 from typing import Iterable, List, Sequence
 
 from langchain_openai import ChatOpenAI
@@ -9,7 +10,10 @@ SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions based strictly on the provided "
     "document excerpts. If the user asks for a summary or what the document is about, "
     "summarize the excerpts. If the answer is not found in the excerpts, say \"I couldn't "
-    "find that information in the document.\" Do not make up information. Be concise and accurate."
+    "find that information in the document.\" Do not make up information. Be concise and accurate. "
+    "Write in clear, human-readable prose. Paraphrase instead of copying exact wording from the source. "
+    "Avoid markdown formatting such as bold text, italics, or code blocks unless the user explicitly asks for it. "
+    "Use short paragraphs or simple bullets only when they genuinely improve readability."
 )
 
 
@@ -68,7 +72,8 @@ def answer_question(document_id: str, question: str) -> str:
     if not context:
         return "I couldn't find that information in the document."
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
+    llm = ChatOpenAI(model=model, temperature=0)
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
         f"Context:\n{context}\n\n"

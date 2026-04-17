@@ -16,10 +16,10 @@ Upload a PDF and ask questions grounded in its content. This project uses a retr
 1. **Upload**: PDF is sent to `/upload`.
 2. **Extract**: `pdfplumber` extracts text.
 3. **Chunk**: text is split into overlapping chunks.
-4. **Embed**: chunks are embedded using `text-embedding-3-small`.
+4. **Embed**: chunks are embedded using `text-embedding-3-large`.
 5. **Store**: embeddings are stored in ChromaDB under a unique `document_id`.
 6. **Query**: questions are embedded and matched against stored chunks.
-7. **Answer**: `gpt-4o-mini` answers using only retrieved context.
+7. **Answer**: `gpt-5.4-nano` answers using only retrieved context.
 
 ## Tech Stack
 **Backend**
@@ -67,6 +67,8 @@ Visit `http://localhost:3000`.
 **Backend**
 ```
 OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_CHAT_MODEL=gpt-5.4-nano
+OPENAI_EMBEDDING_MODEL=text-embedding-3-large
 ```
 
 **Frontend**
@@ -92,8 +94,8 @@ Basic health check.
 
 ## OpenAI Usage
 This project uses:
-- `text-embedding-3-small` for embeddings
-- `gpt-4o-mini` for chat responses
+- `text-embedding-3-large` for embeddings
+- `gpt-5.4-nano` for chat responses
 
 Make sure your API key has access and your billing is active.
 
