@@ -17,3 +17,8 @@ frontend/.next/
 
 # misc
 .DS_Store
+.codex
+AGENTS.md
+DESIGN.md
+frontend/.codex
+pdf-chatbot-project-brief.md
