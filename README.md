@@ -5,6 +5,8 @@ PDF chat assistant powered by retrieval‑augmented generation
 
 Upload a PDF and ask questions grounded in its content. This project uses a retrieval‑augmented generation (RAG) pipeline: text is extracted from the PDF, chunked, embedded with OpenAI, stored locally in ChromaDB, and retrieved at question time to keep answers aligned with the document.
 
+## Why I built this
+Built to understand how RAG pipelines work end-to-end from text extraction and chunking strategy to vector similarity search and context-grounded generation. The goal was to move beyond tutorial-level AI projects and wire together a production-like architecture using real tools (LangChain, ChromaDB, OpenAI) rather than toy examples
 
 ## Features
 - PDF upload with local indexing
@@ -34,14 +36,6 @@ Upload a PDF and ask questions grounded in its content. This project uses a retr
 - TypeScript
 - Tailwind CSS
 
-## Project Structure
-- `backend/`
-- `backend/routers/`
-- `backend/services/`
-- `backend/models/`
-- `frontend/`
-- `frontend/app/`
-- `frontend/components/`
 
 ## Quick Start
 
