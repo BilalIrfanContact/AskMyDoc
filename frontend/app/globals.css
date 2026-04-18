@@ -486,15 +486,23 @@ a:hover {
 /* ==============================================================
    Upload Stage 
    ============================================================== */
-.hero-title {
+.upload-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 160px);
   text-align: center;
-  margin-bottom: 40px;
+}
+
+.hero-title {
+  margin-bottom: 48px;
   color: var(--color-near-black);
 }
 
 .panel-upload {
-  max-width: 600px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 640px;
 }
 
 .documents-panel {
@@ -760,48 +768,124 @@ a:hover {
   text-align: center;
 }
 
-.upload-drop {
+.upload-container {
   width: 100%;
-  padding: 40px;
-  border: 1px dashed var(--color-brand);
+  position: relative;
+}
+
+.upload-input-bar {
+  width: 100%;
   background-color: var(--color-pure-white);
-  border-radius: 16px;
+  border: 1px solid var(--border-cream);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.02);
+  text-align: left;
+}
+
+.upload-input-bar:hover {
+  border-color: var(--color-brand);
+  background-color: var(--color-ivory);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.upload-input-icon {
+  color: var(--color-stone-gray);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.upload-input-bar:hover .upload-input-icon {
+  color: var(--color-brand);
+}
+
+.upload-input-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-input-text {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  color: var(--color-near-black);
+}
+
+.upload-suggestions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+  width: 100%;
+}
+
+.suggestion-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: transparent;
+  border: 1px solid var(--border-cream);
+  border-radius: 100px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-olive-gray);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.suggestion-pill:hover {
+  border-color: var(--ring-deep);
+  background-color: var(--color-ivory);
+  color: var(--color-near-black);
+}
+
+.suggestion-pill svg {
+  color: var(--color-stone-gray);
+  transition: color 0.2s;
+}
+
+.suggestion-pill:hover svg {
+  color: var(--color-brand);
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-cream);
+  border-top-color: var(--color-brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loader-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  margin-top: 24px;
 }
 
-.upload-drop:hover {
-  background-color: var(--color-warm-sand);
-}
-
-.upload-progress {
-  width: 100%;
-  height: 4px;
-  background-color: var(--border-cream);
-  border-radius: 4px;
-  overflow: hidden;
-  margin: 16px 0;
-}
-
-.upload-progress-fill {
-  width: 50%;
-  height: 100%;
-  background-color: var(--color-brand);
-  animation: load 2s infinite linear;
-}
-
-@keyframes load {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  100% {
-    transform: translateX(200%);
-  }
+.loader-text {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-olive-gray);
 }
 
 .upload-meta {
