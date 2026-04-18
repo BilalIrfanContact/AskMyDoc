@@ -33,9 +33,10 @@ type DocumentMeta = {
 
 type HomeClientProps = {
   userId: string;
+  greeting: string;
 };
 
-export default function HomeClient({ userId }: HomeClientProps) {
+export default function HomeClient({ userId, greeting }: HomeClientProps) {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [documentMeta, setDocumentMeta] = useState<DocumentMeta | null>(null);
@@ -185,7 +186,7 @@ export default function HomeClient({ userId }: HomeClientProps) {
       <main className="shell-grid" id="workspace">
         {view === "upload" ? (
           <section className="upload-stage">
-            <h1 className="hero-title">Ask your PDF.</h1>
+            <h1 className="hero-title">{greeting}</h1>
 
             <aside className="panel-upload card-ivory">
               <PDFUploader
