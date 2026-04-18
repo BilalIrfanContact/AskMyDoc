@@ -412,7 +412,15 @@ a:hover {
   gap: 20px;
 }
 
-.auth-google,
+.auth-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 48px;
+}
+
 .auth-submit {
   width: 100%;
 }
