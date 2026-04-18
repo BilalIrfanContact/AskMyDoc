@@ -10,7 +10,7 @@ os.environ.setdefault("CHROMA_TELEMETRY", "false")
 os.environ.setdefault("CHROMA_ENABLE_TELEMETRY", "false")
 os.environ.setdefault("POSTHOG_DISABLED", "1")
 
-from .routers import upload, chat
+from .routers import chat, conversations, documents, upload
 
 load_dotenv()
 
@@ -26,6 +26,8 @@ app.add_middleware(
 
 app.include_router(upload.router)
 app.include_router(chat.router)
+app.include_router(conversations.router)
+app.include_router(documents.router)
 
 
 @app.get("/health")
@@ -35,4 +37,6 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    return {"message": "AskMyDoc API. Use /health, /upload, /chat endpoints."}
+    return {
+        "message": "AskMyDoc API. Use /health, /upload, /chat, /conversations, and /documents endpoints."
+    }
