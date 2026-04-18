@@ -10,5 +10,5 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  return <HomeClient />;
+  return <HomeClient userId={session.user.id} />;
 }

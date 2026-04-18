@@ -5,10 +5,11 @@ type PDFUploaderProps = {
   onUploaded: (
     documentId: string,
     meta: { fileName: string; fileSize: string; chunkCount: number; storedCount: number }
-  ) => void;
+  ) => Promise<void>;
   onClear: () => void;
   activeDocumentId: string | null;
   resetSignal: number;
+  userId: string;
 };
 
 type UploadStage = "idle" | "uploading" | "ready" | "error";
@@ -17,7 +18,8 @@ export default function PDFUploader({
   onUploaded,
   onClear,
   activeDocumentId,
-  resetSignal
+  resetSignal,
+  userId
 }: PDFUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string>("");
@@ -55,8 +57,8 @@ export default function PDFUploader({
       setFileInfo({ name: file.name, size: formatBytes(file.size) });
       setStatus("Uploading and indexing your PDF...");
 
-      const response = await uploadPdf(file);
-      onUploaded(response.document_id, {
+      const response = await uploadPdf(file, userId);
+      await onUploaded(response.document_id, {
         fileName: file.name,
         fileSize: formatBytes(file.size),
         chunkCount: response.chunk_count,
