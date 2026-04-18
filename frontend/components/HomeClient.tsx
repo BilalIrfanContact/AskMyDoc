@@ -50,6 +50,16 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearchClosing, setIsSearchClosing] = useState(false);
+
+  const closeSearch = useCallback(() => {
+    setIsSearchClosing(true);
+    setTimeout(() => {
+      setIsSearchOpen(false);
+      setIsSearchClosing(false);
+    }, 250);
+  }, []);
 
   const refreshDocuments = useCallback(async () => {
     setLoadingDocuments(true);
@@ -68,8 +78,18 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     void refreshDocuments();
   }, [refreshDocuments]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isSearchOpen) {
+        closeSearch();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSearchOpen, closeSearch]);
+
   const SidebarIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
       <line x1="9" x2="9" y1="3" y2="21"/>
     </svg>
@@ -77,26 +97,26 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
 
   const FileIcon = () => (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path fill="currentColor" d="M17.226 0C18.206 0 19 .814 19 1.818v16.364C19 19.186 18.206 20 17.226 20H4.542c-.98 0-1.774-.814-1.774-1.818l-.001-1.686H1.665a.674.674 0 0 1-.665-.68c0-.377.298-.682.665-.682h1.102v-2.419H1.665A.674.674 0 0 1 1 12.033c0-.377.298-.682.665-.682l1.102-.001V8.919H1.665A.674.674 0 0 1 1 8.239c0-.377.298-.682.665-.682l1.102-.001V5.122H1.665A.674.674 0 0 1 1 4.441c0-.377.298-.682.665-.682l1.102-.001l.001-1.94C2.768.814 3.562 0 4.542 0h12.684Zm-3.248 1.364H4.466a.344.344 0 0 0-.246.118a.428.428 0 0 0-.12.268v2.008h.844a.668.668 0 0 1 .665.683a.674.674 0 0 1-.665.681H4.1v2.431h.873l.045.007l-.074-.004a.65.65 0 0 1 .313.08l.02.011a.53.53 0 0 1 .124.101l-.055-.053a.684.684 0 0 1 .261.509l-.007-.08a.676.676 0 0 1-.596.792l-.03.002l-.016.001H4.1v2.431h.844a.65.65 0 0 1 .308.078c.062.03.111.066.15.111l-.03-.029a.687.687 0 0 1 .216.696l-.009.03a.682.682 0 0 1-.286.378l-.01.005a.644.644 0 0 1-.339.095H4.1v2.419h.873c.008 0 .016.002.023.004l-.052-.004c.367 0 .665.305.665.682c0 .222-.104.42-.265.544l-.013.01a.524.524 0 0 1-.062.04l-.008.004a.628.628 0 0 1-.275.082h-.013l-.015.002h-.014l-.844-.001v1.764c.006.067.03.13.072.19l.048.058c.073.077.163.12.27.13h9.488V1.364Zm3.264-.002h-1.938v17.274h1.974c.091 0 .176-.042.256-.13a.473.473 0 0 0 .134-.267V1.794a.486.486 0 0 0-.134-.298a.415.415 0 0 0-.292-.134Z"/>
+      <path fill="currentColor" d="M17.226 0C18.206 0 19 .814 19 1.818v16.364C19 19.186 18.206 20 17.226 20H4.542c-.98 0-1.774-.814-1.774-1.818l-.001-1.686H1.665a.674.674 0 0 1-.665-.68c0-.377.298-.682.665-.682h1.102v-2.419H1.665A.674.674 0 0 1 1 12.033c0-.377.298-.682.665-.682l1.102-.001V8.919H1.665A.674.674 0 0 1 1 8.239c0-.377.298-.682.665-.682l1.102-.001V5.122H1.665A.674.674 0 0 1 1 4.441c0-.377.298-.682.665-.682l1.102-.001l.001-1.94C2.768.814 3.562 0 4.542 0h12.684Zm-3.248 1.364H4.466a.344.344 0 0 0-.246.118a.428.428 0 0 0-.12.268v2.008h.844a.668.668 0 0 1 .665.683a.674.674 0 0 1-.665.681H4.1v2.431h.873l.045.007l-.074-.004a.65.65 0 0 1 .313.08l.02.011a.53.53 0 0 1 .124.101l-.055-.053a.684.684 0 0 1 .261.509l-.007-.08a.676.676 0 0 1-.596.792l-.03.002l-.016.001H4.1v2.431h.844a.65.65(0 0 1 .308.078c.062.03.111.066.15.111l-.03-.029a.687.687 0 0 1 .216.696l-.009.03a.682.682 0 0 1-.286.378l-.01.005a.644.644 0 0 1-.339.095H4.1v2.419h.873c.008 0 .016.002.023.004l-.052-.004c.367 0 .665.305.665.682c0 .222-.104.42-.265.544l-.013.01a.524.524 0 0 1-.062.04l-.008.004a.628.628 0 0 1-.275.082h-.013l-.015.002h-.014l-.844-.001v1.764c.006.067.03.13.072.19l.048.058c.073.077.163.12.27.13h9.488V1.364Zm3.264-.002h-1.938v17.274h1.974c.091 0 .176-.042.256-.13a.473.473 0 0 0 .134-.267V1.794a.486.486 0 0 0-.134-.298a.415.415 0 0 0-.292-.134Z"/>
     </svg>
   );
 
   const PlusIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="5" x2="12" y2="19"/>
       <line x1="5" y1="12" x2="19" y2="12"/>
     </svg>
   );
 
-  const SearchIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  const MagnifyIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="11" cy="11" r="8"/>
       <line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
   );
 
   const LogoutIcon = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
       <polyline points="16 17 21 12 16 7"/>
       <line x1="21" y1="12" x2="9" y2="12"/>
@@ -178,6 +198,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
       setView("upload");
     } finally {
       setBusyDocumentId(null);
+      closeSearch();
     }
   };
 
@@ -230,54 +251,44 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
             </button>
           </header>
 
-          <button
-            type="button"
-            className={`btn-brand ${!isSidebarOpen ? "icon-only" : ""}`}
-            style={{ width: "100%", justifyContent: isSidebarOpen ? "flex-start" : "center", gap: "12px" }}
-            onClick={handleClear}
-          >
-            <PlusIcon />
+          <button type="button" className="sidebar-action-btn" onClick={handleClear}>
+            <div className="sidebar-action-icon"><PlusIcon /></div>
             {isSidebarOpen && <span>New document</span>}
           </button>
 
-          <div className="sidebar-search-wrap">
-            <div className="sidebar-search-icon">
-              <SearchIcon />
-            </div>
-            <input
-              type="text"
-              className="sidebar-search-input"
-              placeholder="Search documents..."
-            />
-          </div>
+          <button type="button" className="sidebar-action-btn" onClick={() => setIsSearchOpen(true)}>
+            <div className="sidebar-action-icon"><MagnifyIcon /></div>
+            {isSidebarOpen && <span>Search</span>}
+          </button>
 
-          {isSidebarOpen && <h2 className="sidebar-section-title">Recent documents</h2>}
-
-          <nav className="sidebar-nav-list" style={{ marginTop: isSidebarOpen ? "0" : "24px" }}>
-            {documents.map((doc) => (
-              <button
-                key={doc.id}
-                type="button"
-                className={`sidebar-nav-item ${documentId === doc.id ? "active" : ""}`}
-                onClick={() => void handleSelectDocument(doc)}
-                disabled={busyDocumentId === doc.id}
-                title={doc.filename}
-              >
-                <div className="sidebar-doc-icon">
-                  <FileIcon />
-                </div>
-                {isSidebarOpen && (
-                  <div className="sidebar-doc-name">
-                    {doc.filename}
+          <nav className="sidebar-nav">
+            {isSidebarOpen && <h4 className="sidebar-section-title">Recent documents</h4>}
+            <div className="sidebar-nav-list">
+              {documents.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  className={`sidebar-nav-item ${documentId === doc.id ? "active" : ""}`}
+                  onClick={() => void handleSelectDocument(doc)}
+                  disabled={busyDocumentId === doc.id}
+                  title={doc.filename}
+                >
+                  <div className="sidebar-doc-icon">
+                    <FileIcon />
                   </div>
-                )}
-              </button>
-            ))}
-            {!loadingDocuments && documents.length === 0 && isSidebarOpen && (
-              <p className="text-label" style={{ padding: "0 8px", color: "var(--color-stone-gray)" }}>
-                No documents yet.
-              </p>
-            )}
+                  {isSidebarOpen && (
+                    <div className="sidebar-doc-info">
+                      <span className="sidebar-doc-name">{doc.filename}</span>
+                    </div>
+                  )}
+                </button>
+              ))}
+              {!loadingDocuments && documents.length === 0 && isSidebarOpen && (
+                <p className="text-label" style={{ padding: "0 14px", color: "var(--color-stone-gray)" }}>
+                  No documents yet.
+                </p>
+              )}
+            </div>
           </nav>
         </div>
 
@@ -322,34 +333,44 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
             </section>
           ) : null}
 
-          {view === "indexing" && documentMeta ? (
-            <section className="transition-stage">
-              <div className="card-ivory transition-card" aria-live="polite">
-                <span className="badge">
-                  {transitionMode === "indexing" ? "Indexing document" : "Loading document"}
-                </span>
-                <h2 className="transition-title">{documentMeta.fileName}</h2>
-                <p className="text-olive">
-                  {transitionMode === "indexing"
-                    ? "Building the retrieval index and preparing the chat workspace."
-                    : "Restoring the latest saved conversation for this document."}
-                </p>
-                <div className="upload-progress" aria-hidden="true">
-                  <div className="upload-progress-fill"></div>
+          {view === "indexing" ? (
+            <div className="main-stage">
+              {transitionMode === "loading" ? (
+                <div className="skeleton-screen">
+                  <header className="skeleton-header">
+                    <div className="skeleton-title" />
+                  </header>
+                  <div className="skeleton-messages">
+                    <div className="skeleton-bubble user" />
+                    <div className="skeleton-bubble assistant" />
+                    <div className="skeleton-bubble user" style={{ width: "30%" }} />
+                    <div className="skeleton-bubble assistant" style={{ width: "60%" }} />
+                  </div>
+                  <footer className="skeleton-footer">
+                    <div className="skeleton-input" />
+                  </footer>
                 </div>
-              </div>
-            </section>
-          ) : null}
-
-          {view === "chat" ? (
+              ) : (
+                <div className="transition-stage">
+                  <div className="transition-card">
+                    <div className="status-pill">Indexing document</div>
+                    <h2 className="brand-name">{documentMeta?.fileName}</h2>
+                    <p className="text-label" style={{ marginTop: "12px" }}>
+                      Analyzing and preparing your document for chat.
+                    </p>
+                    <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
+                      <div className="loader" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : view === "chat" ? (
             <section className="chat-stage">
               <section className="panel-chat" id="chat" aria-label="Chat workspace">
                 <div className="panel-head">
                   <div>
                     {documentMeta ? <h2 className="panel-title-file">{documentMeta.fileName}</h2> : null}
-                    {documentMeta?.uploadedAt ? (
-                      <p className="panel-subtitle">Saved {new Date(documentMeta.uploadedAt).toLocaleString()}</p>
-                    ) : null}
                   </div>
                 </div>
 
@@ -363,6 +384,45 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
           ) : null}
         </section>
       </main>
+
+      {isSearchOpen && (
+        <div className={`modal-overlay ${isSearchClosing ? "closing" : ""}`} onClick={closeSearch}>
+          <div className={`modal-content ${isSearchClosing ? "closing" : ""}`} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="sidebar-action-icon"><MagnifyIcon /></div>
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search chats and projects"
+                className="modal-search-input"
+              />
+            </div>
+            <div className="modal-body">
+              {documents.length > 0 ? (
+                documents.map((doc) => (
+                  <button
+                    key={doc.id}
+                    className="modal-doc-item"
+                    onClick={() => void handleSelectDocument(doc)}
+                  >
+                    <FileIcon />
+                    <div className="modal-doc-info">
+                      <span className="modal-doc-name">{doc.filename}</span>
+                      <span className="modal-doc-date">
+                        {new Date(doc.uploaded_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <p className="text-label" style={{ padding: "20px", textAlign: "center" }}>
+                  No documents found.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
