@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
 
 import ChatInput from "./ChatInput";
@@ -52,6 +52,19 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchClosing, setIsSearchClosing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredDocuments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return documents;
+
+    return documents.filter((doc) => doc.filename.toLowerCase().includes(query));
+  }, [documents, searchQuery]);
+
+  const openSearch = useCallback(() => {
+    setSearchQuery("");
+    setIsSearchOpen(true);
+  }, []);
 
   const closeSearch = useCallback(() => {
     setIsSearchClosing(true);
@@ -256,7 +269,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
             {isSidebarOpen && <span>New document</span>}
           </button>
 
-          <button type="button" className="sidebar-action-btn" onClick={() => setIsSearchOpen(true)}>
+          <button type="button" className="sidebar-action-btn" onClick={openSearch}>
             <div className="sidebar-action-icon"><MagnifyIcon /></div>
             {isSidebarOpen && <span>Search</span>}
           </button>
@@ -395,11 +408,13 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
                 autoFocus
                 placeholder="Search chats and projects"
                 className="modal-search-input"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
               />
             </div>
             <div className="modal-body">
-              {documents.length > 0 ? (
-                documents.map((doc) => (
+              {filteredDocuments.length > 0 ? (
+                filteredDocuments.map((doc) => (
                   <button
                     key={doc.id}
                     className="modal-doc-item"
@@ -409,14 +424,14 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
                     <div className="modal-doc-info">
                       <span className="modal-doc-name">{doc.filename}</span>
                       <span className="modal-doc-date">
-                        {new Date(doc.uploaded_at).toLocaleDateString()}
+                        {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : "Unknown date"}
                       </span>
                     </div>
                   </button>
                 ))
               ) : (
                 <p className="text-label" style={{ padding: "20px", textAlign: "center" }}>
-                  No documents found.
+                  {documents.length === 0 ? "No documents found." : "No matches found."}
                 </p>
               )}
             </div>
