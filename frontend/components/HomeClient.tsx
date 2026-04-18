@@ -170,6 +170,7 @@ export default function HomeClient({ userId, greeting }: HomeClientProps) {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand-lockup" href="#workspace" aria-label="AskMyDoc home">
+          <img src="/logo.png" alt="AskMyDoc Logo" width={32} height={32} />
           <span className="brand-name">AskMyDoc</span>
         </a>
 

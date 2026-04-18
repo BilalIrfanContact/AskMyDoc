@@ -51,7 +51,10 @@ export default function LoginForm() {
     <div className="app-shell auth-shell">
       <main className="shell-grid auth-grid">
         <section className="auth-copy">
-          <h1 className="hero-title auth-title">Sign in to AskMyDoc.</h1>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '24px' }}>
+            <img src="/logo.png" alt="AskMyDoc Logo" width={80} height={80} />
+            <h1 className="hero-title auth-title" style={{ margin: 0 }}>AskMyDoc.</h1>
+          </div>
           <p className="text-olive auth-copy-text">Continue with Google or use an existing email and password.</p>
         </section>
 
