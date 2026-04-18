@@ -25,5 +25,5 @@ export default async function HomePage() {
   const selectedTemplate = WELCOME_MESSAGES[randomIndex];
   const greeting = selectedTemplate.replace("[NAME]", firstName);
 
-  return <HomeClient userId={session.user.id} greeting={greeting} />;
+  return <HomeClient userId={session.user.id} userName={session.user.name || "User"} greeting={greeting} />;
 }
