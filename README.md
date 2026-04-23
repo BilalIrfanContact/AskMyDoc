@@ -34,7 +34,9 @@ case.
 ### Document Management
 - PDF documents are indexed and persisted per user
 - Uploaded documents history visible in a sidebar
+- Hover-to-delete control with confirmation modal for removing documents
 - Searchable document modal with live filtering as you type
+- Deleting a document also removes its stored PDF, vector index, and related chat history
 - Documents survive sessions, reload the page, your documents are still there
 
 ### RAG Pipeline
@@ -50,8 +52,11 @@ case.
 
 ### UX
 - Personalized greeting on the home screen using the authenticated user's name
+- Home screen greeting includes the app icon and responsive typography
 - Sidebar with recent document navigation
 - Skeleton loading state during conversation retrieval
+- Typing-style loader while the assistant searches the document and prepares a response
+- Auto-scroll to the latest message when the user sends a message or the assistant replies
 - Suggestion pills on the home screen to guide first questions
 - Clean upload → indexing → chat flow
 
@@ -79,6 +84,7 @@ case.
    The model is instructed to answer strictly from provided context
          ↓
 9. Answer is returned to the frontend and rendered in the chat view
+   The UI shows a typing-style loader during retrieval/generation and auto-scrolls to the newest message
    Message is persisted to Supabase (messages table)
          ↓
 10. User can close the tab, return later, and the conversation is still there
@@ -116,7 +122,7 @@ askmydoc/
 │   │   ├── upload.py              # POST /upload
 │   │   ├── chat.py                # POST /chat
 │   │   ├── conversations.py       # Conversation CRUD endpoints
-│   │   └── documents.py           # Document listing endpoint
+│   │   └── documents.py           # Document listing and deletion endpoints
 │   ├── services/
 │   │   ├── pdf_extractor.py       # pdfplumber text extraction
 │   │   ├── text_chunker.py        # RecursiveCharacterTextSplitter
@@ -232,6 +238,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 | `GET` | `/conversations` | List conversations for a user, optionally filtered by `document_id`. |
 | `GET` | `/conversations/{id}/messages` | Return full message history for a conversation. |
 | `GET` | `/documents` | Return all documents uploaded by a user. |
+| `DELETE` | `/documents/{id}` | Delete a user document and clean up its Supabase metadata, stored PDF, related conversations/messages, and Chroma collection. |
 | `GET` | `/health` | Basic health check. |
 
 ---
