@@ -4,7 +4,10 @@
 
 AskMyDoc is a full-stack RAG application that lets authenticated users upload PDF documents and have grounded, document-accurate conversations with them. Built across two versions  from a local single-document prototype to a multi-user authenticated application with persistent documents and conversation history.
 
-![AskMyDoc Screenshot](img/askmydoc-screenshot.png)
+<img width="1835" height="943" alt="image" src="https://github.com/user-attachments/assets/a2b5de3f-2083-42a2-a484-71eaae53e659" />
+
+<img width="1835" height="943" alt="image" src="https://github.com/user-attachments/assets/85b45629-167f-4340-bfda-b348ad0145b3" />
+
 
 ---
 
