@@ -9,6 +9,7 @@ import PDFUploader from "./PDFUploader";
 import {
   askQuestion,
   createConversation,
+  deleteUserDocument,
   getConversationMessages,
   getUserConversations,
   getUserDocuments,
@@ -53,6 +54,9 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchClosing, setIsSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [documentToDelete, setDocumentToDelete] = useState<PersistedDocument | null>(null);
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
+  const [isAssistantTyping, setIsAssistantTyping] = useState(false);
 
   const filteredDocuments = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -133,6 +137,16 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
       <polyline points="16 17 21 12 16 7"/>
       <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  );
+
+  const TrashIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18"/>
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
     </svg>
   );
 
@@ -221,8 +235,33 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     setDocumentMeta(null);
     setMessages([]);
     setError(null);
+    setIsAssistantTyping(false);
     setResetSignal((value) => value + 1);
     setView("upload");
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!documentToDelete) return;
+
+    setIsDeletingDocument(true);
+    setError(null);
+
+    try {
+      await deleteUserDocument(userId, documentToDelete.id);
+      setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
+
+      if (documentId === documentToDelete.id) {
+        handleClear();
+      }
+
+      closeSearch();
+      setDocumentToDelete(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete document.";
+      setError(message);
+    } finally {
+      setIsDeletingDocument(false);
+    }
   };
 
   const handleSend = async (question: string) => {
@@ -230,6 +269,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
 
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setError(null);
+    setIsAssistantTyping(true);
 
     try {
       const response = await askQuestion({
@@ -242,6 +282,8 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
+    } finally {
+      setIsAssistantTyping(false);
     }
   };
 
@@ -278,23 +320,39 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
             {isSidebarOpen && <h4 className="sidebar-section-title">Recent documents</h4>}
             <div className="sidebar-nav-list">
               {documents.map((doc) => (
-                <button
+                <div
                   key={doc.id}
-                  type="button"
-                  className={`sidebar-nav-item ${documentId === doc.id ? "active" : ""}`}
-                  onClick={() => void handleSelectDocument(doc)}
-                  disabled={busyDocumentId === doc.id}
+                  className={`sidebar-doc-row ${documentId === doc.id ? "active" : ""}`}
                   title={doc.filename}
                 >
-                  <div className="sidebar-doc-icon">
-                    <FileIcon />
-                  </div>
-                  {isSidebarOpen && (
-                    <div className="sidebar-doc-info">
-                      <span className="sidebar-doc-name">{doc.filename}</span>
+                  <button
+                    type="button"
+                    className={`sidebar-nav-item ${documentId === doc.id ? "active" : ""}`}
+                    onClick={() => void handleSelectDocument(doc)}
+                    disabled={busyDocumentId === doc.id}
+                  >
+                    <div className="sidebar-doc-icon">
+                      <FileIcon />
                     </div>
+                    {isSidebarOpen && (
+                      <div className="sidebar-doc-info">
+                        <span className="sidebar-doc-name">{doc.filename}</span>
+                      </div>
+                    )}
+                  </button>
+                  {isSidebarOpen && (
+                    <button
+                      type="button"
+                      className="sidebar-doc-delete"
+                      aria-label={`Delete ${doc.filename}`}
+                      title={`Delete ${doc.filename}`}
+                      onClick={() => setDocumentToDelete(doc)}
+                      disabled={isDeletingDocument}
+                    >
+                      <TrashIcon />
+                    </button>
                   )}
-                </button>
+                </div>
               ))}
               {!loadingDocuments && documents.length === 0 && isSidebarOpen && (
                 <p className="text-label" style={{ padding: "0 14px", color: "var(--color-stone-gray)" }}>
@@ -332,7 +390,10 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
         <section className="shell-grid" id="workspace">
           {view === "upload" ? (
             <section className="upload-stage">
-              <h1 className="hero-title">{greeting}</h1>
+              <div className="hero-lockup">
+                <img src="/logo.png" alt="AskMyDoc icon" width={44} height={44} className="hero-icon" />
+                <h1 className="hero-title hero-title-home">{greeting}</h1>
+              </div>
 
               <aside className="panel-upload card-ivory">
                 <PDFUploader
@@ -387,7 +448,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
                   </div>
                 </div>
 
-                <ChatWindow messages={messages} />
+                <ChatWindow messages={messages} isAssistantTyping={isAssistantTyping} />
 
                 {error ? <p style={{ color: "var(--color-error)", padding: "0 24px" }}>{error}</p> : null}
 
@@ -434,6 +495,37 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
                   {documents.length === 0 ? "No documents found." : "No matches found."}
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {documentToDelete && (
+        <div className="modal-overlay" onClick={() => !isDeletingDocument && setDocumentToDelete(null)}>
+          <div className="modal-content delete-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="delete-modal-body">
+              <h3 className="delete-modal-title">Delete document?</h3>
+              <p className="delete-modal-text">
+                This will permanently remove <strong>{documentToDelete.filename}</strong> and its chat history.
+              </p>
+            </div>
+            <div className="delete-modal-actions">
+              <button
+                type="button"
+                className="btn-ghost delete-modal-cancel"
+                onClick={() => setDocumentToDelete(null)}
+                disabled={isDeletingDocument}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-brand delete-modal-confirm"
+                onClick={() => void handleDeleteDocument()}
+                disabled={isDeletingDocument}
+              >
+                {isDeletingDocument ? "Deleting..." : "Delete"}
+              </button>
             </div>
           </div>
         </div>

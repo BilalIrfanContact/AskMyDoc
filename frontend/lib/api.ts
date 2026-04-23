@@ -78,6 +78,21 @@ export async function getUserDocuments(userId: string) {
   return data.documents;
 }
 
+export async function deleteUserDocument(userId: string, documentId: string) {
+  const res = await fetch(
+    `${API_BASE}/documents/${encodeURIComponent(documentId)}?user_id=${encodeURIComponent(userId)}`,
+    {
+      method: "DELETE"
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(await getErrorMessage(res, "Failed to delete document."));
+  }
+
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
 export async function getUserConversations(userId: string, documentId?: string) {
   const query = new URLSearchParams({ user_id: userId });
   if (documentId) {

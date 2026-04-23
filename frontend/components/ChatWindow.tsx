@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import MessageBubble from "./MessageBubble";
 
 type Message = {
@@ -7,9 +9,16 @@ type Message = {
 
 type ChatWindowProps = {
   messages: Message[];
+  isAssistantTyping?: boolean;
 };
 
-export default function ChatWindow({ messages }: ChatWindowProps) {
+export default function ChatWindow({ messages, isAssistantTyping = false }: ChatWindowProps) {
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isAssistantTyping]);
+
   return (
     <div className="chat-window" role="log" aria-live="polite">
       {messages.length === 0 ? (
@@ -22,9 +31,13 @@ export default function ChatWindow({ messages }: ChatWindowProps) {
           </p>
         </div>
       ) : (
-        messages.map((message, index) => (
-          <MessageBubble key={`${message.role}-${index}`} role={message.role} content={message.content} />
-        ))
+        <>
+          {messages.map((message, index) => (
+            <MessageBubble key={`${message.role}-${index}`} role={message.role} content={message.content} />
+          ))}
+          {isAssistantTyping ? <MessageBubble role="assistant" content="" isTyping /> : null}
+          <div ref={bottomRef} className="chat-scroll-anchor" aria-hidden="true" />
+        </>
       )}
     </div>
   );
