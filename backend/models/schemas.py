@@ -64,3 +64,7 @@ class DocumentRecord(BaseModel):
 
 class DocumentsResponse(BaseModel):
     documents: List[DocumentRecord]
+
+
+class DeleteDocumentResponse(BaseModel):
+    deleted: bool

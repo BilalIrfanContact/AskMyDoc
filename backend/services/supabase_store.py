@@ -178,3 +178,83 @@ def list_user_documents(user_id: str) -> List[Dict[str, Any]]:
         raise SupabasePersistenceError(f"Failed to load user documents: {exc}") from exc
 
     return response.data or []
+
+
+def delete_storage_object(storage_url: str) -> None:
+    bucket, _, object_path = storage_url.partition("/")
+    if not bucket or not object_path:
+        return
+
+    try:
+        get_storage_client().from_(bucket).remove([object_path])
+    except Exception as exc:
+        if "not found" not in str(exc).lower():
+            raise SupabasePersistenceError(f"Failed to delete PDF from Supabase Storage: {exc}") from exc
+
+
+def delete_document(document_id: str, user_id: str) -> bool:
+    try:
+        document_response = (
+            get_postgrest_client()
+            .from_("documents")
+            .select("id, storage_url")
+            .eq("id", document_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to load document for deletion: {exc}") from exc
+
+    document = (document_response.data or [None])[0]
+    if not document:
+        return False
+
+    try:
+        conversations_response = (
+            get_postgrest_client()
+            .from_("conversations")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("document_id", document_id)
+            .execute()
+        )
+        conversation_ids = [item["id"] for item in (conversations_response.data or []) if item.get("id")]
+
+        for conversation_id in conversation_ids:
+            (
+                get_postgrest_client()
+                .from_("messages")
+                .delete()
+                .eq("conversation_id", conversation_id)
+                .execute()
+            )
+
+        (
+            get_postgrest_client()
+            .from_("conversations")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("document_id", document_id)
+            .execute()
+        )
+
+        (
+            get_postgrest_client()
+            .from_("documents")
+            .delete()
+            .eq("id", document_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to delete document data: {exc}") from exc
+
+    storage_url = document.get("storage_url")
+    if storage_url:
+        try:
+            delete_storage_object(storage_url)
+        except SupabasePersistenceError:
+            pass
+
+    return True

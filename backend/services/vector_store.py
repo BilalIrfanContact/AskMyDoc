@@ -1,6 +1,7 @@
 import os
 from typing import List
 
+import chromadb
 from chromadb.config import Settings
 from langchain_chroma import Chroma
 
@@ -51,3 +52,13 @@ def get_vector_store(document_id: str) -> Chroma:
         persist_directory=PERSIST_DIRECTORY,
         client_settings=_client_settings(),
     )
+
+
+def delete_vector_store(document_id: str) -> None:
+    _disable_chroma_telemetry()
+    client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())
+    try:
+        client.delete_collection(name=document_id)
+    except Exception as exc:
+        if "does not exist" not in str(exc).lower():
+            raise
