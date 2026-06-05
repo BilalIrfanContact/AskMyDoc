@@ -147,6 +147,23 @@ def list_conversation_messages(conversation_id: str) -> List[Dict[str, Any]]:
     return response.data or []
 
 
+def get_user_conversation(conversation_id: str, user_id: str) -> Dict[str, Any] | None:
+    try:
+        response = (
+            get_postgrest_client()
+            .from_("conversations")
+            .select("id, user_id, document_id, created_at")
+            .eq("id", conversation_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to load conversation: {exc}") from exc
+
+    return (response.data or [None])[0]
+
+
 def list_user_conversations(user_id: str, document_id: str | None = None) -> List[Dict[str, Any]]:
     try:
         query = (
