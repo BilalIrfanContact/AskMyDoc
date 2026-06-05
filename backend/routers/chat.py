@@ -35,6 +35,9 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found.")
 
+    if conversation["document_id"] != request.document_id:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
     try:
         insert_message(
             conversation_id=request.conversation_id,
@@ -44,7 +47,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
     except SupabasePersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    answer = answer_question(document_id=request.document_id, question=question)
+    answer = answer_question(document_id=conversation["document_id"], question=question)
 
     try:
         insert_message(

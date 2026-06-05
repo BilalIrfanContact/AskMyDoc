@@ -164,6 +164,23 @@ def get_user_conversation(conversation_id: str, user_id: str) -> Dict[str, Any] 
     return (response.data or [None])[0]
 
 
+def get_user_document(document_id: str, user_id: str) -> Dict[str, Any] | None:
+    try:
+        response = (
+            get_postgrest_client()
+            .from_("documents")
+            .select("id, user_id, filename, storage_url, uploaded_at")
+            .eq("id", document_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to load document: {exc}") from exc
+
+    return (response.data or [None])[0]
+
+
 def list_user_conversations(user_id: str, document_id: str | None = None) -> List[Dict[str, Any]]:
     try:
         query = (

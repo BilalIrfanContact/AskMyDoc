@@ -10,6 +10,7 @@ from ..services.internal_auth import require_authenticated_user
 from ..services.supabase_store import (
     SupabasePersistenceError,
     create_conversation,
+    get_user_document,
     get_user_conversation,
     list_conversation_messages,
     list_user_conversations,
@@ -36,6 +37,14 @@ async def create_conversation_endpoint(
     request: ConversationCreateRequest,
     user_id: str = Depends(require_authenticated_user),
 ):
+    try:
+        document = get_user_document(document_id=request.document_id, user_id=user_id)
+    except SupabasePersistenceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
     try:
         conversation_id = create_conversation(
             user_id=user_id,
