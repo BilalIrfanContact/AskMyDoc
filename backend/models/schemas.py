@@ -14,7 +14,6 @@ class ChatRequest(BaseModel):
     document_id: str
     question: Optional[str] = None
     message: Optional[str] = None
-    user_id: Optional[str] = None
     conversation_id: Optional[str] = None
 
 
@@ -23,7 +22,6 @@ class ChatResponse(BaseModel):
 
 
 class ConversationCreateRequest(BaseModel):
-    user_id: str
     document_id: str
 
 

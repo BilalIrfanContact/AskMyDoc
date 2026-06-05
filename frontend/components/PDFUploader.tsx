@@ -9,7 +9,6 @@ type PDFUploaderProps = {
   onClear: () => void;
   activeDocumentId: string | null;
   resetSignal: number;
-  userId: string;
 };
 
 type UploadStage = "idle" | "uploading" | "ready" | "error";
@@ -18,8 +17,7 @@ export default function PDFUploader({
   onUploaded,
   onClear,
   activeDocumentId,
-  resetSignal,
-  userId
+  resetSignal
 }: PDFUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string>("");
@@ -57,7 +55,7 @@ export default function PDFUploader({
       setFileInfo({ name: file.name, size: formatBytes(file.size) });
       setStatus("Uploading and indexing your PDF...");
 
-      const response = await uploadPdf(file, userId);
+      const response = await uploadPdf(file);
       await onUploaded(response.document_id, {
         fileName: file.name,
         fileSize: formatBytes(file.size),

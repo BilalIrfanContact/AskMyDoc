@@ -33,12 +33,11 @@ type DocumentMeta = {
 };
 
 type HomeClientProps = {
-  userId: string;
   userName: string;
   greeting: string;
 };
 
-export default function HomeClient({ userId, userName, greeting }: HomeClientProps) {
+export default function HomeClient({ userName, greeting }: HomeClientProps) {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [documentMeta, setDocumentMeta] = useState<DocumentMeta | null>(null);
@@ -81,7 +80,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
   const refreshDocuments = useCallback(async () => {
     setLoadingDocuments(true);
     try {
-      const nextDocuments = await getUserDocuments(userId);
+      const nextDocuments = await getUserDocuments();
       setDocuments(nextDocuments);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load documents.";
@@ -89,7 +88,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     } finally {
       setLoadingDocuments(false);
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     void refreshDocuments();
@@ -177,7 +176,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     setError(null);
 
     try {
-      const [conversation] = await Promise.all([createConversation(userId, id), waitForTransition()]);
+      const [conversation] = await Promise.all([createConversation(id), waitForTransition()]);
       setConversationId(conversation.conversation_id);
       await refreshDocuments();
       setView("chat");
@@ -204,11 +203,11 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     setError(null);
 
     try {
-      const [conversations] = await Promise.all([getUserConversations(userId, document.id), waitForTransition()]);
+      const [conversations] = await Promise.all([getUserConversations(document.id), waitForTransition()]);
       const activeConversation = conversations[0];
       const nextConversationId = activeConversation
         ? activeConversation.id
-        : (await createConversation(userId, document.id)).conversation_id;
+        : (await createConversation(document.id)).conversation_id;
       const persistedMessages = await getConversationMessages(nextConversationId);
 
       setConversationId(nextConversationId);
@@ -247,7 +246,7 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
     setError(null);
 
     try {
-      await deleteUserDocument(userId, documentToDelete.id);
+      await deleteUserDocument(documentToDelete.id);
       setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
 
       if (documentId === documentToDelete.id) {
@@ -275,7 +274,6 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
       const response = await askQuestion({
         documentId,
         conversationId,
-        userId,
         message: question
       });
       setMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
@@ -401,7 +399,6 @@ export default function HomeClient({ userId, userName, greeting }: HomeClientPro
                   onClear={handleClear}
                   activeDocumentId={documentId}
                   resetSignal={resetSignal}
-                  userId={userId}
                 />
               </aside>
             </section>
