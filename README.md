@@ -210,6 +210,7 @@ Visit `http://localhost:3000`
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_CHAT_MODEL=gpt-5.4-nano
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
+INTERNAL_API_SECRET=use_the_same_value_as_frontend_nextauth_secret
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SUPABASE_STORAGE_BUCKET=your_bucket_name
@@ -228,6 +229,8 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
+
+`backend/.env` must define `INTERNAL_API_SECRET` with the same value used by `frontend/.env` for `NEXTAUTH_SECRET` (or set the same explicit `INTERNAL_API_SECRET` in both places). Authenticated backend routes such as `/documents`, `/upload`, `/conversations`, and `/chat` depend on this shared secret.
 
 ---
 
