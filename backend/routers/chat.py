@@ -2,12 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import ChatRequest, ChatResponse
 from ..services.internal_auth import require_authenticated_user
+from ..services.persistence import PersistenceError
+from ..services.persistence.conversations_repository import get_user_conversation
+from ..services.persistence.messages_repository import insert_message
 from ..services.rag_pipeline import answer_question
-from ..services.supabase_store import (
-    SupabasePersistenceError,
-    get_user_conversation,
-    insert_message,
-)
 
 router = APIRouter()
 
@@ -29,7 +27,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
             conversation_id=request.conversation_id,
             user_id=user_id,
         )
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if not conversation:
@@ -44,7 +42,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
             role="user",
             content=question,
         )
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     answer = answer_question(document_id=conversation["document_id"], question=question)
@@ -55,7 +53,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
             role="assistant",
             content=answer,
         )
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ChatResponse(answer=answer)

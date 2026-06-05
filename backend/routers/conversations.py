@@ -3,18 +3,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..models.schemas import (
     ConversationCreateRequest,
     ConversationCreateResponse,
-    ConversationsResponse,
     ConversationMessagesResponse,
+    ConversationsResponse,
 )
 from ..services.internal_auth import require_authenticated_user
-from ..services.supabase_store import (
-    SupabasePersistenceError,
+from ..services.persistence import PersistenceError
+from ..services.persistence.conversations_repository import (
     create_conversation,
-    get_user_document,
     get_user_conversation,
-    list_conversation_messages,
     list_user_conversations,
 )
+from ..services.persistence.documents_repository import get_user_document
+from ..services.persistence.messages_repository import list_conversation_messages
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ async def get_user_conversations(
 ):
     try:
         conversations = list_user_conversations(user_id=user_id, document_id=document_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationsResponse(conversations=conversations)
@@ -39,7 +39,7 @@ async def create_conversation_endpoint(
 ):
     try:
         document = get_user_document(document_id=request.document_id, user_id=user_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if not document:
@@ -50,7 +50,7 @@ async def create_conversation_endpoint(
             user_id=user_id,
             document_id=request.document_id,
         )
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationCreateResponse(conversation_id=conversation_id)
@@ -63,7 +63,7 @@ async def get_conversation_messages(
 ):
     try:
         conversation = get_user_conversation(conversation_id=conversation_id, user_id=user_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if not conversation:
@@ -71,7 +71,7 @@ async def get_conversation_messages(
 
     try:
         messages = list_conversation_messages(conversation_id=conversation_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationMessagesResponse(messages=messages)
