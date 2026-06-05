@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const API_BASE = "/api";
 
 async function getErrorMessage(res: Response, fallback: string) {
   const error = await res.json().catch(() => ({ detail: fallback }));
@@ -28,10 +28,9 @@ export type PersistedMessage = {
   created_at?: string | null;
 };
 
-export async function uploadPdf(file: File, userId: string) {
+export async function uploadPdf(file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("user_id", userId);
 
   const res = await fetch(`${API_BASE}/upload`, {
     method: "POST",
@@ -50,11 +49,11 @@ export async function uploadPdf(file: File, userId: string) {
   }>;
 }
 
-export async function createConversation(userId: string, documentId: string) {
+export async function createConversation(documentId: string) {
   const res = await fetch(`${API_BASE}/conversations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, document_id: documentId })
+    body: JSON.stringify({ document_id: documentId })
   });
 
   if (!res.ok) {
@@ -64,8 +63,8 @@ export async function createConversation(userId: string, documentId: string) {
   return res.json() as Promise<{ conversation_id: string }>;
 }
 
-export async function getUserDocuments(userId: string) {
-  const res = await fetch(`${API_BASE}/documents?user_id=${encodeURIComponent(userId)}`, {
+export async function getUserDocuments() {
+  const res = await fetch(`${API_BASE}/documents`, {
     method: "GET",
     cache: "no-store"
   });
@@ -78,13 +77,10 @@ export async function getUserDocuments(userId: string) {
   return data.documents;
 }
 
-export async function deleteUserDocument(userId: string, documentId: string) {
-  const res = await fetch(
-    `${API_BASE}/documents/${encodeURIComponent(documentId)}?user_id=${encodeURIComponent(userId)}`,
-    {
-      method: "DELETE"
-    }
-  );
+export async function deleteUserDocument(documentId: string) {
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(documentId)}`, {
+    method: "DELETE"
+  });
 
   if (!res.ok) {
     throw new Error(await getErrorMessage(res, "Failed to delete document."));
@@ -93,8 +89,8 @@ export async function deleteUserDocument(userId: string, documentId: string) {
   return res.json() as Promise<{ deleted: boolean }>;
 }
 
-export async function getUserConversations(userId: string, documentId?: string) {
-  const query = new URLSearchParams({ user_id: userId });
+export async function getUserConversations(documentId?: string) {
+  const query = new URLSearchParams();
   if (documentId) {
     query.set("document_id", documentId);
   }
@@ -129,7 +125,6 @@ export async function getConversationMessages(conversationId: string) {
 export async function askQuestion(input: {
   documentId: string;
   conversationId: string;
-  userId: string;
   message: string;
 }) {
   const res = await fetch(`${API_BASE}/chat`, {
@@ -138,7 +133,6 @@ export async function askQuestion(input: {
     body: JSON.stringify({
       document_id: input.documentId,
       conversation_id: input.conversationId,
-      user_id: input.userId,
       message: input.message
     })
   });
