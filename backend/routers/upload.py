@@ -3,11 +3,9 @@ import uuid
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..services.pdf_extractor import extract_text_from_pdf
-from ..services.supabase_store import (
-    SupabasePersistenceError,
-    insert_document,
-    upload_pdf_to_storage,
-)
+from ..services.persistence import PersistenceError
+from ..services.persistence.documents_repository import insert_document
+from ..services.persistence.storage_repository import upload_pdf_to_storage
 from ..services.text_chunker import chunk_text
 from ..services.vector_store import build_vector_store
 from ..models.schemas import UploadResponse
@@ -53,7 +51,7 @@ async def upload_pdf(user_id: str | None = Form(None), file: UploadFile = File(.
                 filename=filename,
                 storage_url=storage_url,
             )
-        except SupabasePersistenceError as exc:
+        except PersistenceError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return UploadResponse(

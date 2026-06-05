@@ -6,12 +6,12 @@ from ..models.schemas import (
     ConversationsResponse,
     ConversationMessagesResponse,
 )
-from ..services.supabase_store import (
-    SupabasePersistenceError,
+from ..services.persistence import PersistenceError
+from ..services.persistence.conversations_repository import (
     create_conversation,
-    list_conversation_messages,
     list_user_conversations,
 )
+from ..services.persistence.messages_repository import list_conversation_messages
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ async def get_user_conversations(
 ):
     try:
         conversations = list_user_conversations(user_id=user_id, document_id=document_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationsResponse(conversations=conversations)
@@ -36,7 +36,7 @@ async def create_conversation_endpoint(request: ConversationCreateRequest):
             user_id=request.user_id,
             document_id=request.document_id,
         )
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationCreateResponse(conversation_id=conversation_id)
@@ -46,7 +46,7 @@ async def create_conversation_endpoint(request: ConversationCreateRequest):
 async def get_conversation_messages(conversation_id: str):
     try:
         messages = list_conversation_messages(conversation_id=conversation_id)
-    except SupabasePersistenceError as exc:
+    except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ConversationMessagesResponse(messages=messages)

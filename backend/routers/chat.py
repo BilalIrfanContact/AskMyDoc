@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 
 from ..models.schemas import ChatRequest, ChatResponse
+from ..services.persistence import PersistenceError
+from ..services.persistence.messages_repository import insert_message
 from ..services.rag_pipeline import answer_question
-from ..services.supabase_store import SupabasePersistenceError, insert_message
 
 router = APIRouter()
 
@@ -26,7 +27,7 @@ async def chat(request: ChatRequest):
                 role="user",
                 content=question,
             )
-        except SupabasePersistenceError as exc:
+        except PersistenceError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     answer = answer_question(document_id=request.document_id, question=question)
@@ -38,7 +39,7 @@ async def chat(request: ChatRequest):
                 role="assistant",
                 content=answer,
             )
-        except SupabasePersistenceError as exc:
+        except PersistenceError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return ChatResponse(answer=answer)
