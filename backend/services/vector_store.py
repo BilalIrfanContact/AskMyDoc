@@ -5,6 +5,7 @@ import chromadb
 from chromadb.config import Settings
 from langchain_chroma import Chroma
 
+from ..bootstrap import apply_runtime_defaults
 from .embedder import get_embedding_model
 
 
@@ -12,11 +13,7 @@ PERSIST_DIRECTORY = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
 
 
 def _disable_chroma_telemetry() -> None:
-    # Chroma may attempt telemetry in some environments; disable to avoid noisy errors.
-    os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
-    os.environ.setdefault("CHROMA_TELEMETRY", "false")
-    os.environ.setdefault("CHROMA_ENABLE_TELEMETRY", "false")
-    os.environ.setdefault("POSTHOG_DISABLED", "1")
+    apply_runtime_defaults()
 
 
 def _client_settings() -> Settings:
