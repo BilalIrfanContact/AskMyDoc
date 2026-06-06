@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import ChatRequest, ChatResponse
+from ..services.authz import require_user_conversation, require_user_document
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
-from ..services.persistence.conversations_repository import get_user_conversation
 from ..services.persistence.messages_repository import insert_message
 from ..services.rag_pipeline import answer_question
 
@@ -22,19 +22,17 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
             detail="conversation_id is required to persist chat messages.",
         )
 
-    try:
-        conversation = get_user_conversation(
-            conversation_id=request.conversation_id,
-            user_id=user_id,
-        )
-    except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found.")
+    conversation = require_user_conversation(
+        conversation_id=request.conversation_id,
+        user_id=user_id,
+    )
 
     if conversation["document_id"] != request.document_id:
-        raise HTTPException(status_code=404, detail="Document not found.")
+        require_user_document(document_id=request.document_id, user_id=user_id)
+        raise HTTPException(
+            status_code=400,
+            detail="Conversation does not belong to the provided document.",
+        )
 
     try:
         insert_message(

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import DeleteDocumentResponse, DocumentsResponse
+from ..services.authz import require_user_document
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
 from ..services.persistence.documents_repository import delete_document, list_user_documents
@@ -24,6 +25,8 @@ async def delete_user_document(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
+    require_user_document(document_id=document_id, user_id=user_id)
+
     try:
         deleted = delete_document(document_id=document_id, user_id=user_id)
         if not deleted:
