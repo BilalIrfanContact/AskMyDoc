@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 
 import {
   askQuestion,
@@ -12,6 +12,7 @@ import {
   type PersistedDocument
 } from "../../lib/api";
 import type { UploadMeta, WorkspaceState } from "./types";
+import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 
 function waitForTransition() {
   return new Promise<void>((resolve) => {
@@ -20,54 +21,33 @@ function waitForTransition() {
 }
 
 export function useHomeWorkspace() {
-  const [documentId, setDocumentId] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [documentMeta, setDocumentMeta] = useState<WorkspaceState["documentMeta"]>(null);
-  const [documents, setDocuments] = useState<PersistedDocument[]>([]);
-  const [messages, setMessages] = useState<WorkspaceState["messages"]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [resetSignal, setResetSignal] = useState(0);
-  const [view, setView] = useState<WorkspaceState["view"]>("upload");
-  const [transitionMode, setTransitionMode] = useState<WorkspaceState["transitionMode"]>("indexing");
-  const [loadingDocuments, setLoadingDocuments] = useState(true);
-  const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isSearchClosing, setIsSearchClosing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [documentToDelete, setDocumentToDelete] = useState<PersistedDocument | null>(null);
-  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
-  const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialWorkspaceState);
 
   const filteredDocuments = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return documents;
-    return documents.filter((doc) => doc.filename.toLowerCase().includes(query));
-  }, [documents, searchQuery]);
+    const query = state.searchQuery.trim().toLowerCase();
+    if (!query) return state.documents;
+    return state.documents.filter((doc) => doc.filename.toLowerCase().includes(query));
+  }, [state.documents, state.searchQuery]);
 
   const openSearch = useCallback(() => {
-    setSearchQuery("");
-    setIsSearchOpen(true);
+    dispatch({ type: "search/open" });
   }, []);
 
   const closeSearch = useCallback(() => {
-    setIsSearchClosing(true);
+    dispatch({ type: "search/start-close" });
     window.setTimeout(() => {
-      setIsSearchOpen(false);
-      setIsSearchClosing(false);
+      dispatch({ type: "search/finish-close" });
     }, 250);
   }, []);
 
   const refreshDocuments = useCallback(async () => {
-    setLoadingDocuments(true);
+    dispatch({ type: "documents/load-start" });
     try {
       const nextDocuments = await getUserDocuments();
-      setDocuments(nextDocuments);
+      dispatch({ type: "documents/load-success", documents: nextDocuments });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load documents.";
-      setError(message);
-    } finally {
-      setLoadingDocuments(false);
+      dispatch({ type: "documents/load-failure", error: message });
     }
   }, []);
 
@@ -77,51 +57,41 @@ export function useHomeWorkspace() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isSearchOpen) {
+      if (event.key === "Escape" && state.isSearchOpen) {
         closeSearch();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeSearch, isSearchOpen]);
+  }, [closeSearch, state.isSearchOpen]);
 
   const handleUploaded = useCallback(async (id: string, meta: UploadMeta) => {
-    setTransitionMode("indexing");
-    setView("indexing");
-    setBusyDocumentId(id);
-    setDocumentId(id);
-    setConversationId(null);
-    setDocumentMeta(meta);
-    setMessages([]);
-    setError(null);
+    dispatch({ type: "workflow/upload-start", documentId: id, documentMeta: meta });
 
     try {
       const [conversation] = await Promise.all([createConversation(id), waitForTransition()]);
-      setConversationId(conversation.conversation_id);
       await refreshDocuments();
-      setView("chat");
+      dispatch({
+        type: "workflow/chat-ready",
+        conversationId: conversation.conversation_id,
+        messages: []
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to prepare conversation.";
-      setError(message);
-      setView("upload");
-    } finally {
-      setBusyDocumentId(null);
+      dispatch({ type: "workflow/failure", error: message });
     }
   }, [refreshDocuments]);
 
   const handleSelectDocument = useCallback(async (document: PersistedDocument) => {
-    setTransitionMode("loading");
-    setView("indexing");
-    setBusyDocumentId(document.id);
-    setDocumentId(document.id);
-    setConversationId(null);
-    setDocumentMeta({
-      fileName: document.filename,
-      uploadedAt: document.uploaded_at
+    dispatch({
+      type: "workflow/select-start",
+      documentId: document.id,
+      documentMeta: {
+        fileName: document.filename,
+        uploadedAt: document.uploaded_at
+      }
     });
-    setMessages([]);
-    setError(null);
 
     try {
       const [conversations] = await Promise.all([getUserConversations(document.id), waitForTransition()]);
@@ -131,116 +101,79 @@ export function useHomeWorkspace() {
         : (await createConversation(document.id)).conversation_id;
       const persistedMessages = await getConversationMessages(nextConversationId);
 
-      setConversationId(nextConversationId);
-      setMessages(
-        persistedMessages.map((message) => ({
+      dispatch({
+        type: "workflow/chat-ready",
+        conversationId: nextConversationId,
+        messages: persistedMessages.map((message) => ({
           role: message.role,
           content: message.content
         }))
-      );
-      setView("chat");
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load document.";
-      setError(message);
-      setView("upload");
+      dispatch({ type: "workflow/failure", error: message });
     } finally {
-      setBusyDocumentId(null);
       closeSearch();
     }
   }, [closeSearch]);
 
   const handleClear = useCallback(() => {
-    setDocumentId(null);
-    setConversationId(null);
-    setDocumentMeta(null);
-    setMessages([]);
-    setError(null);
-    setIsAssistantTyping(false);
-    setResetSignal((value) => value + 1);
-    setView("upload");
+    dispatch({ type: "workflow/clear" });
   }, []);
 
   const openDeleteDialog = useCallback((document: PersistedDocument) => {
-    setDocumentToDelete(document);
+    dispatch({ type: "delete/open", document });
   }, []);
 
   const closeDeleteDialog = useCallback(() => {
-    if (!isDeletingDocument) {
-      setDocumentToDelete(null);
-    }
-  }, [isDeletingDocument]);
+    dispatch({ type: "delete/close" });
+  }, []);
 
   const handleDeleteDocument = useCallback(async () => {
-    if (!documentToDelete) return;
+    if (!state.documentToDelete) return;
 
-    setIsDeletingDocument(true);
-    setError(null);
+    dispatch({ type: "delete/start" });
 
     try {
-      await deleteUserDocument(documentToDelete.id);
-      setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete.id));
+      await deleteUserDocument(state.documentToDelete.id);
 
-      if (documentId === documentToDelete.id) {
+      if (state.documentId === state.documentToDelete.id) {
         handleClear();
       }
 
-      closeSearch();
-      setDocumentToDelete(null);
+      dispatch({ type: "delete/success", documentId: state.documentToDelete.id });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete document.";
-      setError(message);
-    } finally {
-      setIsDeletingDocument(false);
+      dispatch({ type: "delete/failure", error: message });
     }
-  }, [closeSearch, documentId, documentToDelete, handleClear]);
+  }, [handleClear, state.documentId, state.documentToDelete]);
 
   const handleSend = useCallback(async (question: string) => {
-    if (!documentId || !conversationId) return;
+    if (!state.documentId || !state.conversationId) return;
 
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
-    setError(null);
-    setIsAssistantTyping(true);
+    dispatch({ type: "chat/send-start", question });
 
     try {
       const response = await askQuestion({
-        documentId,
-        conversationId,
+        documentId: state.documentId,
+        conversationId: state.conversationId,
         message: question
       });
-      setMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
+      dispatch({ type: "chat/send-success", answer: response.answer });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
-      setError(message);
-    } finally {
-      setIsAssistantTyping(false);
+      dispatch({ type: "chat/send-failure", error: message });
     }
-  }, [conversationId, documentId]);
+  }, [state.conversationId, state.documentId]);
 
   return {
     state: {
-      documentId,
-      conversationId,
-      documentMeta,
-      documents,
+      ...state,
       filteredDocuments,
-      messages,
-      error,
-      resetSignal,
-      view,
-      transitionMode,
-      loadingDocuments,
-      busyDocumentId,
-      isSidebarOpen,
-      isSearchOpen,
-      isSearchClosing,
-      searchQuery,
-      documentToDelete,
-      isDeletingDocument,
-      isAssistantTyping
     },
     actions: {
-      setSearchQuery,
-      toggleSidebar: () => setIsSidebarOpen((value) => !value),
+      setSearchQuery: (query: string) => dispatch({ type: "search/set-query", query }),
+      toggleSidebar: () => dispatch({ type: "sidebar/toggle" }),
       openSearch,
       closeSearch,
       handleUploaded,
