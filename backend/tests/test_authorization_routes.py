@@ -14,6 +14,25 @@ from backend.routers.documents import delete_user_document
 
 
 class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_list_conversations_allows_missing_document_filter(self):
+        with (
+            patch(
+                "backend.routers.conversations.require_user_document",
+                side_effect=HTTPException(status_code=404, detail="Document not found."),
+            ),
+            patch(
+                "backend.routers.conversations.list_user_conversations",
+                return_value=[],
+            ) as list_user_conversations_mock,
+        ):
+            response = await get_user_conversations(document_id="doc-missing", user_id="user-a")
+
+        self.assertEqual(response.conversations, [])
+        list_user_conversations_mock.assert_called_once_with(
+            user_id="user-a",
+            document_id="doc-missing",
+        )
+
     async def test_list_conversations_rejects_cross_user_document_filter(self):
         with patch(
             "backend.routers.conversations.require_user_document",

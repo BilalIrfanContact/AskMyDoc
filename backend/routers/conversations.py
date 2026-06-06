@@ -24,7 +24,11 @@ async def get_user_conversations(
     user_id: str = Depends(require_authenticated_user),
 ):
     if document_id:
-        require_user_document(document_id=document_id, user_id=user_id)
+        try:
+            require_user_document(document_id=document_id, user_id=user_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
 
     try:
         conversations = list_user_conversations(user_id=user_id, document_id=document_id)
