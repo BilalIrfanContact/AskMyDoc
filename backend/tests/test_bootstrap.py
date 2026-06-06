@@ -5,6 +5,7 @@ from importlib import import_module
 from unittest.mock import patch
 
 from backend.bootstrap import apply_runtime_defaults, initialize_backend_environment
+from backend.services import vector_store
 
 
 class BootstrapTestCase(unittest.TestCase):
@@ -57,6 +58,12 @@ class BootstrapTestCase(unittest.TestCase):
 
         initialize_mock.assert_called_once_with()
         sys.modules.pop("backend.main", None)
+
+    def test_disable_chroma_telemetry_applies_runtime_defaults(self):
+        with patch("backend.services.vector_store.apply_runtime_defaults") as defaults_mock:
+            vector_store._disable_chroma_telemetry()
+
+        defaults_mock.assert_called_once_with()
 
 
 if __name__ == "__main__":
