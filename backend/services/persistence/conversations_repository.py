@@ -37,6 +37,22 @@ def get_user_conversation(conversation_id: str, user_id: str) -> Dict[str, Any] 
     return (response.data or [None])[0]
 
 
+def get_conversation(conversation_id: str) -> Dict[str, Any] | None:
+    try:
+        response = (
+            get_postgrest_client()
+            .from_("conversations")
+            .select("id, user_id, document_id, created_at")
+            .eq("id", conversation_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise map_persistence_error("Failed to load conversation", exc) from exc
+
+    return (response.data or [None])[0]
+
+
 def list_user_conversations(user_id: str, document_id: str | None = None) -> List[Dict[str, Any]]:
     try:
         query = (
