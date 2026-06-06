@@ -1,18 +1,10 @@
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
+from .bootstrap import initialize_backend_environment
 
-# Disable Chroma telemetry early to avoid noisy capture() errors.
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
-os.environ.setdefault("CHROMA_TELEMETRY", "false")
-os.environ.setdefault("CHROMA_ENABLE_TELEMETRY", "false")
-os.environ.setdefault("POSTHOG_DISABLED", "1")
+initialize_backend_environment()
 
 from .routers import chat, conversations, documents, upload
-
-load_dotenv()
 
 app = FastAPI(title="AskMyDoc")
 
