@@ -34,6 +34,7 @@ class UploadLifecycleResult:
 
         return UploadResponse(
             status="success",
+            lifecycle_status="ready",
             document_id=self.document_id,
             chunk_count=self.chunk_count,
             stored_count=self.stored_count,
@@ -43,7 +44,15 @@ class UploadLifecycleResult:
         if self.status == "completed":
             raise ValueError("Completed upload lifecycle results cannot be converted to errors.")
 
-        return HTTPException(status_code=self.http_status, detail=self.detail or "Upload failed.")
+        return HTTPException(status_code=self.http_status, detail=self.to_error_detail())
+
+    def to_error_detail(self) -> dict[str, str]:
+        return {
+            "message": self.detail or "Upload failed.",
+            "lifecycle_status": "rejected" if self.status == "rejected" else "failed",
+            "failure_stage": self.failure_stage or "validation",
+            "cleanup_status": self.cleanup_status,
+        }
 
 
 def _cleanup_failed_upload(document_id: str, storage_url: str | None = None) -> UploadCleanupStatus:

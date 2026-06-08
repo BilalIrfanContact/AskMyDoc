@@ -30,6 +30,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.chunk_count, 2)
         self.assertEqual(result.stored_count, 2)
         self.assertEqual(result.cleanup_status, "not-needed")
+        self.assertEqual(result.to_response().lifecycle_status, "ready")
         insert_document_mock.assert_called_once_with(
             document_id="doc-1",
             user_id="user-a",
@@ -61,6 +62,15 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.http_status, 502)
         self.assertEqual(result.cleanup_status, "completed")
         self.assertEqual(result.detail, "Failed to upload PDF to Supabase Storage")
+        self.assertEqual(
+            result.to_error_detail(),
+            {
+                "message": "Failed to upload PDF to Supabase Storage",
+                "lifecycle_status": "failed",
+                "failure_stage": "storage",
+                "cleanup_status": "completed",
+            },
+        )
         delete_vector_store_mock.assert_called_once_with("doc-1")
 
     async def test_upload_document_cleans_up_storage_and_index_when_metadata_persist_fails(self):
