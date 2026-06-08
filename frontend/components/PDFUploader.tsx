@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { uploadPdf } from "../lib/api";
+import { UploadFlowError, uploadPdf } from "../lib/api";
 
 type PDFUploaderProps = {
   onUploaded: (
@@ -11,7 +11,7 @@ type PDFUploaderProps = {
   resetSignal: number;
 };
 
-type UploadStage = "idle" | "uploading" | "ready" | "error";
+type UploadStage = "idle" | "uploading" | "finalizing" | "ready" | "error";
 
 export default function PDFUploader({
   onUploaded,
@@ -52,13 +52,20 @@ export default function PDFUploader({
     try {
       setLoading(true);
       setStage("uploading");
-      setFileInfo({ name: file.name, size: formatBytes(file.size) });
-      setStatus("Uploading and indexing your PDF...");
+      const nextFileInfo = { name: file.name, size: formatBytes(file.size) };
+      setFileInfo(nextFileInfo);
+      setStatus("Uploading your PDF...");
 
       const response = await uploadPdf(file);
+      setStage("finalizing");
+      setStatus(
+        response.lifecycle_status === "ready"
+          ? "Indexing complete. Preparing your chat workspace..."
+          : "Preparing your document..."
+      );
       await onUploaded(response.document_id, {
         fileName: file.name,
-        fileSize: formatBytes(file.size),
+        fileSize: nextFileInfo.size,
         chunkCount: response.chunk_count,
         storedCount: response.stored_count
       });
@@ -66,7 +73,7 @@ export default function PDFUploader({
       setStage("ready");
       setStatus("PDF indexed and ready for questions.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Upload failed.";
+      const message = getUploadErrorMessage(error);
       setStatus(message);
       setStage("error");
     } finally {
@@ -99,7 +106,7 @@ export default function PDFUploader({
           </div>
         </button>
 
-        {stage === "uploading" ? (
+        {stage === "uploading" || stage === "finalizing" ? (
           <div className="upload-progress-container">
             <div className="upload-progress-fill" />
           </div>
@@ -125,10 +132,12 @@ export default function PDFUploader({
         </button>
       </div>
 
-      {stage === "uploading" ? (
+      {stage === "uploading" || stage === "finalizing" ? (
         <div className="loader-container">
           <div className="spinner" />
-          <span className="loader-text">Analyzing your document...</span>
+          <span className="loader-text">
+            {stage === "uploading" ? "Uploading and indexing your document..." : "Preparing your chat workspace..."}
+          </span>
         </div>
       ) : null}
 
@@ -160,4 +169,27 @@ export default function PDFUploader({
       ) : null}
     </div>
   );
+}
+
+function getUploadErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Upload failed.";
+  }
+
+  if (!(error instanceof UploadFlowError)) {
+    return error.message;
+  }
+
+  if (error.failureStage === "storage" || error.failureStage === "metadata") {
+    const recoveryNote =
+      error.cleanupStatus === "completed"
+        ? " Partial upload data was rolled back."
+        : error.cleanupStatus === "failed"
+          ? " Cleanup may be incomplete. Retry once and remove any partial document entry if it appears."
+          : "";
+
+    return `${error.message}${recoveryNote}`;
+  }
+
+  return error.message;
 }
