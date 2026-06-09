@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useReducer } from "react";
 import {
   askQuestion,
   createConversation,
+  DeleteFlowError,
   deleteUserDocument,
   getConversationMessages,
   getUserConversations,
@@ -149,7 +150,7 @@ export function useHomeWorkspace() {
 
       dispatch({ type: "delete/success", documentId: state.documentToDelete.id });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete document.";
+      const message = getDeleteErrorMessage(err);
       dispatch({ type: "delete/failure", error: message });
     }
   }, [handleClear, state.documentId, state.documentToDelete]);
@@ -200,4 +201,31 @@ export function useHomeWorkspace() {
       }
     }
   };
+}
+
+function getDeleteErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Failed to delete document.";
+  }
+
+  if (!(error instanceof DeleteFlowError)) {
+    return error.message;
+  }
+
+  const recoveryNote =
+    error.cleanupStatus === "not-started"
+      ? " No cleanup steps were applied."
+      : error.cleanupStatus === "partial"
+        ? " Some cleanup steps already ran. Retry delete to finish removing the document."
+        : "";
+
+  if (error.failureStage === "indexing") {
+    return `${error.message}${recoveryNote} The document will remain visible until cleanup completes.`;
+  }
+
+  if (error.failureStage === "storage" || error.failureStage === "metadata") {
+    return `${error.message}${recoveryNote} The document may still appear until deletion finishes.`;
+  }
+
+  return `${error.message}${recoveryNote}`;
 }

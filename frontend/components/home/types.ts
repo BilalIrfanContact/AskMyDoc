@@ -46,5 +46,6 @@ export type WorkspaceState = {
   searchQuery: string;
   documentToDelete: PersistedDocument | null;
   isDeletingDocument: boolean;
+  deleteError: string | null;
   isAssistantTyping: boolean;
 };
