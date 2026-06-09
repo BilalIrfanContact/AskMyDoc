@@ -152,7 +152,10 @@ export function useHomeWorkspace() {
     } catch (err) {
       if (
         err instanceof DeleteFlowError &&
-        (err.failureStage === "conversations" || err.failureStage === "indexing")
+        (
+          err.reasonCode === "conversation_cleanup_failed" ||
+          err.reasonCode === "indexing_cleanup_failed"
+        )
       ) {
         if (state.documentId === state.documentToDelete.id) {
           handleClear();
@@ -226,20 +229,28 @@ function getDeleteErrorMessage(error: unknown) {
     error.cleanupStatus === "not-started"
       ? " No cleanup steps were applied."
       : error.cleanupStatus === "partial"
-        ? error.failureStage === "conversations" || error.failureStage === "indexing"
+        ? error.reasonCode === "conversation_cleanup_failed" ||
+          error.reasonCode === "indexing_cleanup_failed"
           ? " The document has already been removed from the workspace."
           : " Some cleanup steps already ran. Retry delete to finish removing the document."
         : "";
 
-  if (error.failureStage === "conversations") {
+  if (error.reasonCode === "conversation_lookup_failed") {
+    return `${error.message}${recoveryNote} Delete did not start, so the document should still be visible.`;
+  }
+
+  if (error.reasonCode === "conversation_cleanup_failed") {
     return `${error.message}${recoveryNote} The document was removed, but chat cleanup is still incomplete.`;
   }
 
-  if (error.failureStage === "indexing") {
+  if (error.reasonCode === "indexing_cleanup_failed") {
     return `${error.message}${recoveryNote} The document was removed, but retrieval cleanup is still incomplete.`;
   }
 
-  if (error.failureStage === "storage" || error.failureStage === "metadata") {
+  if (
+    error.reasonCode === "storage_delete_failed" ||
+    error.reasonCode === "metadata_delete_failed"
+  ) {
     return `${error.message}${recoveryNote} The document may still appear until deletion finishes.`;
   }
 

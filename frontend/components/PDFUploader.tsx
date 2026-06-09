@@ -190,7 +190,10 @@ function getUploadErrorMessage(error: unknown) {
     return error.message;
   }
 
-  if (error.failureStage === "storage" || error.failureStage === "metadata") {
+  if (
+    error.reasonCode === "storage_upload_failed" ||
+    error.reasonCode === "metadata_persist_failed"
+  ) {
     const recoveryNote =
       error.cleanupStatus === "completed"
         ? " Partial upload data was rolled back."
@@ -199,6 +202,10 @@ function getUploadErrorMessage(error: unknown) {
           : "";
 
     return `${error.message}${recoveryNote}`;
+  }
+
+  if (error.reasonCode === "no_chunks_stored") {
+    return "Document indexing did not store any chunks. Check the embedding configuration and try again.";
   }
 
   return error.message;

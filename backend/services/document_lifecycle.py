@@ -20,9 +20,25 @@ from .vector_store import build_vector_store, delete_vector_store
 UploadFailureStage = Literal["validation", "indexing", "storage", "metadata"]
 UploadCleanupStatus = Literal["not-needed", "completed", "failed"]
 UploadLifecycleStatus = Literal["completed", "rejected", "failed"]
+UploadReasonCode = Literal[
+    "invalid_file_type",
+    "no_extractable_text",
+    "no_usable_chunks",
+    "indexing_failed",
+    "no_chunks_stored",
+    "storage_upload_failed",
+    "metadata_persist_failed",
+]
 DeleteFailureStage = Literal["conversations", "indexing", "storage", "metadata"]
 DeleteCleanupStatus = Literal["not-started", "partial", "completed"]
 DeleteLifecycleStatus = Literal["completed", "failed"]
+DeleteReasonCode = Literal[
+    "conversation_lookup_failed",
+    "storage_delete_failed",
+    "metadata_delete_failed",
+    "conversation_cleanup_failed",
+    "indexing_cleanup_failed",
+]
 
 
 @dataclass(frozen=True)
@@ -34,6 +50,7 @@ class UploadLifecycleResult:
     stored_count: int = 0
     detail: str | None = None
     failure_stage: UploadFailureStage | None = None
+    reason_code: UploadReasonCode | None = None
     cleanup_status: UploadCleanupStatus = "not-needed"
 
     def to_response(self) -> UploadResponse:
@@ -59,6 +76,7 @@ class UploadLifecycleResult:
             "message": self.detail or "Upload failed.",
             "lifecycle_status": "rejected" if self.status == "rejected" else "failed",
             "failure_stage": self.failure_stage or "validation",
+            "reason_code": self.reason_code or "invalid_file_type",
             "cleanup_status": self.cleanup_status,
         }
 
@@ -69,6 +87,7 @@ class DeleteLifecycleResult:
     http_status: int
     detail: str | None = None
     failure_stage: DeleteFailureStage | None = None
+    reason_code: DeleteReasonCode | None = None
     cleanup_status: DeleteCleanupStatus = "not-started"
 
     def to_response(self) -> DeleteDocumentResponse:
@@ -92,6 +111,7 @@ class DeleteLifecycleResult:
             "message": self.detail or "Delete failed.",
             "lifecycle_status": "failed",
             "failure_stage": self.failure_stage or "metadata",
+            "reason_code": self.reason_code or "metadata_delete_failed",
             "cleanup_status": self.cleanup_status,
         }
 
@@ -117,6 +137,7 @@ def _delete_failure(
     *,
     detail: str,
     failure_stage: DeleteFailureStage,
+    reason_code: DeleteReasonCode,
     cleanup_status: DeleteCleanupStatus,
     http_status: int = 502,
 ) -> DeleteLifecycleResult:
@@ -125,6 +146,7 @@ def _delete_failure(
         http_status=http_status,
         detail=detail,
         failure_stage=failure_stage,
+        reason_code=reason_code,
         cleanup_status=cleanup_status,
     )
 
@@ -136,6 +158,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             http_status=400,
             detail="Only PDF files are supported.",
             failure_stage="validation",
+            reason_code="invalid_file_type",
         )
 
     data = await file.read()
@@ -147,6 +170,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             http_status=400,
             detail="No extractable text found in the PDF.",
             failure_stage="validation",
+            reason_code="no_extractable_text",
         )
 
     chunks = [chunk.strip() for chunk in chunk_text(text) if chunk and chunk.strip()]
@@ -156,6 +180,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             http_status=400,
             detail="No usable text chunks were created from the PDF.",
             failure_stage="validation",
+            reason_code="no_usable_chunks",
         )
 
     document_id = str(uuid.uuid4())
@@ -174,6 +199,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             chunk_count=len(chunks),
             detail=detail,
             failure_stage="indexing",
+            reason_code="indexing_failed",
             cleanup_status=cleanup_status,
         )
 
@@ -190,6 +216,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             chunk_count=len(chunks),
             detail=detail,
             failure_stage="indexing",
+            reason_code="no_chunks_stored",
             cleanup_status=cleanup_status,
         )
 
@@ -216,6 +243,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             stored_count=stored_count,
             detail=detail,
             failure_stage="storage",
+            reason_code="storage_upload_failed",
             cleanup_status=cleanup_status,
         )
 
@@ -240,6 +268,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             stored_count=stored_count,
             detail=detail,
             failure_stage="metadata",
+            reason_code="metadata_persist_failed",
             cleanup_status=cleanup_status,
         )
 
@@ -259,6 +288,7 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
         return _delete_failure(
             detail=str(exc),
             failure_stage="conversations",
+            reason_code="conversation_lookup_failed",
             cleanup_status="not-started",
         )
 
@@ -269,6 +299,7 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
             return _delete_failure(
                 detail=str(exc),
                 failure_stage="storage",
+                reason_code="storage_delete_failed",
                 cleanup_status="partial",
             )
 
@@ -279,6 +310,7 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
         return _delete_failure(
             detail=str(exc),
             failure_stage="metadata",
+            reason_code="metadata_delete_failed",
             cleanup_status="partial",
         )
 
@@ -290,6 +322,7 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
         return _delete_failure(
             detail=str(exc),
             failure_stage="conversations",
+            reason_code="conversation_cleanup_failed",
             cleanup_status="partial",
         )
 
@@ -299,6 +332,7 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
         return _delete_failure(
             detail=str(exc) or "Failed to delete indexed document chunks.",
             failure_stage="indexing",
+            reason_code="indexing_cleanup_failed",
             cleanup_status="partial",
             http_status=500,
         )

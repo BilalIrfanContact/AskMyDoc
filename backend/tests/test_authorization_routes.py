@@ -163,6 +163,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
                 "message": "Failed to delete PDF from Supabase Storage",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
+                "reason_code": "storage_delete_failed",
                 "cleanup_status": "partial",
             },
         )
@@ -187,6 +188,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
                 "message": "Failed to delete PDF from Supabase Storage",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
+                "reason_code": "storage_delete_failed",
                 "cleanup_status": "partial",
             },
         )
