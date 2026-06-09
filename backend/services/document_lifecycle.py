@@ -102,15 +102,38 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
         )
 
     document_id = str(uuid.uuid4())
-    stored_count = build_vector_store(document_id=document_id, chunks=chunks)
-    if stored_count == 0:
+    try:
+        stored_count = build_vector_store(document_id=document_id, chunks=chunks)
+    except Exception as exc:
+        cleanup_status = _cleanup_failed_upload(document_id)
+        detail = str(exc) or "Failed to index document chunks."
+        if cleanup_status == "failed":
+            detail = f"{detail} Cleanup may be required for partially indexed chunks."
+
         return UploadLifecycleResult(
             status="failed",
             http_status=500,
             document_id=document_id,
             chunk_count=len(chunks),
-            detail="Chunks were created but not stored. Check OpenAI key and embedding setup.",
+            detail=detail,
             failure_stage="indexing",
+            cleanup_status=cleanup_status,
+        )
+
+    if stored_count == 0:
+        cleanup_status = _cleanup_failed_upload(document_id)
+        detail = "Chunks were created but not stored. Check OpenAI key and embedding setup."
+        if cleanup_status == "failed":
+            detail = f"{detail} Cleanup may be required for partially indexed chunks."
+
+        return UploadLifecycleResult(
+            status="failed",
+            http_status=500,
+            document_id=document_id,
+            chunk_count=len(chunks),
+            detail=detail,
+            failure_stage="indexing",
+            cleanup_status=cleanup_status,
         )
 
     filename = file.filename or "document.pdf"

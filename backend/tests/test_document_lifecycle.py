@@ -73,6 +73,31 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         )
         delete_vector_store_mock.assert_called_once_with("doc-1")
 
+    async def test_upload_document_returns_structured_failure_when_indexing_raises(self):
+        file = AsyncMock()
+        file.content_type = "application/pdf"
+        file.filename = "report.pdf"
+        file.read.return_value = b"%PDF"
+
+        with (
+            patch("backend.services.document_lifecycle.extract_text_from_pdf", return_value="alpha beta"),
+            patch("backend.services.document_lifecycle.chunk_text", return_value=["alpha", "beta"]),
+            patch(
+                "backend.services.document_lifecycle.build_vector_store",
+                side_effect=RuntimeError("Embedding provider unavailable"),
+            ),
+            patch("backend.services.document_lifecycle.delete_vector_store") as delete_vector_store_mock,
+            patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
+        ):
+            result = await upload_document(file=file, user_id="user-a")
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failure_stage, "indexing")
+        self.assertEqual(result.http_status, 500)
+        self.assertEqual(result.cleanup_status, "completed")
+        self.assertEqual(result.detail, "Embedding provider unavailable")
+        delete_vector_store_mock.assert_called_once_with("doc-1")
+
     async def test_upload_document_cleans_up_storage_and_index_when_metadata_persist_fails(self):
         file = AsyncMock()
         file.content_type = "application/pdf"
