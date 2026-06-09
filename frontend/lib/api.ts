@@ -16,13 +16,28 @@ async function getErrorMessage(res: Response, fallback: string) {
 type UploadLifecycleStatus = "ready" | "failed" | "rejected";
 type UploadFailureStage = "validation" | "indexing" | "storage" | "metadata";
 type UploadCleanupStatus = "not-needed" | "completed" | "failed";
+type UploadReasonCode =
+  | "invalid_file_type"
+  | "no_extractable_text"
+  | "no_usable_chunks"
+  | "indexing_failed"
+  | "no_chunks_stored"
+  | "storage_upload_failed"
+  | "metadata_persist_failed";
 type DeleteLifecycleStatus = "deleted" | "failed";
 type DeleteFailureStage = "conversations" | "indexing" | "storage" | "metadata";
 type DeleteCleanupStatus = "not-started" | "partial" | "completed";
+type DeleteReasonCode =
+  | "conversation_lookup_failed"
+  | "storage_delete_failed"
+  | "metadata_delete_failed"
+  | "conversation_cleanup_failed"
+  | "indexing_cleanup_failed";
 
 export class UploadFlowError extends Error {
   lifecycleStatus: UploadLifecycleStatus;
   failureStage: UploadFailureStage | null;
+  reasonCode: UploadReasonCode | null;
   cleanupStatus: UploadCleanupStatus | null;
 
   constructor(
@@ -30,6 +45,7 @@ export class UploadFlowError extends Error {
     options?: {
       lifecycleStatus?: UploadLifecycleStatus;
       failureStage?: UploadFailureStage | null;
+      reasonCode?: UploadReasonCode | null;
       cleanupStatus?: UploadCleanupStatus | null;
     }
   ) {
@@ -37,6 +53,7 @@ export class UploadFlowError extends Error {
     this.name = "UploadFlowError";
     this.lifecycleStatus = options?.lifecycleStatus ?? "failed";
     this.failureStage = options?.failureStage ?? null;
+    this.reasonCode = options?.reasonCode ?? null;
     this.cleanupStatus = options?.cleanupStatus ?? null;
   }
 }
@@ -44,6 +61,7 @@ export class UploadFlowError extends Error {
 export class DeleteFlowError extends Error {
   lifecycleStatus: DeleteLifecycleStatus;
   failureStage: DeleteFailureStage | null;
+  reasonCode: DeleteReasonCode | null;
   cleanupStatus: DeleteCleanupStatus | null;
 
   constructor(
@@ -51,6 +69,7 @@ export class DeleteFlowError extends Error {
     options?: {
       lifecycleStatus?: DeleteLifecycleStatus;
       failureStage?: DeleteFailureStage | null;
+      reasonCode?: DeleteReasonCode | null;
       cleanupStatus?: DeleteCleanupStatus | null;
     }
   ) {
@@ -58,6 +77,7 @@ export class DeleteFlowError extends Error {
     this.name = "DeleteFlowError";
     this.lifecycleStatus = options?.lifecycleStatus ?? "failed";
     this.failureStage = options?.failureStage ?? null;
+    this.reasonCode = options?.reasonCode ?? null;
     this.cleanupStatus = options?.cleanupStatus ?? null;
   }
 }
@@ -112,6 +132,16 @@ export async function uploadPdf(file: File) {
             detail.failure_stage === "storage" ||
             detail.failure_stage === "metadata"
               ? detail.failure_stage
+              : null,
+          reasonCode:
+            detail.reason_code === "invalid_file_type" ||
+            detail.reason_code === "no_extractable_text" ||
+            detail.reason_code === "no_usable_chunks" ||
+            detail.reason_code === "indexing_failed" ||
+            detail.reason_code === "no_chunks_stored" ||
+            detail.reason_code === "storage_upload_failed" ||
+            detail.reason_code === "metadata_persist_failed"
+              ? detail.reason_code
               : null,
           cleanupStatus:
             detail.cleanup_status === "not-needed" ||
@@ -183,6 +213,14 @@ export async function deleteUserDocument(documentId: string) {
             detail.failure_stage === "storage" ||
             detail.failure_stage === "metadata"
               ? detail.failure_stage
+              : null,
+          reasonCode:
+            detail.reason_code === "conversation_lookup_failed" ||
+            detail.reason_code === "storage_delete_failed" ||
+            detail.reason_code === "metadata_delete_failed" ||
+            detail.reason_code === "conversation_cleanup_failed" ||
+            detail.reason_code === "indexing_cleanup_failed"
+              ? detail.reason_code
               : null,
           cleanupStatus:
             detail.cleanup_status === "not-started" ||
