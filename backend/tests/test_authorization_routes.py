@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
@@ -153,6 +153,42 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             exc.exception.detail,
             "You are not authorized to access this document.",
+        )
+
+    async def test_delete_document_returns_structured_lifecycle_failure(self):
+        failed_result = Mock(status="failed")
+        failed_result.to_http_exception.return_value = HTTPException(
+            status_code=502,
+            detail={
+                "message": "Failed to delete PDF from Supabase Storage",
+                "lifecycle_status": "failed",
+                "failure_stage": "storage",
+                "cleanup_status": "partial",
+            },
+        )
+
+        with (
+            patch(
+                "backend.routers.documents.require_user_document",
+                return_value={"id": "doc-a", "user_id": "user-a", "storage_url": "pdfs/user-a/doc-a/file.pdf"},
+            ),
+            patch(
+                "backend.routers.documents.delete_document_lifecycle",
+                return_value=failed_result,
+            ),
+        ):
+            with self.assertRaises(HTTPException) as exc:
+                await delete_user_document(document_id="doc-a", user_id="user-a")
+
+        self.assertEqual(exc.exception.status_code, 502)
+        self.assertEqual(
+            exc.exception.detail,
+            {
+                "message": "Failed to delete PDF from Supabase Storage",
+                "lifecycle_status": "failed",
+                "failure_stage": "storage",
+                "cleanup_status": "partial",
+            },
         )
 
 
