@@ -1,7 +1,7 @@
 import ChatInput from "../ChatInput";
 import ChatWindow from "../ChatWindow";
 import PDFUploader from "../PDFUploader";
-import type { DocumentMeta, Message, TransitionMode, ViewState } from "./types";
+import type { DocumentMeta, Message, TransitionMode, UploadBootstrapResult, ViewState } from "./types";
 
 type HomeWorkspaceProps = {
   greeting: string;
@@ -17,7 +17,7 @@ type HomeWorkspaceProps = {
   onUploaded: (
     documentId: string,
     meta: { fileName: string; fileSize: string; chunkCount: number; storedCount: number }
-  ) => Promise<void>;
+  ) => Promise<UploadBootstrapResult>;
   onClear: () => void;
   onSend: (question: string) => Promise<void>;
 };

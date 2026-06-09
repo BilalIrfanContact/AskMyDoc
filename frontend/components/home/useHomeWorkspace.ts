@@ -11,7 +11,7 @@ import {
   getUserDocuments,
   type PersistedDocument
 } from "../../lib/api";
-import type { UploadMeta, WorkspaceState } from "./types";
+import type { UploadBootstrapResult, UploadMeta, WorkspaceState } from "./types";
 import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 
 function waitForTransition() {
@@ -70,16 +70,22 @@ export function useHomeWorkspace() {
     dispatch({ type: "workflow/upload-start", documentId: id, documentMeta: meta });
 
     try {
-      const [conversation] = await Promise.all([createConversation(id), waitForTransition()]);
       await refreshDocuments();
+      const [conversation] = await Promise.all([createConversation(id), waitForTransition()]);
       dispatch({
         type: "workflow/chat-ready",
         conversationId: conversation.conversation_id,
         messages: []
       });
+      return { status: "ready" } satisfies UploadBootstrapResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to prepare conversation.";
-      dispatch({ type: "workflow/failure", error: message });
+      const recoveryMessage = `${message} The document was uploaded successfully. Select it from the sidebar to try again.`;
+      dispatch({ type: "workflow/bootstrap-failure", error: recoveryMessage });
+      return {
+        status: "document-ready",
+        message: recoveryMessage
+      } satisfies UploadBootstrapResult;
     }
   }, [refreshDocuments]);
 

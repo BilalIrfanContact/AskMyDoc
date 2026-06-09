@@ -2,7 +2,40 @@ const API_BASE = "/api";
 
 async function getErrorMessage(res: Response, fallback: string) {
   const error = await res.json().catch(() => ({ detail: fallback }));
-  return error.detail || fallback;
+  if (typeof error?.detail === "string") {
+    return error.detail;
+  }
+
+  if (typeof error?.detail?.message === "string") {
+    return error.detail.message;
+  }
+
+  return fallback;
+}
+
+type UploadLifecycleStatus = "ready" | "failed" | "rejected";
+type UploadFailureStage = "validation" | "indexing" | "storage" | "metadata";
+type UploadCleanupStatus = "not-needed" | "completed" | "failed";
+
+export class UploadFlowError extends Error {
+  lifecycleStatus: UploadLifecycleStatus;
+  failureStage: UploadFailureStage | null;
+  cleanupStatus: UploadCleanupStatus | null;
+
+  constructor(
+    message: string,
+    options?: {
+      lifecycleStatus?: UploadLifecycleStatus;
+      failureStage?: UploadFailureStage | null;
+      cleanupStatus?: UploadCleanupStatus | null;
+    }
+  ) {
+    super(message);
+    this.name = "UploadFlowError";
+    this.lifecycleStatus = options?.lifecycleStatus ?? "failed";
+    this.failureStage = options?.failureStage ?? null;
+    this.cleanupStatus = options?.cleanupStatus ?? null;
+  }
 }
 
 export type PersistedDocument = {
@@ -38,11 +71,40 @@ export async function uploadPdf(file: File) {
   });
 
   if (!res.ok) {
-    throw new Error(await getErrorMessage(res, "Upload failed."));
+    const error = await res.json().catch(() => ({ detail: { message: "Upload failed." } }));
+    const detail = error?.detail;
+
+    if (detail && typeof detail === "object") {
+      throw new UploadFlowError(
+        typeof detail.message === "string" ? detail.message : "Upload failed.",
+        {
+          lifecycleStatus:
+            detail.lifecycle_status === "rejected" || detail.lifecycle_status === "failed"
+              ? detail.lifecycle_status
+              : "failed",
+          failureStage:
+            detail.failure_stage === "validation" ||
+            detail.failure_stage === "indexing" ||
+            detail.failure_stage === "storage" ||
+            detail.failure_stage === "metadata"
+              ? detail.failure_stage
+              : null,
+          cleanupStatus:
+            detail.cleanup_status === "not-needed" ||
+            detail.cleanup_status === "completed" ||
+            detail.cleanup_status === "failed"
+              ? detail.cleanup_status
+              : null
+        }
+      );
+    }
+
+    throw new UploadFlowError(typeof detail === "string" ? detail : "Upload failed.");
   }
 
   return res.json() as Promise<{
     status: string;
+    lifecycle_status: "ready";
     document_id: string;
     chunk_count: number;
     stored_count: number;
