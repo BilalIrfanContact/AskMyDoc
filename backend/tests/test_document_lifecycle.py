@@ -195,12 +195,12 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             call_order,
             [
+                "storage",
+                "metadata",
                 "message:convo-1",
                 "message:convo-2",
                 "conversations",
                 "index",
-                "storage",
-                "metadata",
             ],
         )
         self.assertEqual(result.to_response().lifecycle_status, "deleted")

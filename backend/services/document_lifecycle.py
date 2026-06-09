@@ -262,6 +262,26 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
             cleanup_status="not-started",
         )
 
+    if storage_url:
+        try:
+            delete_storage_object(storage_url)
+        except PersistenceError as exc:
+            return _delete_failure(
+                detail=str(exc),
+                failure_stage="storage",
+                cleanup_status="partial",
+            )
+
+    # Delete metadata last so failed cleanup remains visible and retryable.
+    try:
+        delete_document_record(document_id=document_id, user_id=user_id)
+    except PersistenceError as exc:
+        return _delete_failure(
+            detail=str(exc),
+            failure_stage="metadata",
+            cleanup_status="partial",
+        )
+
     try:
         for conversation_id in conversation_ids:
             delete_messages_for_conversation(conversation_id)
@@ -281,26 +301,6 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
             failure_stage="indexing",
             cleanup_status="partial",
             http_status=500,
-        )
-
-    if storage_url:
-        try:
-            delete_storage_object(storage_url)
-        except PersistenceError as exc:
-            return _delete_failure(
-                detail=str(exc),
-                failure_stage="storage",
-                cleanup_status="partial",
-            )
-
-    # Delete metadata last so failed cleanup remains visible and retryable.
-    try:
-        delete_document_record(document_id=document_id, user_id=user_id)
-    except PersistenceError as exc:
-        return _delete_failure(
-            detail=str(exc),
-            failure_stage="metadata",
-            cleanup_status="partial",
         )
 
     return DeleteLifecycleResult(
