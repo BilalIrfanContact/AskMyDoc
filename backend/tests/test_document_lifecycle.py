@@ -68,6 +68,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
                 "message": "Failed to upload PDF to Supabase Storage",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
+                "reason_code": "storage_upload_failed",
                 "cleanup_status": "completed",
             },
         )
@@ -93,6 +94,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "indexing")
+        self.assertEqual(result.reason_code, "indexing_failed")
         self.assertEqual(result.http_status, 500)
         self.assertEqual(result.cleanup_status, "completed")
         self.assertEqual(result.detail, "Embedding provider unavailable")
@@ -124,6 +126,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "metadata")
+        self.assertEqual(result.reason_code, "metadata_persist_failed")
         self.assertEqual(result.http_status, 502)
         self.assertEqual(result.cleanup_status, "completed")
         self.assertEqual(result.detail, "Failed to persist document metadata")
@@ -143,6 +146,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "rejected")
         self.assertEqual(result.failure_stage, "validation")
+        self.assertEqual(result.reason_code, "invalid_file_type")
         self.assertEqual(result.http_status, 400)
         self.assertEqual(result.detail, "Only PDF files are supported.")
         extract_text_mock.assert_not_called()
@@ -214,6 +218,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "conversations")
+        self.assertEqual(result.reason_code, "conversation_lookup_failed")
         self.assertEqual(result.cleanup_status, "not-started")
         self.assertEqual(result.http_status, 502)
 
@@ -247,6 +252,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
                 "message": "Failed to delete PDF from Supabase Storage",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
+                "reason_code": "storage_delete_failed",
                 "cleanup_status": "partial",
             },
         )

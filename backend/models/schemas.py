@@ -1,11 +1,11 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 
 class UploadResponse(BaseModel):
-    status: str
-    lifecycle_status: str = Field(..., description="Lifecycle state for the upload flow")
+    status: Literal["success"]
+    lifecycle_status: Literal["ready"] = Field(..., description="Lifecycle state for the upload flow")
     document_id: str = Field(..., description="UUID for the uploaded document")
     chunk_count: int = Field(..., description="Number of chunks stored for retrieval")
     stored_count: int = Field(..., description="Number of chunks persisted in Chroma")
@@ -66,6 +66,6 @@ class DocumentsResponse(BaseModel):
 
 
 class DeleteDocumentResponse(BaseModel):
-    deleted: bool
-    lifecycle_status: str = Field(..., description="Lifecycle state for the delete flow")
-    cleanup_status: str = Field(..., description="Cleanup outcome for the delete flow")
+    deleted: Literal[True]
+    lifecycle_status: Literal["deleted"] = Field(..., description="Lifecycle state for the delete flow")
+    cleanup_status: Literal["completed"] = Field(..., description="Cleanup outcome for the delete flow")
