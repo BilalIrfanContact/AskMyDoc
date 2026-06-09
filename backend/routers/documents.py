@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import DeleteDocumentResponse, DocumentsResponse
 from ..services.authz import require_user_document
+from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
-from ..services.persistence.documents_repository import delete_document, list_user_documents
-from ..services.vector_store import delete_vector_store
+from ..services.persistence.documents_repository import list_user_documents
 
 router = APIRouter()
 
@@ -25,20 +25,20 @@ async def delete_user_document(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
-    require_user_document(document_id=document_id, user_id=user_id)
+    document = require_user_document(document_id=document_id, user_id=user_id)
 
     try:
-        deleted = delete_document(document_id=document_id, user_id=user_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Document not found.")
+        result = delete_document_lifecycle(
+            document_id=document_id,
+            user_id=user_id,
+            storage_url=document.get("storage_url"),
+        )
     except HTTPException:
         raise
     except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    try:
-        delete_vector_store(document_id=document_id)
-    except Exception:
-        pass
+    if result.status != "completed":
+        raise result.to_http_exception()
 
-    return DeleteDocumentResponse(deleted=True)
+    return result.to_response()
