@@ -23,6 +23,10 @@ export type UploadMeta = {
   storedCount: number;
 };
 
+export type UploadBootstrapResult =
+  | { status: "ready" }
+  | { status: "document-ready"; message: string };
+
 export type WorkspaceState = {
   documentId: string | null;
   conversationId: string | null;

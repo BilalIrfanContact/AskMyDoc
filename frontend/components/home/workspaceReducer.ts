@@ -13,6 +13,7 @@ type WorkspaceAction =
   | { type: "workflow/upload-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/select-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/chat-ready"; conversationId: string; messages: Message[] }
+  | { type: "workflow/bootstrap-failure"; error: string }
   | { type: "workflow/failure"; error: string }
   | { type: "workflow/clear" }
   | { type: "delete/open"; document: PersistedDocument }
@@ -129,6 +130,14 @@ export function workspaceReducer(
         conversationId: action.conversationId,
         messages: action.messages,
         view: "chat",
+        busyDocumentId: null
+      };
+    case "workflow/bootstrap-failure":
+      return {
+        ...state,
+        error: action.error,
+        conversationId: null,
+        view: "upload",
         busyDocumentId: null
       };
     case "workflow/failure":

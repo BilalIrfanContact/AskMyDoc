@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { UploadFlowError, uploadPdf } from "../lib/api";
+import type { UploadBootstrapResult } from "./home/types";
 
 type PDFUploaderProps = {
   onUploaded: (
     documentId: string,
     meta: { fileName: string; fileSize: string; chunkCount: number; storedCount: number }
-  ) => Promise<void>;
+  ) => Promise<UploadBootstrapResult>;
   onClear: () => void;
   activeDocumentId: string | null;
   resetSignal: number;
 };
 
-type UploadStage = "idle" | "uploading" | "finalizing" | "ready" | "error";
+type UploadStage = "idle" | "uploading" | "finalizing" | "ready" | "attention" | "error";
 
 export default function PDFUploader({
   onUploaded,
@@ -63,15 +64,21 @@ export default function PDFUploader({
           ? "Indexing complete. Preparing your chat workspace..."
           : "Preparing your document..."
       );
-      await onUploaded(response.document_id, {
+      const uploadResult = await onUploaded(response.document_id, {
         fileName: file.name,
         fileSize: nextFileInfo.size,
         chunkCount: response.chunk_count,
         storedCount: response.stored_count
       });
 
-      setStage("ready");
-      setStatus("PDF indexed and ready for questions.");
+      if (uploadResult.status === "ready") {
+        setStage("ready");
+        setStatus("PDF indexed and ready for questions.");
+        return;
+      }
+
+      setStage("attention");
+      setStatus(uploadResult.message);
     } catch (error) {
       const message = getUploadErrorMessage(error);
       setStatus(message);
@@ -156,8 +163,11 @@ export default function PDFUploader({
         onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
       />
 
-      {status && stage === "error" ? (
-        <p className="uploader-status" style={{color: 'var(--color-error)', marginTop: '8px'}}>
+      {status && (stage === "error" || stage === "attention") ? (
+        <p
+          className="uploader-status"
+          style={{color: stage === "error" ? 'var(--color-error)' : "var(--color-near-black)", marginTop: '8px'}}
+        >
           {status}
         </p>
       ) : null}
