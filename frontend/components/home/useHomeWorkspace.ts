@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useReducer } from "react";
 import {
   askQuestion,
   createConversation,
+  DeleteFlowError,
   deleteUserDocument,
   getConversationMessages,
   getUserConversations,
@@ -149,10 +150,20 @@ export function useHomeWorkspace() {
 
       dispatch({ type: "delete/success", documentId: state.documentToDelete.id });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete document.";
+      if (
+        err instanceof DeleteFlowError &&
+        (err.failureStage === "conversations" || err.failureStage === "indexing")
+      ) {
+        if (state.documentId === state.documentToDelete.id) {
+          handleClear();
+        }
+        await refreshDocuments();
+      }
+
+      const message = getDeleteErrorMessage(err);
       dispatch({ type: "delete/failure", error: message });
     }
-  }, [handleClear, state.documentId, state.documentToDelete]);
+  }, [handleClear, refreshDocuments, state.documentId, state.documentToDelete]);
 
   const handleSend = useCallback(async (question: string) => {
     if (!state.documentId || !state.conversationId) return;
@@ -200,4 +211,37 @@ export function useHomeWorkspace() {
       }
     }
   };
+}
+
+function getDeleteErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Failed to delete document.";
+  }
+
+  if (!(error instanceof DeleteFlowError)) {
+    return error.message;
+  }
+
+  const recoveryNote =
+    error.cleanupStatus === "not-started"
+      ? " No cleanup steps were applied."
+      : error.cleanupStatus === "partial"
+        ? error.failureStage === "conversations" || error.failureStage === "indexing"
+          ? " The document has already been removed from the workspace."
+          : " Some cleanup steps already ran. Retry delete to finish removing the document."
+        : "";
+
+  if (error.failureStage === "conversations") {
+    return `${error.message}${recoveryNote} The document was removed, but chat cleanup is still incomplete.`;
+  }
+
+  if (error.failureStage === "indexing") {
+    return `${error.message}${recoveryNote} The document was removed, but retrieval cleanup is still incomplete.`;
+  }
+
+  if (error.failureStage === "storage" || error.failureStage === "metadata") {
+    return `${error.message}${recoveryNote} The document may still appear until deletion finishes.`;
+  }
+
+  return `${error.message}${recoveryNote}`;
 }

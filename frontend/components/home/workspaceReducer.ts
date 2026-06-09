@@ -43,6 +43,7 @@ const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
   searchQuery: "",
   documentToDelete: null,
   isDeletingDocument: false,
+  deleteError: null,
   isAssistantTyping: false
 };
 
@@ -162,13 +163,15 @@ export function workspaceReducer(
     case "delete/open":
       return {
         ...state,
-        documentToDelete: action.document
+        documentToDelete: action.document,
+        deleteError: null
       };
     case "delete/start":
       return {
         ...state,
         isDeletingDocument: true,
-        error: null
+        error: null,
+        deleteError: null
       };
     case "delete/success":
       return {
@@ -176,13 +179,14 @@ export function workspaceReducer(
         documents: state.documents.filter((document) => document.id !== action.documentId),
         documentToDelete: null,
         isDeletingDocument: false,
+        deleteError: null,
         isSearchOpen: false,
         isSearchClosing: false
       };
     case "delete/failure":
       return {
         ...state,
-        error: action.error,
+        deleteError: action.error,
         isDeletingDocument: false
       };
     case "delete/close":
@@ -192,7 +196,8 @@ export function workspaceReducer(
 
       return {
         ...state,
-        documentToDelete: null
+        documentToDelete: null,
+        deleteError: null
       };
     case "chat/send-start":
       return {

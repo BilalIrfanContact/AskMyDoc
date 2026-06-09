@@ -16,6 +16,9 @@ async function getErrorMessage(res: Response, fallback: string) {
 type UploadLifecycleStatus = "ready" | "failed" | "rejected";
 type UploadFailureStage = "validation" | "indexing" | "storage" | "metadata";
 type UploadCleanupStatus = "not-needed" | "completed" | "failed";
+type DeleteLifecycleStatus = "deleted" | "failed";
+type DeleteFailureStage = "conversations" | "indexing" | "storage" | "metadata";
+type DeleteCleanupStatus = "not-started" | "partial" | "completed";
 
 export class UploadFlowError extends Error {
   lifecycleStatus: UploadLifecycleStatus;
@@ -32,6 +35,27 @@ export class UploadFlowError extends Error {
   ) {
     super(message);
     this.name = "UploadFlowError";
+    this.lifecycleStatus = options?.lifecycleStatus ?? "failed";
+    this.failureStage = options?.failureStage ?? null;
+    this.cleanupStatus = options?.cleanupStatus ?? null;
+  }
+}
+
+export class DeleteFlowError extends Error {
+  lifecycleStatus: DeleteLifecycleStatus;
+  failureStage: DeleteFailureStage | null;
+  cleanupStatus: DeleteCleanupStatus | null;
+
+  constructor(
+    message: string,
+    options?: {
+      lifecycleStatus?: DeleteLifecycleStatus;
+      failureStage?: DeleteFailureStage | null;
+      cleanupStatus?: DeleteCleanupStatus | null;
+    }
+  ) {
+    super(message);
+    this.name = "DeleteFlowError";
     this.lifecycleStatus = options?.lifecycleStatus ?? "failed";
     this.failureStage = options?.failureStage ?? null;
     this.cleanupStatus = options?.cleanupStatus ?? null;
@@ -145,10 +169,39 @@ export async function deleteUserDocument(documentId: string) {
   });
 
   if (!res.ok) {
-    throw new Error(await getErrorMessage(res, "Failed to delete document."));
+    const error = await res.json().catch(() => ({ detail: { message: "Failed to delete document." } }));
+    const detail = error?.detail;
+
+    if (detail && typeof detail === "object") {
+      throw new DeleteFlowError(
+        typeof detail.message === "string" ? detail.message : "Failed to delete document.",
+        {
+          lifecycleStatus: detail.lifecycle_status === "failed" ? "failed" : "failed",
+          failureStage:
+            detail.failure_stage === "conversations" ||
+            detail.failure_stage === "indexing" ||
+            detail.failure_stage === "storage" ||
+            detail.failure_stage === "metadata"
+              ? detail.failure_stage
+              : null,
+          cleanupStatus:
+            detail.cleanup_status === "not-started" ||
+            detail.cleanup_status === "partial" ||
+            detail.cleanup_status === "completed"
+              ? detail.cleanup_status
+              : null
+        }
+      );
+    }
+
+    throw new DeleteFlowError(typeof detail === "string" ? detail : "Failed to delete document.");
   }
 
-  return res.json() as Promise<{ deleted: boolean }>;
+  return res.json() as Promise<{
+    deleted: boolean;
+    lifecycle_status: "deleted";
+    cleanup_status: "completed";
+  }>;
 }
 
 export async function getUserConversations(documentId?: string) {

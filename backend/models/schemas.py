@@ -67,3 +67,5 @@ class DocumentsResponse(BaseModel):
 
 class DeleteDocumentResponse(BaseModel):
     deleted: bool
+    lifecycle_status: str = Field(..., description="Lifecycle state for the delete flow")
+    cleanup_status: str = Field(..., description="Cleanup outcome for the delete flow")

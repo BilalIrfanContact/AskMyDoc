@@ -64,6 +64,7 @@ export default function HomeClient({ userName, greeting }: HomeClientProps) {
         <DeleteDocumentModal
           documentName={state.documentToDelete.filename}
           isDeleting={state.isDeletingDocument}
+          error={state.deleteError}
           onCancel={actions.closeDeleteDialog}
           onConfirm={() => void actions.handleDeleteDocument()}
         />
