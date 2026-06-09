@@ -34,6 +34,83 @@ type DeleteReasonCode =
   | "conversation_cleanup_failed"
   | "indexing_cleanup_failed";
 
+function parseUploadReasonCode(detail: Record<string, unknown>): UploadReasonCode | null {
+  if (
+    detail.reason_code === "invalid_file_type" ||
+    detail.reason_code === "no_extractable_text" ||
+    detail.reason_code === "no_usable_chunks" ||
+    detail.reason_code === "indexing_failed" ||
+    detail.reason_code === "no_chunks_stored" ||
+    detail.reason_code === "storage_upload_failed" ||
+    detail.reason_code === "metadata_persist_failed"
+  ) {
+    return detail.reason_code;
+  }
+
+  if (detail.failure_stage === "storage") {
+    return "storage_upload_failed";
+  }
+
+  if (detail.failure_stage === "metadata") {
+    return "metadata_persist_failed";
+  }
+
+  if (detail.failure_stage === "indexing") {
+    return typeof detail.message === "string" &&
+      detail.message.includes("Chunks were created but not stored")
+      ? "no_chunks_stored"
+      : "indexing_failed";
+  }
+
+  if (detail.failure_stage === "validation" && typeof detail.message === "string") {
+    if (detail.message.includes("Only PDF files are supported")) {
+      return "invalid_file_type";
+    }
+
+    if (detail.message.includes("No extractable text found")) {
+      return "no_extractable_text";
+    }
+
+    if (detail.message.includes("No usable text chunks were created")) {
+      return "no_usable_chunks";
+    }
+  }
+
+  return null;
+}
+
+function parseDeleteReasonCode(detail: Record<string, unknown>): DeleteReasonCode | null {
+  if (
+    detail.reason_code === "conversation_lookup_failed" ||
+    detail.reason_code === "storage_delete_failed" ||
+    detail.reason_code === "metadata_delete_failed" ||
+    detail.reason_code === "conversation_cleanup_failed" ||
+    detail.reason_code === "indexing_cleanup_failed"
+  ) {
+    return detail.reason_code;
+  }
+
+  if (detail.failure_stage === "storage") {
+    return "storage_delete_failed";
+  }
+
+  if (detail.failure_stage === "metadata") {
+    return "metadata_delete_failed";
+  }
+
+  if (detail.failure_stage === "indexing") {
+    return "indexing_cleanup_failed";
+  }
+
+  if (detail.failure_stage === "conversations") {
+    return detail.cleanup_status === "not-started"
+      ? "conversation_lookup_failed"
+      : "conversation_cleanup_failed";
+  }
+
+  return null;
+}
+
 export class UploadFlowError extends Error {
   lifecycleStatus: UploadLifecycleStatus;
   failureStage: UploadFailureStage | null;
@@ -133,16 +210,7 @@ export async function uploadPdf(file: File) {
             detail.failure_stage === "metadata"
               ? detail.failure_stage
               : null,
-          reasonCode:
-            detail.reason_code === "invalid_file_type" ||
-            detail.reason_code === "no_extractable_text" ||
-            detail.reason_code === "no_usable_chunks" ||
-            detail.reason_code === "indexing_failed" ||
-            detail.reason_code === "no_chunks_stored" ||
-            detail.reason_code === "storage_upload_failed" ||
-            detail.reason_code === "metadata_persist_failed"
-              ? detail.reason_code
-              : null,
+          reasonCode: parseUploadReasonCode(detail),
           cleanupStatus:
             detail.cleanup_status === "not-needed" ||
             detail.cleanup_status === "completed" ||
@@ -214,14 +282,7 @@ export async function deleteUserDocument(documentId: string) {
             detail.failure_stage === "metadata"
               ? detail.failure_stage
               : null,
-          reasonCode:
-            detail.reason_code === "conversation_lookup_failed" ||
-            detail.reason_code === "storage_delete_failed" ||
-            detail.reason_code === "metadata_delete_failed" ||
-            detail.reason_code === "conversation_cleanup_failed" ||
-            detail.reason_code === "indexing_cleanup_failed"
-              ? detail.reason_code
-              : null,
+          reasonCode: parseDeleteReasonCode(detail),
           cleanupStatus:
             detail.cleanup_status === "not-started" ||
             detail.cleanup_status === "partial" ||
