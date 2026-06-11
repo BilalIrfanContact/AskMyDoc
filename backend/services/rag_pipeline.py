@@ -159,12 +159,13 @@ def _head_context(vectordb, limit: int = 6) -> RetrievedContext:
     result = vectordb.get(limit=limit, include=["documents", "metadatas"])
     documents: Sequence[str] = result.get("documents") or []
     metadatas: Sequence[dict | None] = result.get("metadatas") or []
+    ids: Sequence[str | None] = result.get("ids") or []
     citations = []
     cited_documents = []
     for index, document in enumerate(documents):
         if not document:
             continue
-        citation = _citation_from_metadata(metadatas, index, document)
+        citation = _citation_from_metadata(metadatas, ids, index, document)
         if citation is None:
             continue
         citations.append(citation)
@@ -174,14 +175,48 @@ def _head_context(vectordb, limit: int = 6) -> RetrievedContext:
 
 def _citation_from_metadata(
     metadatas: Sequence[dict | None],
+    ids: Sequence[str | None],
     index: int,
     document_text: str,
 ) -> AnswerCitation | None:
     metadata = metadatas[index] if index < len(metadatas) else None
     chunk_id = metadata.get("chunk_id") if isinstance(metadata, dict) else None
+    if not chunk_id and index < len(ids):
+        chunk_id = ids[index]
     if not chunk_id:
         return None
     return AnswerCitation(chunk_id=chunk_id, excerpt=document_text)
+
+
+def _cited_context_from_query_result(result: dict) -> RetrievedContext:
+    documents_groups: Sequence[Sequence[str | None]] = result.get("documents") or []
+    metadatas_groups: Sequence[Sequence[dict | None]] = result.get("metadatas") or []
+    ids_groups: Sequence[Sequence[str | None]] = result.get("ids") or []
+
+    documents = documents_groups[0] if documents_groups else []
+    metadatas = metadatas_groups[0] if metadatas_groups else []
+    ids = ids_groups[0] if ids_groups else []
+
+    citations = []
+    cited_texts = []
+    for index, document in enumerate(documents):
+        if not document:
+            continue
+        citation = _citation_from_metadata(metadatas, ids, index, document)
+        if citation is None:
+            continue
+        citations.append(citation)
+        cited_texts.append(document)
+    return RetrievedContext(text=_format_texts(cited_texts), citations=citations)
+
+
+def _semantic_context(vectordb, question: str, limit: int) -> RetrievedContext:
+    result = vectordb._collection.query(
+        query_texts=[question],
+        n_results=limit,
+        include=["documents", "metadatas"],
+    )
+    return _cited_context_from_query_result(result)
 
 
 def _citation_from_doc(doc) -> AnswerCitation | None:
@@ -196,18 +231,7 @@ def _citation_from_doc(doc) -> AnswerCitation | None:
 def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> RetrievedContext:
     if policy.mode == "head":
         return _head_context(vectordb, limit=policy.limit)
-
-    docs = vectordb.similarity_search(question, k=policy.limit)
-    citations = []
-    cited_texts = []
-    for doc in docs:
-        citation = _citation_from_doc(doc)
-        if citation is None:
-            continue
-        citations.append(citation)
-        cited_texts.append(citation.excerpt)
-    text = _format_texts(cited_texts)
-    return RetrievedContext(text=text, citations=citations)
+    return _semantic_context(vectordb, question, policy.limit)
 
 
 def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
