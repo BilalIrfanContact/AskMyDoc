@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from backend.services.rag_pipeline import (
+    AnswerCitation,
     INSUFFICIENT_CONTEXT_ANSWER,
     _route_intent,
     _select_retrieval_policy,
@@ -22,7 +23,8 @@ class RagPipelineTestCase(unittest.TestCase):
         vectordb = self._build_vector_store(
             docs=[
                 SimpleNamespace(
-                    page_content="The refund window is 30 days from the purchase date."
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
                 )
             ]
         )
@@ -39,6 +41,15 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.intent, "qa")
         self.assertEqual(answer.retrieval_mode, "semantic")
         self.assertEqual(answer.answer_status, "answered")
+        self.assertEqual(
+            answer.citations,
+            [
+                AnswerCitation(
+                    chunk_id="doc-1:chunk:0",
+                    excerpt="The refund window is 30 days from the purchase date.",
+                )
+            ],
+        )
         vectordb.similarity_search.assert_called_once_with("What is the refund window?", k=4)
         chat_openai_mock.assert_called_once()
         llm.invoke.assert_called_once()
@@ -66,7 +77,8 @@ class RagPipelineTestCase(unittest.TestCase):
         vectordb = self._build_vector_store(
             docs=[
                 SimpleNamespace(
-                    page_content="The onboarding checklist covers payroll setup and laptop pickup."
+                    page_content="The onboarding checklist covers payroll setup and laptop pickup.",
+                    metadata={"chunk_id": "doc-1:chunk:3"},
                 )
             ]
         )
@@ -81,6 +93,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.intent, "qa")
         self.assertEqual(answer.retrieval_mode, "semantic")
         self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
         chat_openai_mock.assert_not_called()
 
     def test_answer_question_returns_deterministic_fallback_when_retrieval_is_empty(self):
@@ -96,6 +109,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.intent, "qa")
         self.assertEqual(answer.retrieval_mode, "semantic")
         self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
         chat_openai_mock.assert_not_called()
 
     def test_summary_questions_still_use_head_context(self):
@@ -103,6 +117,10 @@ class RagPipelineTestCase(unittest.TestCase):
             docs=[],
             head_documents=["This handbook explains the benefits policy and time-off rules."],
         )
+        vectordb.get.return_value = {
+            "documents": ["This handbook explains the benefits policy and time-off rules."],
+            "metadatas": [{"chunk_id": "doc-1:chunk:0"}],
+        }
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(content="It explains benefits and time off.")
 
@@ -116,8 +134,10 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.intent, "summary")
         self.assertEqual(answer.retrieval_mode, "head")
         self.assertEqual(answer.answer_status, "answered")
+        self.assertEqual(len(answer.citations), 1)
+        self.assertEqual(answer.citations[0].chunk_id, "doc-1:chunk:0")
         vectordb.similarity_search.assert_not_called()
-        vectordb.get.assert_called_once_with(limit=4, include=["documents"])
+        vectordb.get.assert_called_once_with(limit=4, include=["documents", "metadatas"])
 
     def test_qa_questions_do_not_fall_back_to_head_context(self):
         vectordb = self._build_vector_store(
@@ -135,6 +155,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.intent, "qa")
         self.assertEqual(answer.retrieval_mode, "semantic")
         self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
         vectordb.similarity_search.assert_called_once_with("What is the refund window?", k=4)
         vectordb.get.assert_not_called()
         chat_openai_mock.assert_not_called()
