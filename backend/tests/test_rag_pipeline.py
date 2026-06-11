@@ -112,6 +112,27 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.citations, [])
         chat_openai_mock.assert_not_called()
 
+    def test_answer_question_returns_fallback_when_semantic_retrieval_has_no_chunk_ids(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={},
+                )
+            ]
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
+        chat_openai_mock.assert_not_called()
+
     def test_summary_questions_still_use_head_context(self):
         vectordb = self._build_vector_store(
             docs=[],
@@ -138,6 +159,29 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.citations[0].chunk_id, "doc-1:chunk:0")
         vectordb.similarity_search.assert_not_called()
         vectordb.get.assert_called_once_with(limit=4, include=["documents", "metadatas"])
+
+    def test_summary_questions_return_fallback_when_head_context_has_no_chunk_ids(self):
+        vectordb = self._build_vector_store(
+            docs=[],
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+        )
+        vectordb.get.return_value = {
+            "documents": ["This handbook explains the benefits policy and time-off rules."],
+            "metadatas": [{}],
+        }
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            answer = answer_question("doc-1", "Summarize this document.")
+
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.intent, "summary")
+        self.assertEqual(answer.retrieval_mode, "head")
+        self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
+        chat_openai_mock.assert_not_called()
 
     def test_qa_questions_do_not_fall_back_to_head_context(self):
         vectordb = self._build_vector_store(
