@@ -1,6 +1,8 @@
 import type {
   ChatResponseBody,
+  ChatRequestBody,
   ConversationRecord,
+  CreateConversationRequestBody,
   CreateConversationResponseBody,
   DeleteErrorDetail,
   DeleteUserDocumentResponseBody,
@@ -220,10 +222,12 @@ export async function uploadPdf(file: File) {
 }
 
 export async function createConversation(documentId: string) {
+  const body: CreateConversationRequestBody = { document_id: documentId };
+
   const res = await fetch(`${API_BASE}/conversations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document_id: documentId })
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
@@ -323,14 +327,16 @@ export async function askQuestion(input: {
   conversationId: string;
   message: string;
 }) {
+  const body: ChatRequestBody = {
+    document_id: input.documentId,
+    conversation_id: input.conversationId,
+    message: input.message
+  };
+
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      document_id: input.documentId,
-      conversation_id: input.conversationId,
-      message: input.message
-    })
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {

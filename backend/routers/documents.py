@@ -32,6 +32,7 @@ async def get_user_documents(user_id: str = Depends(require_authenticated_user))
     response_model=DeleteDocumentResponse,
     responses={
         401: {"model": ErrorDetailResponse},
+        403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
         502: {"model": DeleteErrorResponse},
     },

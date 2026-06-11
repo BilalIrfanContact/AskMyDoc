@@ -24,6 +24,7 @@ router = APIRouter()
     response_model=ConversationsResponse,
     responses={
         401: {"model": ErrorDetailResponse},
+        403: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
     },
 )
@@ -51,6 +52,7 @@ async def get_user_conversations(
     response_model=ConversationCreateResponse,
     responses={
         401: {"model": ErrorDetailResponse},
+        403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
     },
@@ -77,6 +79,7 @@ async def create_conversation_endpoint(
     response_model=ConversationMessagesResponse,
     responses={
         401: {"model": ErrorDetailResponse},
+        403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
     },
