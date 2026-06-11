@@ -27,8 +27,15 @@ def _client_settings() -> Settings:
 def build_vector_store(document_id: str, chunks: List[str]) -> int:
     _disable_chroma_telemetry()
     embeddings = get_embedding_model()
+    ids = [f"{document_id}:chunk:{index}" for index, _ in enumerate(chunks)]
+    metadatas = [
+        {"chunk_id": chunk_id, "chunk_index": index}
+        for index, chunk_id in enumerate(ids)
+    ]
     vectordb = Chroma.from_texts(
         texts=chunks,
+        ids=ids,
+        metadatas=metadatas,
         embedding=embeddings,
         collection_name=document_id,
         persist_directory=PERSIST_DIRECTORY,

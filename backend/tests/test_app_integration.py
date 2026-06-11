@@ -350,6 +350,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     intent="summary",
                     retrieval_mode="head",
                     answer_status="answered",
+                    citations=[],
                 ),
             )
         )
@@ -545,6 +546,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 "intent": "summary",
                 "retrieval_mode": "head",
                 "answer_status": "answered",
+                "citations": [],
             },
         )
 

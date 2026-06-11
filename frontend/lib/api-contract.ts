@@ -1,5 +1,10 @@
 // Generated from backend FastAPI OpenAPI schema. Do not edit by hand.
 
+export interface AnswerCitation {
+  "chunk_id": string;
+  "excerpt": string;
+}
+
 export interface Body_upload_pdf_upload_post {
   "file": Blob;
 }
@@ -14,6 +19,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   "answer": string;
   "answer_status": "answered" | "insufficient_context";
+  "citations": AnswerCitation[];
   "intent": "summary" | "qa";
   "retrieval_mode": "head" | "semantic";
 }

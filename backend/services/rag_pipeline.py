@@ -72,10 +72,19 @@ class AnswerDecision:
     intent: Intent
     retrieval_mode: RetrievalMode
     answer_status: Literal["answered", "insufficient_context"]
+    citations: list["AnswerCitation"]
 
 
-def _format_context(docs: List) -> str:
-    return "\n\n".join(doc.page_content for doc in docs if doc.page_content).strip()
+@dataclass(frozen=True)
+class AnswerCitation:
+    chunk_id: str
+    excerpt: str
+
+
+@dataclass(frozen=True)
+class RetrievedContext:
+    text: str
+    citations: list[AnswerCitation]
 
 
 def _format_texts(texts: Iterable[str]) -> str:
@@ -146,18 +155,83 @@ def _select_retrieval_policy(question: str, total_chunks: int) -> RetrievalPolic
     )
 
 
-def _head_context(vectordb, limit: int = 6) -> str:
-    result = vectordb.get(limit=limit, include=["documents"])
+def _head_context(vectordb, limit: int = 6) -> RetrievedContext:
+    result = vectordb.get(limit=limit, include=["documents", "metadatas"])
     documents: Sequence[str] = result.get("documents") or []
-    return _format_texts(documents)
+    metadatas: Sequence[dict | None] = result.get("metadatas") or []
+    ids: Sequence[str | None] = result.get("ids") or []
+    citations = []
+    cited_documents = []
+    for index, document in enumerate(documents):
+        if not document:
+            continue
+        citation = _citation_from_metadata(metadatas, ids, index, document)
+        if citation is None:
+            continue
+        citations.append(citation)
+        cited_documents.append(document)
+    return RetrievedContext(text=_format_texts(cited_documents), citations=citations)
 
 
-def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> str:
+def _citation_from_metadata(
+    metadatas: Sequence[dict | None],
+    ids: Sequence[str | None],
+    index: int,
+    document_text: str,
+) -> AnswerCitation | None:
+    metadata = metadatas[index] if index < len(metadatas) else None
+    chunk_id = metadata.get("chunk_id") if isinstance(metadata, dict) else None
+    if not chunk_id and index < len(ids):
+        chunk_id = ids[index]
+    if not chunk_id:
+        return None
+    return AnswerCitation(chunk_id=chunk_id, excerpt=document_text)
+
+
+def _cited_context_from_query_result(result: dict) -> RetrievedContext:
+    documents_groups: Sequence[Sequence[str | None]] = result.get("documents") or []
+    metadatas_groups: Sequence[Sequence[dict | None]] = result.get("metadatas") or []
+    ids_groups: Sequence[Sequence[str | None]] = result.get("ids") or []
+
+    documents = documents_groups[0] if documents_groups else []
+    metadatas = metadatas_groups[0] if metadatas_groups else []
+    ids = ids_groups[0] if ids_groups else []
+
+    citations = []
+    cited_texts = []
+    for index, document in enumerate(documents):
+        if not document:
+            continue
+        citation = _citation_from_metadata(metadatas, ids, index, document)
+        if citation is None:
+            continue
+        citations.append(citation)
+        cited_texts.append(document)
+    return RetrievedContext(text=_format_texts(cited_texts), citations=citations)
+
+
+def _semantic_context(vectordb, question: str, limit: int) -> RetrievedContext:
+    result = vectordb._collection.query(
+        query_texts=[question],
+        n_results=limit,
+        include=["documents", "metadatas"],
+    )
+    return _cited_context_from_query_result(result)
+
+
+def _citation_from_doc(doc) -> AnswerCitation | None:
+    metadata = getattr(doc, "metadata", None)
+    chunk_id = metadata.get("chunk_id") if isinstance(metadata, dict) else None
+    page_content = getattr(doc, "page_content", "")
+    if not chunk_id or not page_content:
+        return None
+    return AnswerCitation(chunk_id=chunk_id, excerpt=page_content)
+
+
+def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> RetrievedContext:
     if policy.mode == "head":
         return _head_context(vectordb, limit=policy.limit)
-
-    docs = vectordb.similarity_search(question, k=policy.limit)
-    return _format_context(docs)
+    return _semantic_context(vectordb, question, policy.limit)
 
 
 def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
@@ -166,6 +240,7 @@ def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
         intent=policy.intent,
         retrieval_mode=policy.mode,
         answer_status="insufficient_context",
+        citations=[],
     )
 
 
@@ -179,17 +254,17 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
     policy = _select_retrieval_policy(question, total)
     context = _retrieve_context(vectordb, question, policy)
 
-    if policy.enforce_quality_gate and not _has_sufficient_context(question, context):
+    if policy.enforce_quality_gate and not _has_sufficient_context(question, context.text):
         return _insufficient_context_decision(policy)
 
-    if not context:
+    if not context.text:
         return _insufficient_context_decision(policy)
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
-        f"Context:\n{context}\n\n"
+        f"Context:\n{context.text}\n\n"
         f"Question: {question}\n"
         "Answer:"
     )
@@ -199,4 +274,5 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         intent=policy.intent,
         retrieval_mode=policy.mode,
         answer_status="answered",
+        citations=context.citations,
     )
