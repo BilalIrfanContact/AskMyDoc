@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Iterable, List, Sequence
 
 from langchain_openai import ChatOpenAI
@@ -16,6 +17,42 @@ SYSTEM_PROMPT = (
     "Use short paragraphs or simple bullets only when they genuinely improve readability."
 )
 
+INSUFFICIENT_CONTEXT_ANSWER = (
+    "I couldn't find enough information in the document to answer that question."
+)
+
+_QUESTION_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
+
 
 def _format_context(docs: List) -> str:
     return "\n\n".join(doc.page_content for doc in docs if doc.page_content).strip()
@@ -23,6 +60,29 @@ def _format_context(docs: List) -> str:
 
 def _format_texts(texts: Iterable[str]) -> str:
     return "\n\n".join(text for text in texts if text).strip()
+
+
+def _extract_question_terms(text: str) -> set[str]:
+    terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+", text.lower())
+        if len(term) > 2 and term not in _QUESTION_STOPWORDS
+    }
+    return terms
+
+
+def _has_sufficient_context(question: str, context: str) -> bool:
+    if not context:
+        return False
+
+    question_terms = _extract_question_terms(question)
+    if not question_terms:
+        return True
+
+    context_terms = set(re.findall(r"[a-z0-9]+", context.lower()))
+    overlap = question_terms & context_terms
+    required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
+    return len(overlap) >= required_overlap
 
 
 def _is_summary_question(question: str) -> bool:
@@ -65,12 +125,14 @@ def answer_question(document_id: str, question: str) -> str:
     else:
         docs = vectordb.similarity_search(question, k=k)
         context = _format_context(docs)
+        if not _has_sufficient_context(question, context):
+            return INSUFFICIENT_CONTEXT_ANSWER
 
     if not context:
         context = _head_context(vectordb, limit=min(8, max(1, total)))
 
     if not context:
-        return "I couldn't find that information in the document."
+        return INSUFFICIENT_CONTEXT_ANSWER
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)

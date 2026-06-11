@@ -1,0 +1,91 @@
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from backend.services.rag_pipeline import (
+    INSUFFICIENT_CONTEXT_ANSWER,
+    answer_question,
+)
+
+
+class RagPipelineTestCase(unittest.TestCase):
+    def _build_vector_store(self, *, count: int = 4, docs=None, head_documents=None):
+        vectordb = Mock()
+        vectordb._collection.count.return_value = count
+        vectordb.similarity_search.return_value = docs or []
+        vectordb.get.return_value = {"documents": head_documents or []}
+        return vectordb
+
+    def test_answer_question_uses_llm_for_grounded_retrieval(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date."
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(content="The refund window is 30 days.")
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer, "The refund window is 30 days.")
+        vectordb.similarity_search.assert_called_once_with("What is the refund window?", k=4)
+        chat_openai_mock.assert_called_once()
+        llm.invoke.assert_called_once()
+
+    def test_answer_question_returns_deterministic_fallback_for_low_evidence_retrieval(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The onboarding checklist covers payroll setup and laptop pickup."
+                )
+            ]
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer, INSUFFICIENT_CONTEXT_ANSWER)
+        chat_openai_mock.assert_not_called()
+
+    def test_answer_question_returns_deterministic_fallback_when_retrieval_is_empty(self):
+        vectordb = self._build_vector_store(docs=[])
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer, INSUFFICIENT_CONTEXT_ANSWER)
+        chat_openai_mock.assert_not_called()
+
+    def test_summary_questions_still_use_head_context(self):
+        vectordb = self._build_vector_store(
+            docs=[],
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(content="It explains benefits and time off.")
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "Summarize this document.")
+
+        self.assertEqual(answer, "It explains benefits and time off.")
+        vectordb.similarity_search.assert_not_called()
+        vectordb.get.assert_called_once_with(limit=4, include=["documents"])
+
+
+if __name__ == "__main__":
+    unittest.main()
