@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 
 from backend.routers import chat, conversations, documents, upload
 from backend.services.internal_auth import require_authenticated_user
+from backend.services.rag_pipeline import AnswerDecision
 
 
 def _build_test_app() -> FastAPI:
@@ -342,7 +343,15 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.exit_stack.enter_context(
-            patch("backend.routers.chat.answer_question", return_value="Document summary answer")
+            patch(
+                "backend.routers.chat.answer_question",
+                return_value=AnswerDecision(
+                    answer="Document summary answer",
+                    intent="summary",
+                    retrieval_mode="head",
+                    answer_status="answered",
+                ),
+            )
         )
 
         self.exit_stack.enter_context(
@@ -529,7 +538,15 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(response_body), {"answer": "Document summary answer"})
+        self.assertEqual(
+            json.loads(response_body),
+            {
+                "answer": "Document summary answer",
+                "intent": "summary",
+                "retrieval_mode": "head",
+                "answer_status": "answered",
+            },
+        )
 
         status, _, response_body = await _request_asgi(
             self.app,

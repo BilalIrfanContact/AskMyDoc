@@ -53,15 +53,20 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
     except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    answer = answer_question(document_id=conversation["document_id"], question=question)
+    decision = answer_question(document_id=conversation["document_id"], question=question)
 
     try:
         insert_message(
             conversation_id=request.conversation_id,
             role="assistant",
-            content=answer,
+            content=decision.answer,
         )
     except PersistenceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return ChatResponse(answer=answer)
+    return ChatResponse(
+        answer=decision.answer,
+        intent=decision.intent,
+        retrieval_mode=decision.retrieval_mode,
+        answer_status=decision.answer_status,
+    )

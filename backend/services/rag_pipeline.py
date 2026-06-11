@@ -1,5 +1,7 @@
 import os
-from typing import Iterable, List, Sequence
+import re
+from dataclasses import dataclass
+from typing import Iterable, List, Literal, Sequence
 
 from langchain_openai import ChatOpenAI
 
@@ -16,6 +18,61 @@ SYSTEM_PROMPT = (
     "Use short paragraphs or simple bullets only when they genuinely improve readability."
 )
 
+INSUFFICIENT_CONTEXT_ANSWER = (
+    "I couldn't find enough information in the document to answer that question."
+)
+
+_QUESTION_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
+
+Intent = Literal["summary", "qa"]
+RetrievalMode = Literal["head", "semantic"]
+
+
+@dataclass(frozen=True)
+class RetrievalPolicy:
+    intent: Intent
+    mode: RetrievalMode
+    limit: int
+    enforce_quality_gate: bool
+
+
+@dataclass(frozen=True)
+class AnswerDecision:
+    answer: str
+    intent: Intent
+    retrieval_mode: RetrievalMode
+    answer_status: Literal["answered", "insufficient_context"]
+
 
 def _format_context(docs: List) -> str:
     return "\n\n".join(doc.page_content for doc in docs if doc.page_content).strip()
@@ -25,7 +82,30 @@ def _format_texts(texts: Iterable[str]) -> str:
     return "\n\n".join(text for text in texts if text).strip()
 
 
-def _is_summary_question(question: str) -> bool:
+def _extract_question_terms(text: str) -> set[str]:
+    terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+", text.lower())
+        if len(term) > 2 and term not in _QUESTION_STOPWORDS
+    }
+    return terms
+
+
+def _has_sufficient_context(question: str, context: str) -> bool:
+    if not context:
+        return False
+
+    question_terms = _extract_question_terms(question)
+    if not question_terms:
+        return True
+
+    context_terms = set(re.findall(r"[a-z0-9]+", context.lower()))
+    overlap = question_terms & context_terms
+    required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
+    return len(overlap) >= required_overlap
+
+
+def _route_intent(question: str) -> Intent:
     q = question.strip().lower()
     triggers = (
         "summary",
@@ -42,7 +122,28 @@ def _is_summary_question(question: str) -> bool:
         "main points",
         "key points",
     )
-    return any(trigger in q for trigger in triggers)
+    if any(trigger in q for trigger in triggers):
+        return "summary"
+    return "qa"
+
+
+def _select_retrieval_policy(question: str, total_chunks: int) -> RetrievalPolicy:
+    limit = min(8, max(1, total_chunks))
+    intent = _route_intent(question)
+    if intent == "summary":
+        return RetrievalPolicy(
+            intent="summary",
+            mode="head",
+            limit=limit,
+            enforce_quality_gate=False,
+        )
+
+    return RetrievalPolicy(
+        intent="qa",
+        mode="semantic",
+        limit=min(4, max(1, total_chunks)),
+        enforce_quality_gate=True,
+    )
 
 
 def _head_context(vectordb, limit: int = 6) -> str:
@@ -51,26 +152,38 @@ def _head_context(vectordb, limit: int = 6) -> str:
     return _format_texts(documents)
 
 
-def answer_question(document_id: str, question: str) -> str:
+def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> str:
+    if policy.mode == "head":
+        return _head_context(vectordb, limit=policy.limit)
+
+    docs = vectordb.similarity_search(question, k=policy.limit)
+    return _format_context(docs)
+
+
+def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
+    return AnswerDecision(
+        answer=INSUFFICIENT_CONTEXT_ANSWER,
+        intent=policy.intent,
+        retrieval_mode=policy.mode,
+        answer_status="insufficient_context",
+    )
+
+
+def answer_question(document_id: str, question: str) -> AnswerDecision:
     vectordb = get_vector_store(document_id=document_id)
     try:
         total = vectordb._collection.count()
     except Exception:
         total = 4
 
-    k = min(4, max(1, total))
+    policy = _select_retrieval_policy(question, total)
+    context = _retrieve_context(vectordb, question, policy)
 
-    if _is_summary_question(question):
-        context = _head_context(vectordb, limit=min(8, max(1, total)))
-    else:
-        docs = vectordb.similarity_search(question, k=k)
-        context = _format_context(docs)
+    if policy.enforce_quality_gate and not _has_sufficient_context(question, context):
+        return _insufficient_context_decision(policy)
 
     if not context:
-        context = _head_context(vectordb, limit=min(8, max(1, total)))
-
-    if not context:
-        return "I couldn't find that information in the document."
+        return _insufficient_context_decision(policy)
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
@@ -81,4 +194,9 @@ def answer_question(document_id: str, question: str) -> str:
         "Answer:"
     )
     response = llm.invoke(prompt)
-    return response.content.strip()
+    return AnswerDecision(
+        answer=response.content.strip(),
+        intent=policy.intent,
+        retrieval_mode=policy.mode,
+        answer_status="answered",
+    )
