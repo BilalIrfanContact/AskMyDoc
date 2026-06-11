@@ -66,6 +66,14 @@ class RetrievalPolicy:
     enforce_quality_gate: bool
 
 
+@dataclass(frozen=True)
+class AnswerDecision:
+    answer: str
+    intent: Intent
+    retrieval_mode: RetrievalMode
+    answer_status: Literal["answered", "insufficient_context"]
+
+
 def _format_context(docs: List) -> str:
     return "\n\n".join(doc.page_content for doc in docs if doc.page_content).strip()
 
@@ -152,7 +160,16 @@ def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> str:
     return _format_context(docs)
 
 
-def answer_question(document_id: str, question: str) -> str:
+def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
+    return AnswerDecision(
+        answer=INSUFFICIENT_CONTEXT_ANSWER,
+        intent=policy.intent,
+        retrieval_mode=policy.mode,
+        answer_status="insufficient_context",
+    )
+
+
+def answer_question(document_id: str, question: str) -> AnswerDecision:
     vectordb = get_vector_store(document_id=document_id)
     try:
         total = vectordb._collection.count()
@@ -163,10 +180,10 @@ def answer_question(document_id: str, question: str) -> str:
     context = _retrieve_context(vectordb, question, policy)
 
     if policy.enforce_quality_gate and not _has_sufficient_context(question, context):
-        return INSUFFICIENT_CONTEXT_ANSWER
+        return _insufficient_context_decision(policy)
 
     if not context:
-        return INSUFFICIENT_CONTEXT_ANSWER
+        return _insufficient_context_decision(policy)
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
@@ -177,4 +194,9 @@ def answer_question(document_id: str, question: str) -> str:
         "Answer:"
     )
     response = llm.invoke(prompt)
-    return response.content.strip()
+    return AnswerDecision(
+        answer=response.content.strip(),
+        intent=policy.intent,
+        retrieval_mode=policy.mode,
+        answer_status="answered",
+    )

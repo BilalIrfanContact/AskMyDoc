@@ -13,6 +13,9 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   "answer": string;
+  "answer_status": "answered" | "insufficient_context";
+  "intent": "summary" | "qa";
+  "retrieval_mode": "head" | "semantic";
 }
 
 export interface ConversationCreateRequest {

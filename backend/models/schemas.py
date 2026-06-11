@@ -44,6 +44,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    intent: Literal["summary", "qa"]
+    retrieval_mode: Literal["head", "semantic"]
+    answer_status: Literal["answered", "insufficient_context"]
 
 
 class ConversationCreateRequest(BaseModel):

@@ -35,7 +35,10 @@ class RagPipelineTestCase(unittest.TestCase):
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
-        self.assertEqual(answer, "The refund window is 30 days.")
+        self.assertEqual(answer.answer, "The refund window is 30 days.")
+        self.assertEqual(answer.intent, "qa")
+        self.assertEqual(answer.retrieval_mode, "semantic")
+        self.assertEqual(answer.answer_status, "answered")
         vectordb.similarity_search.assert_called_once_with("What is the refund window?", k=4)
         chat_openai_mock.assert_called_once()
         llm.invoke.assert_called_once()
@@ -74,7 +77,10 @@ class RagPipelineTestCase(unittest.TestCase):
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
-        self.assertEqual(answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.intent, "qa")
+        self.assertEqual(answer.retrieval_mode, "semantic")
+        self.assertEqual(answer.answer_status, "insufficient_context")
         chat_openai_mock.assert_not_called()
 
     def test_answer_question_returns_deterministic_fallback_when_retrieval_is_empty(self):
@@ -86,7 +92,10 @@ class RagPipelineTestCase(unittest.TestCase):
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
-        self.assertEqual(answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.intent, "qa")
+        self.assertEqual(answer.retrieval_mode, "semantic")
+        self.assertEqual(answer.answer_status, "insufficient_context")
         chat_openai_mock.assert_not_called()
 
     def test_summary_questions_still_use_head_context(self):
@@ -103,7 +112,10 @@ class RagPipelineTestCase(unittest.TestCase):
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
-        self.assertEqual(answer, "It explains benefits and time off.")
+        self.assertEqual(answer.answer, "It explains benefits and time off.")
+        self.assertEqual(answer.intent, "summary")
+        self.assertEqual(answer.retrieval_mode, "head")
+        self.assertEqual(answer.answer_status, "answered")
         vectordb.similarity_search.assert_not_called()
         vectordb.get.assert_called_once_with(limit=4, include=["documents"])
 
@@ -119,7 +131,10 @@ class RagPipelineTestCase(unittest.TestCase):
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
-        self.assertEqual(answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.intent, "qa")
+        self.assertEqual(answer.retrieval_mode, "semantic")
+        self.assertEqual(answer.answer_status, "insufficient_context")
         vectordb.similarity_search.assert_called_once_with("What is the refund window?", k=4)
         vectordb.get.assert_not_called()
         chat_openai_mock.assert_not_called()
