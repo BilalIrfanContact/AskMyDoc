@@ -1,6 +1,7 @@
 import os
 import re
-from typing import Iterable, List, Sequence
+from dataclasses import dataclass
+from typing import Iterable, List, Literal, Sequence
 
 from langchain_openai import ChatOpenAI
 
@@ -53,6 +54,17 @@ _QUESTION_STOPWORDS = {
     "with",
 }
 
+Intent = Literal["summary", "qa"]
+RetrievalMode = Literal["head", "semantic"]
+
+
+@dataclass(frozen=True)
+class RetrievalPolicy:
+    intent: Intent
+    mode: RetrievalMode
+    limit: int
+    enforce_quality_gate: bool
+
 
 def _format_context(docs: List) -> str:
     return "\n\n".join(doc.page_content for doc in docs if doc.page_content).strip()
@@ -85,7 +97,7 @@ def _has_sufficient_context(question: str, context: str) -> bool:
     return len(overlap) >= required_overlap
 
 
-def _is_summary_question(question: str) -> bool:
+def _route_intent(question: str) -> Intent:
     q = question.strip().lower()
     triggers = (
         "summary",
@@ -102,13 +114,42 @@ def _is_summary_question(question: str) -> bool:
         "main points",
         "key points",
     )
-    return any(trigger in q for trigger in triggers)
+    if any(trigger in q for trigger in triggers):
+        return "summary"
+    return "qa"
+
+
+def _select_retrieval_policy(question: str, total_chunks: int) -> RetrievalPolicy:
+    limit = min(8, max(1, total_chunks))
+    intent = _route_intent(question)
+    if intent == "summary":
+        return RetrievalPolicy(
+            intent="summary",
+            mode="head",
+            limit=limit,
+            enforce_quality_gate=False,
+        )
+
+    return RetrievalPolicy(
+        intent="qa",
+        mode="semantic",
+        limit=min(4, max(1, total_chunks)),
+        enforce_quality_gate=True,
+    )
 
 
 def _head_context(vectordb, limit: int = 6) -> str:
     result = vectordb.get(limit=limit, include=["documents"])
     documents: Sequence[str] = result.get("documents") or []
     return _format_texts(documents)
+
+
+def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> str:
+    if policy.mode == "head":
+        return _head_context(vectordb, limit=policy.limit)
+
+    docs = vectordb.similarity_search(question, k=policy.limit)
+    return _format_context(docs)
 
 
 def answer_question(document_id: str, question: str) -> str:
@@ -118,18 +159,11 @@ def answer_question(document_id: str, question: str) -> str:
     except Exception:
         total = 4
 
-    k = min(4, max(1, total))
+    policy = _select_retrieval_policy(question, total)
+    context = _retrieve_context(vectordb, question, policy)
 
-    if _is_summary_question(question):
-        context = _head_context(vectordb, limit=min(8, max(1, total)))
-    else:
-        docs = vectordb.similarity_search(question, k=k)
-        context = _format_context(docs)
-        if not _has_sufficient_context(question, context):
-            return INSUFFICIENT_CONTEXT_ANSWER
-
-    if not context:
-        context = _head_context(vectordb, limit=min(8, max(1, total)))
+    if policy.enforce_quality_gate and not _has_sufficient_context(question, context):
+        return INSUFFICIENT_CONTEXT_ANSWER
 
     if not context:
         return INSUFFICIENT_CONTEXT_ANSWER
