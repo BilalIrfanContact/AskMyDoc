@@ -1,6 +1,7 @@
 import json
 import unittest
 from contextlib import ExitStack
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
@@ -104,6 +105,77 @@ async def _request_asgi(
     return response_status, response_headers, bytes(response_body)
 
 
+class FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakePostgrestQuery:
+    def __init__(self, state: "InMemoryAppState", table: str):
+        self.state = state
+        self.table = table
+        self._action = "select"
+        self._filters: list[tuple[str, object]] = []
+        self._selected_fields: list[str] | None = None
+        self._limit: int | None = None
+        self._order_field: str | None = None
+        self._order_desc = False
+        self._insert_payload: dict | None = None
+
+    def select(self, fields: str):
+        self._action = "select"
+        self._selected_fields = [field.strip() for field in fields.split(",")]
+        return self
+
+    def eq(self, field: str, value):
+        self._filters.append((field, value))
+        return self
+
+    def limit(self, value: int):
+        self._limit = value
+        return self
+
+    def order(self, field: str, desc: bool = False):
+        self._order_field = field
+        self._order_desc = desc
+        return self
+
+    def insert(self, payload: dict):
+        self._action = "insert"
+        self._insert_payload = dict(payload)
+        return self
+
+    def delete(self):
+        self._action = "delete"
+        return self
+
+    def execute(self):
+        if self._action == "insert":
+            return FakeResponse(self.state.insert_row(self.table, self._insert_payload or {}))
+
+        if self._action == "delete":
+            self.state.delete_rows(self.table, self._filters)
+            return FakeResponse([])
+
+        rows = self.state.select_rows(
+            self.table,
+            filters=self._filters,
+            selected_fields=self._selected_fields,
+            order_field=self._order_field,
+            order_desc=self._order_desc,
+            limit=self._limit,
+        )
+        return FakeResponse(rows)
+
+
+class FakePostgrestClient:
+    def __init__(self, state: "InMemoryAppState"):
+        self.state = state
+
+    def from_(self, table: str) -> FakePostgrestQuery:
+        return FakePostgrestQuery(self.state, table)
+
+
 class InMemoryAppState:
     def __init__(self):
         self.documents: dict[str, dict] = {
@@ -140,112 +212,104 @@ class InMemoryAppState:
             }
         ]
         self.storage_deleted: list[str] = []
+        self.storage_uploaded: list[str] = []
         self.vector_deleted: list[str] = []
         self.conversation_counter = 0
         self.message_counter = 0
         self.upload_counter = 0
+        self.document_counter = 0
 
-    def list_user_documents(self, user_id: str) -> list[dict]:
-        return sorted(
-            [document for document in self.documents.values() if document["user_id"] == user_id],
-            key=lambda item: item.get("uploaded_at") or "",
-            reverse=True,
-        )
+    @staticmethod
+    def _matches_filters(row: dict, filters: list[tuple[str, object]]) -> bool:
+        return all(row.get(field) == value for field, value in filters)
 
-    def get_user_document(self, document_id: str, user_id: str) -> dict | None:
-        document = self.documents.get(document_id)
-        if document and document["user_id"] == user_id:
-            return document
-        return None
+    @staticmethod
+    def _project_row(row: dict, selected_fields: list[str] | None) -> dict:
+        if not selected_fields:
+            return dict(row)
+        return {field: row.get(field) for field in selected_fields}
 
-    def get_document(self, document_id: str) -> dict | None:
-        return self.documents.get(document_id)
+    def select_rows(
+        self,
+        table: str,
+        *,
+        filters: list[tuple[str, object]],
+        selected_fields: list[str] | None,
+        order_field: str | None,
+        order_desc: bool,
+        limit: int | None,
+    ) -> list[dict]:
+        if table == "documents":
+            rows = list(self.documents.values())
+        elif table == "conversations":
+            rows = list(self.conversations.values())
+        elif table == "messages":
+            rows = list(self.messages)
+        else:
+            raise AssertionError(f"Unexpected table: {table}")
 
-    def create_conversation(self, user_id: str, document_id: str) -> str:
-        self.conversation_counter += 1
-        conversation_id = f"convo-{self.conversation_counter}"
-        self.conversations[conversation_id] = {
-            "id": conversation_id,
-            "user_id": user_id,
-            "document_id": document_id,
-            "created_at": f"2026-06-11T11:0{self.conversation_counter}:00Z",
-        }
-        return conversation_id
+        rows = [row for row in rows if self._matches_filters(row, filters)]
+        if order_field:
+            rows = sorted(rows, key=lambda item: item.get(order_field) or "", reverse=order_desc)
+        if limit is not None:
+            rows = rows[:limit]
+        return [self._project_row(row, selected_fields) for row in rows]
 
-    def get_user_conversation(self, conversation_id: str, user_id: str) -> dict | None:
-        conversation = self.conversations.get(conversation_id)
-        if conversation and conversation["user_id"] == user_id:
-            return conversation
-        return None
+    def insert_row(self, table: str, payload: dict) -> list[dict]:
+        row = dict(payload)
 
-    def get_conversation(self, conversation_id: str) -> dict | None:
-        return self.conversations.get(conversation_id)
+        if table == "documents":
+            self.document_counter += 1
+            row.setdefault("uploaded_at", f"2026-06-11T13:{self.document_counter:02d}:00Z")
+            self.documents[row["id"]] = row
+        elif table == "conversations":
+            self.conversation_counter += 1
+            self.conversations[row["id"]] = {
+                **row,
+                "created_at": f"2026-06-11T11:{self.conversation_counter:02d}:00Z",
+            }
+            row = self.conversations[row["id"]]
+        elif table == "messages":
+            self.message_counter += 1
+            self.messages.append(
+                {
+                    **row,
+                    "created_at": f"2026-06-11T12:{self.message_counter:02d}:00Z",
+                }
+            )
+            row = self.messages[-1]
+        else:
+            raise AssertionError(f"Unexpected table: {table}")
 
-    def list_user_conversations(self, user_id: str, document_id: str | None = None) -> list[dict]:
-        conversations = [
-            conversation
-            for conversation in self.conversations.values()
-            if conversation["user_id"] == user_id
-            and (document_id is None or conversation["document_id"] == document_id)
-        ]
-        return sorted(conversations, key=lambda item: item.get("created_at") or "", reverse=True)
+        return [dict(row)]
 
-    def insert_message(self, conversation_id: str, role: str, content: str) -> dict:
-        self.message_counter += 1
-        message = {
-            "id": f"msg-{self.message_counter}",
-            "conversation_id": conversation_id,
-            "role": role,
-            "content": content,
-            "created_at": f"2026-06-11T12:0{self.message_counter}:00Z",
-        }
-        self.messages.append(message)
-        return message
+    def delete_rows(self, table: str, filters: list[tuple[str, object]]) -> None:
+        if table == "documents":
+            for document_id, row in list(self.documents.items()):
+                if self._matches_filters(row, filters):
+                    del self.documents[document_id]
+            return
 
-    def list_conversation_messages(self, conversation_id: str) -> list[dict]:
-        return [message for message in self.messages if message["conversation_id"] == conversation_id]
+        if table == "conversations":
+            for conversation_id, row in list(self.conversations.items()):
+                if self._matches_filters(row, filters):
+                    del self.conversations[conversation_id]
+            return
 
-    def upload_document(self, user_id: str, filename: str) -> tuple[str, str]:
+        if table == "messages":
+            self.messages = [row for row in self.messages if not self._matches_filters(row, filters)]
+            return
+
+        raise AssertionError(f"Unexpected table: {table}")
+
+    def upload_storage_object(self, user_id: str, document_id: str, filename: str, data: bytes) -> str:
         self.upload_counter += 1
-        document_id = f"doc-upload-{self.upload_counter}"
         storage_url = f"documents/{user_id}/{document_id}/{filename}"
-        self.documents[document_id] = {
-            "id": document_id,
-            "user_id": user_id,
-            "filename": filename,
-            "storage_url": storage_url,
-            "uploaded_at": f"2026-06-11T13:0{self.upload_counter}:00Z",
-        }
-        return document_id, storage_url
-
-    def list_document_conversation_ids(self, user_id: str, document_id: str) -> list[str]:
-        return [
-            conversation["id"]
-            for conversation in self.conversations.values()
-            if conversation["user_id"] == user_id and conversation["document_id"] == document_id
-        ]
+        self.storage_uploaded.append(storage_url)
+        return storage_url
 
     def delete_storage_object(self, storage_url: str) -> None:
         self.storage_deleted.append(storage_url)
-
-    def delete_document_record(self, document_id: str, user_id: str) -> None:
-        document = self.documents.get(document_id)
-        if document and document["user_id"] == user_id:
-            del self.documents[document_id]
-
-    def delete_messages_for_conversation(self, conversation_id: str) -> None:
-        self.messages = [
-            message for message in self.messages if message["conversation_id"] != conversation_id
-        ]
-
-    def delete_user_document_conversations(self, user_id: str, document_id: str) -> None:
-        to_delete = [
-            conversation_id
-            for conversation_id, conversation in self.conversations.items()
-            if conversation["user_id"] == user_id and conversation["document_id"] == document_id
-        ]
-        for conversation_id in to_delete:
-            del self.conversations[conversation_id]
 
     def delete_vector_store(self, document_id: str) -> None:
         self.vector_deleted.append(document_id)
@@ -255,48 +319,28 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.app = _build_test_app()
         self.state = InMemoryAppState()
+        self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
 
-        self.exit_stack.enter_context(
-            patch("backend.services.authz.get_user_document", side_effect=self.state.get_user_document)
-        )
-        self.exit_stack.enter_context(
-            patch("backend.services.authz.get_document", side_effect=self.state.get_document)
-        )
+        for target in (
+            "backend.services.persistence.documents_repository.get_postgrest_client",
+            "backend.services.persistence.conversations_repository.get_postgrest_client",
+            "backend.services.persistence.messages_repository.get_postgrest_client",
+        ):
+            self.exit_stack.enter_context(patch(target, return_value=self.postgrest_client))
         self.exit_stack.enter_context(
             patch(
-                "backend.services.authz.get_user_conversation",
-                side_effect=self.state.get_user_conversation,
+                "backend.services.persistence.conversations_repository.uuid",
+                new=SimpleNamespace(uuid4=lambda: f"convo-{self.state.conversation_counter + 1}"),
             )
         )
         self.exit_stack.enter_context(
-            patch("backend.services.authz.get_conversation", side_effect=self.state.get_conversation)
+            patch(
+                "backend.services.persistence.messages_repository.uuid",
+                new=SimpleNamespace(uuid4=lambda: f"msg-{self.state.message_counter + 1}"),
+            )
         )
 
-        self.exit_stack.enter_context(
-            patch("backend.routers.documents.list_user_documents", side_effect=self.state.list_user_documents)
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.routers.conversations.create_conversation",
-                side_effect=self.state.create_conversation,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.routers.conversations.list_user_conversations",
-                side_effect=self.state.list_user_conversations,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.routers.conversations.list_conversation_messages",
-                side_effect=self.state.list_conversation_messages,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch("backend.routers.chat.insert_message", side_effect=self.state.insert_message)
-        )
         self.exit_stack.enter_context(
             patch("backend.routers.chat.answer_question", return_value="Document summary answer")
         )
@@ -313,62 +357,19 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.exit_stack.enter_context(
             patch(
                 "backend.services.document_lifecycle.upload_pdf_to_storage",
-                side_effect=lambda user_id, document_id, filename, data: (
-                    self.state.upload_document(user_id, filename)[1]
-                ),
+                side_effect=self.state.upload_storage_object,
             )
         )
         self.exit_stack.enter_context(
             patch(
-                "backend.services.document_lifecycle.insert_document",
-                side_effect=lambda document_id, user_id, filename, storage_url: (
-                    self.state.documents.setdefault(
-                        document_id,
-                        {
-                            "id": document_id,
-                            "user_id": user_id,
-                            "filename": filename,
-                            "storage_url": storage_url,
-                            "uploaded_at": "2026-06-11T13:59:00Z",
-                        },
-                    )
-                ),
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.services.document_lifecycle.uuid.uuid4",
-                side_effect=lambda: f"doc-upload-{self.state.upload_counter + 1}",
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.services.document_lifecycle.list_document_conversation_ids",
-                side_effect=self.state.list_document_conversation_ids,
+                "backend.services.document_lifecycle.uuid",
+                new=SimpleNamespace(uuid4=lambda: f"doc-upload-{self.state.upload_counter + 1}"),
             )
         )
         self.exit_stack.enter_context(
             patch(
                 "backend.services.document_lifecycle.delete_storage_object",
                 side_effect=self.state.delete_storage_object,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.services.document_lifecycle.delete_document_record",
-                side_effect=self.state.delete_document_record,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.services.document_lifecycle.delete_messages_for_conversation",
-                side_effect=self.state.delete_messages_for_conversation,
-            )
-        )
-        self.exit_stack.enter_context(
-            patch(
-                "backend.services.document_lifecycle.delete_user_document_conversations",
-                side_effect=self.state.delete_user_document_conversations,
             )
         )
         self.exit_stack.enter_context(
@@ -443,6 +444,8 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         upload_payload = json.loads(response_body)
         document_id = upload_payload["document_id"]
+        self.assertIn(document_id, self.state.documents)
+        self.assertIn(f"documents/user-a/{document_id}/report.pdf", self.state.storage_uploaded)
 
         status, _, response_body = await _request_asgi(
             self.app,
