@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..models.schemas import DeleteDocumentResponse, DocumentsResponse
+from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse
 from ..services.authz import require_user_document
 from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
@@ -10,7 +10,14 @@ from ..services.persistence.documents_repository import list_user_documents
 router = APIRouter()
 
 
-@router.get("/documents", response_model=DocumentsResponse)
+@router.get(
+    "/documents",
+    response_model=DocumentsResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+    },
+)
 async def get_user_documents(user_id: str = Depends(require_authenticated_user)):
     try:
         documents = list_user_documents(user_id=user_id)
@@ -20,7 +27,15 @@ async def get_user_documents(user_id: str = Depends(require_authenticated_user))
     return DocumentsResponse(documents=documents)
 
 
-@router.delete("/documents/{document_id}", response_model=DeleteDocumentResponse)
+@router.delete(
+    "/documents/{document_id}",
+    response_model=DeleteDocumentResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        404: {"model": ErrorDetailResponse},
+        502: {"model": DeleteErrorResponse},
+    },
+)
 async def delete_user_document(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),

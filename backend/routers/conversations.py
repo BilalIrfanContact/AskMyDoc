@@ -5,6 +5,7 @@ from ..models.schemas import (
     ConversationCreateResponse,
     ConversationMessagesResponse,
     ConversationsResponse,
+    ErrorDetailResponse,
 )
 from ..services.internal_auth import require_authenticated_user
 from ..services.authz import require_user_conversation, require_user_document
@@ -18,7 +19,14 @@ from ..services.persistence.messages_repository import list_conversation_message
 router = APIRouter()
 
 
-@router.get("/conversations", response_model=ConversationsResponse)
+@router.get(
+    "/conversations",
+    response_model=ConversationsResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+    },
+)
 async def get_user_conversations(
     document_id: str | None = Query(None, description="Filter by document UUID"),
     user_id: str = Depends(require_authenticated_user),
@@ -38,7 +46,15 @@ async def get_user_conversations(
     return ConversationsResponse(conversations=conversations)
 
 
-@router.post("/conversations", response_model=ConversationCreateResponse)
+@router.post(
+    "/conversations",
+    response_model=ConversationCreateResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        404: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+    },
+)
 async def create_conversation_endpoint(
     request: ConversationCreateRequest,
     user_id: str = Depends(require_authenticated_user),
@@ -56,7 +72,15 @@ async def create_conversation_endpoint(
     return ConversationCreateResponse(conversation_id=conversation_id)
 
 
-@router.get("/conversations/{conversation_id}/messages", response_model=ConversationMessagesResponse)
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=ConversationMessagesResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        404: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+    },
+)
 async def get_conversation_messages(
     conversation_id: str,
     user_id: str = Depends(require_authenticated_user),

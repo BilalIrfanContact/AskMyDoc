@@ -3,12 +3,36 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class ErrorDetailResponse(BaseModel):
+    detail: str
+
+
 class UploadResponse(BaseModel):
     status: Literal["success"]
     lifecycle_status: Literal["ready"] = Field(..., description="Lifecycle state for the upload flow")
     document_id: str = Field(..., description="UUID for the uploaded document")
     chunk_count: int = Field(..., description="Number of chunks stored for retrieval")
     stored_count: int = Field(..., description="Number of chunks persisted in Chroma")
+
+
+class UploadErrorDetail(BaseModel):
+    message: str
+    lifecycle_status: Literal["failed", "rejected"]
+    failure_stage: Literal["validation", "indexing", "storage", "metadata"]
+    reason_code: Literal[
+        "invalid_file_type",
+        "no_extractable_text",
+        "no_usable_chunks",
+        "indexing_failed",
+        "no_chunks_stored",
+        "storage_upload_failed",
+        "metadata_persist_failed",
+    ]
+    cleanup_status: Literal["not-needed", "completed", "failed"]
+
+
+class UploadErrorResponse(BaseModel):
+    detail: UploadErrorDetail
 
 
 class ChatRequest(BaseModel):
@@ -63,6 +87,24 @@ class DocumentRecord(BaseModel):
 
 class DocumentsResponse(BaseModel):
     documents: List[DocumentRecord]
+
+
+class DeleteErrorDetail(BaseModel):
+    message: str
+    lifecycle_status: Literal["failed"]
+    failure_stage: Literal["conversations", "indexing", "storage", "metadata"]
+    reason_code: Literal[
+        "conversation_lookup_failed",
+        "storage_delete_failed",
+        "metadata_delete_failed",
+        "conversation_cleanup_failed",
+        "indexing_cleanup_failed",
+    ]
+    cleanup_status: Literal["not-started", "partial", "completed"]
+
+
+class DeleteErrorResponse(BaseModel):
+    detail: DeleteErrorDetail
 
 
 class DeleteDocumentResponse(BaseModel):

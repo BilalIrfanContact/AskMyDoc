@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..models.schemas import ChatRequest, ChatResponse
+from ..models.schemas import ChatRequest, ChatResponse, ErrorDetailResponse
 from ..services.authz import require_user_conversation, require_user_document
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
@@ -10,7 +10,16 @@ from ..services.rag_pipeline import answer_question
 router = APIRouter()
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    responses={
+        400: {"model": ErrorDetailResponse},
+        401: {"model": ErrorDetailResponse},
+        404: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+    },
+)
 async def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user)):
     question = (request.message or request.question or "").strip()
     if not question:
