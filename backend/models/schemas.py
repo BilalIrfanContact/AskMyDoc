@@ -42,11 +42,17 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 
+class AnswerCitation(BaseModel):
+    chunk_id: str
+    excerpt: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     intent: Literal["summary", "qa"]
     retrieval_mode: Literal["head", "semantic"]
     answer_status: Literal["answered", "insufficient_context"]
+    citations: List[AnswerCitation]
 
 
 class ConversationCreateRequest(BaseModel):

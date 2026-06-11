@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..models.schemas import ChatRequest, ChatResponse, ErrorDetailResponse
+from ..models.schemas import AnswerCitation, ChatRequest, ChatResponse, ErrorDetailResponse
 from ..services.authz import require_user_conversation, require_user_document
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
@@ -69,4 +69,8 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
         intent=decision.intent,
         retrieval_mode=decision.retrieval_mode,
         answer_status=decision.answer_status,
+        citations=[
+            AnswerCitation(chunk_id=citation.chunk_id, excerpt=citation.excerpt)
+            for citation in decision.citations
+        ],
     )
