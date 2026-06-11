@@ -1,3 +1,18 @@
+import type {
+  ChatResponseBody,
+  ConversationRecord,
+  CreateConversationResponseBody,
+  DeleteErrorDetail,
+  DeleteUserDocumentResponseBody,
+  DocumentRecord,
+  GetConversationMessagesResponseBody,
+  GetUserConversationsResponseBody,
+  GetUserDocumentsResponseBody,
+  MessageRecord,
+  UploadErrorDetail,
+  UploadPdfResponse
+} from "./api-contract";
+
 const API_BASE = "/api";
 
 async function getErrorMessage(res: Response, fallback: string) {
@@ -13,28 +28,22 @@ async function getErrorMessage(res: Response, fallback: string) {
   return fallback;
 }
 
-type UploadLifecycleStatus = "ready" | "failed" | "rejected";
-type UploadFailureStage = "validation" | "indexing" | "storage" | "metadata";
-type UploadCleanupStatus = "not-needed" | "completed" | "failed";
-type UploadReasonCode =
-  | "invalid_file_type"
-  | "no_extractable_text"
-  | "no_usable_chunks"
-  | "indexing_failed"
-  | "no_chunks_stored"
-  | "storage_upload_failed"
-  | "metadata_persist_failed";
-type DeleteLifecycleStatus = "deleted" | "failed";
-type DeleteFailureStage = "conversations" | "indexing" | "storage" | "metadata";
-type DeleteCleanupStatus = "not-started" | "partial" | "completed";
-type DeleteReasonCode =
-  | "conversation_lookup_failed"
-  | "storage_delete_failed"
-  | "metadata_delete_failed"
-  | "conversation_cleanup_failed"
-  | "indexing_cleanup_failed";
+type UploadLifecycleStatus = UploadErrorDetail["lifecycle_status"] | UploadPdfResponse["lifecycle_status"];
+type UploadFailureStage = UploadErrorDetail["failure_stage"];
+type UploadCleanupStatus = UploadErrorDetail["cleanup_status"];
+type UploadReasonCode = UploadErrorDetail["reason_code"];
+type DeleteLifecycleStatus = DeleteErrorDetail["lifecycle_status"] | DeleteUserDocumentResponseBody["lifecycle_status"];
+type DeleteFailureStage = DeleteErrorDetail["failure_stage"];
+type DeleteCleanupStatus = DeleteErrorDetail["cleanup_status"] | DeleteUserDocumentResponseBody["cleanup_status"];
+type DeleteReasonCode = DeleteErrorDetail["reason_code"];
 
-function parseUploadReasonCode(detail: Record<string, unknown>): UploadReasonCode | null {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseUploadReasonCode(
+  detail: Partial<UploadErrorDetail> & Record<string, unknown>
+): UploadReasonCode | null {
   if (
     detail.reason_code === "invalid_file_type" ||
     detail.reason_code === "no_extractable_text" ||
@@ -79,7 +88,9 @@ function parseUploadReasonCode(detail: Record<string, unknown>): UploadReasonCod
   return null;
 }
 
-function parseDeleteReasonCode(detail: Record<string, unknown>): DeleteReasonCode | null {
+function parseDeleteReasonCode(
+  detail: Partial<DeleteErrorDetail> & Record<string, unknown>
+): DeleteReasonCode | null {
   if (
     detail.reason_code === "conversation_lookup_failed" ||
     detail.reason_code === "storage_delete_failed" ||
@@ -159,28 +170,9 @@ export class DeleteFlowError extends Error {
   }
 }
 
-export type PersistedDocument = {
-  id: string;
-  user_id: string;
-  filename: string;
-  storage_url: string;
-  uploaded_at?: string | null;
-};
-
-export type PersistedConversation = {
-  id: string;
-  user_id: string;
-  document_id: string;
-  created_at?: string | null;
-};
-
-export type PersistedMessage = {
-  id: string;
-  conversation_id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at?: string | null;
-};
+export type PersistedDocument = DocumentRecord;
+export type PersistedConversation = ConversationRecord;
+export type PersistedMessage = MessageRecord;
 
 export async function uploadPdf(file: File) {
   const formData = new FormData();
@@ -195,7 +187,7 @@ export async function uploadPdf(file: File) {
     const error = await res.json().catch(() => ({ detail: { message: "Upload failed." } }));
     const detail = error?.detail;
 
-    if (detail && typeof detail === "object") {
+    if (isRecord(detail)) {
       throw new UploadFlowError(
         typeof detail.message === "string" ? detail.message : "Upload failed.",
         {
@@ -224,13 +216,7 @@ export async function uploadPdf(file: File) {
     throw new UploadFlowError(typeof detail === "string" ? detail : "Upload failed.");
   }
 
-  return res.json() as Promise<{
-    status: string;
-    lifecycle_status: "ready";
-    document_id: string;
-    chunk_count: number;
-    stored_count: number;
-  }>;
+  return res.json() as Promise<UploadPdfResponse>;
 }
 
 export async function createConversation(documentId: string) {
@@ -244,7 +230,7 @@ export async function createConversation(documentId: string) {
     throw new Error(await getErrorMessage(res, "Failed to create conversation."));
   }
 
-  return res.json() as Promise<{ conversation_id: string }>;
+  return res.json() as Promise<CreateConversationResponseBody>;
 }
 
 export async function getUserDocuments() {
@@ -257,7 +243,7 @@ export async function getUserDocuments() {
     throw new Error(await getErrorMessage(res, "Failed to load documents."));
   }
 
-  const data = (await res.json()) as { documents: PersistedDocument[] };
+  const data = (await res.json()) as GetUserDocumentsResponseBody;
   return data.documents;
 }
 
@@ -270,7 +256,7 @@ export async function deleteUserDocument(documentId: string) {
     const error = await res.json().catch(() => ({ detail: { message: "Failed to delete document." } }));
     const detail = error?.detail;
 
-    if (detail && typeof detail === "object") {
+    if (isRecord(detail)) {
       throw new DeleteFlowError(
         typeof detail.message === "string" ? detail.message : "Failed to delete document.",
         {
@@ -296,11 +282,7 @@ export async function deleteUserDocument(documentId: string) {
     throw new DeleteFlowError(typeof detail === "string" ? detail : "Failed to delete document.");
   }
 
-  return res.json() as Promise<{
-    deleted: boolean;
-    lifecycle_status: "deleted";
-    cleanup_status: "completed";
-  }>;
+  return res.json() as Promise<DeleteUserDocumentResponseBody>;
 }
 
 export async function getUserConversations(documentId?: string) {
@@ -318,7 +300,7 @@ export async function getUserConversations(documentId?: string) {
     throw new Error(await getErrorMessage(res, "Failed to load conversations."));
   }
 
-  const data = (await res.json()) as { conversations: PersistedConversation[] };
+  const data = (await res.json()) as GetUserConversationsResponseBody;
   return data.conversations;
 }
 
@@ -332,7 +314,7 @@ export async function getConversationMessages(conversationId: string) {
     throw new Error(await getErrorMessage(res, "Failed to load messages."));
   }
 
-  const data = (await res.json()) as { messages: PersistedMessage[] };
+  const data = (await res.json()) as GetConversationMessagesResponseBody;
   return data.messages;
 }
 
@@ -355,5 +337,5 @@ export async function askQuestion(input: {
     throw new Error(await getErrorMessage(res, "Chat failed."));
   }
 
-  return res.json() as Promise<{ answer: string }>;
+  return res.json() as Promise<ChatResponseBody>;
 }
