@@ -163,18 +163,70 @@ def _coerce_response_text(response) -> str:
     return str(content).strip()
 
 
-def _parse_structured_answer(response_text: str) -> LlmAnswerPayload:
+def _parse_structured_answer(response_text: str, question: str) -> LlmAnswerPayload:
     payload = LlmAnswerPayload.model_validate_json(response_text)
-    normalized_answer = _normalize_answer_text(payload.answer)
+    normalized_answer = _normalize_answer_text(payload.answer, question)
     if not normalized_answer:
         raise ValueError("answer must not be empty")
     return LlmAnswerPayload(answer=normalized_answer)
 
 
-def _normalize_answer_text(answer: str) -> str:
+def _question_requests_literal_formatting(question: str) -> bool:
+    q = question.lower()
+    formatting_triggers = (
+        "code",
+        "command",
+        "commands",
+        "snippet",
+        "script",
+        "json",
+        "yaml",
+        "sql",
+        "regex",
+        "markdown",
+        "example output",
+    )
+    return any(trigger in q for trigger in formatting_triggers)
+
+
+def _answer_looks_like_code(answer: str) -> bool:
+    stripped = answer.strip()
+    if not stripped:
+        return False
+
+    stripped = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", stripped)
+    stripped = stripped.replace("```", "")
+
+    code_markers = (
+        "import ",
+        "from ",
+        "def ",
+        "class ",
+        "SELECT ",
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+        "npm ",
+        "pip ",
+        "python ",
+        "curl ",
+        "{",
+        "[",
+    )
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    return any(
+        any(line.startswith(marker) for marker in code_markers)
+        for line in lines
+    )
+
+
+def _normalize_answer_text(answer: str, question: str) -> str:
     text = answer.replace("\r\n", "\n").strip()
     if not text:
         return ""
+
+    if _question_requests_literal_formatting(question) or _answer_looks_like_code(text):
+        return text
 
     text = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", text)
     text = text.replace("```", "")
@@ -207,7 +259,7 @@ def _generate_structured_answer(llm, question: str, context: str) -> str | None:
         response_text = _coerce_response_text(response)
 
         try:
-            return _parse_structured_answer(response_text).answer
+            return _parse_structured_answer(response_text, question).answer
         except (ValidationError, ValueError) as exc:
             if attempt == _STRUCTURED_OUTPUT_RETRY_LIMIT - 1:
                 return None
@@ -256,7 +308,10 @@ def _extract_numeric_tokens(text: str) -> set[str]:
 
 
 def _split_answer_segments(answer: str) -> list[str]:
-    lines = [line.strip(" -") for line in answer.splitlines()]
+    normalized = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", answer)
+    normalized = normalized.replace("```", "")
+    normalized = re.sub(r"`([^`]+)`", r"\1", normalized)
+    lines = [line.strip(" -") for line in normalized.splitlines()]
     segments = []
     for line in lines:
         if not line:
@@ -280,9 +335,16 @@ def _is_segment_grounded(segment: str, evidence_terms: set[str], evidence_number
         return bool(segment_numbers) or not segment.strip()
 
     overlap = segment_terms & evidence_terms
+    unsupported_terms = segment_terms - evidence_terms
+    if not overlap:
+        return False
+
+    if segment_numbers:
+        return len(unsupported_terms) <= len(overlap)
+
     required_overlap = 1 if len(segment_terms) <= 3 else 2
     overlap_ratio = len(overlap) / len(segment_terms)
-    return len(overlap) >= required_overlap and overlap_ratio >= 0.75
+    return len(overlap) >= required_overlap and overlap_ratio >= 0.7
 
 
 def _is_answer_grounded(answer: str, citations: Sequence[AnswerCitation]) -> bool:

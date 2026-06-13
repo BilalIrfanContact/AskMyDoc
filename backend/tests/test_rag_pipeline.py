@@ -163,6 +163,52 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.answer_status, "insufficient_context")
         self.assertEqual(answer.citations, [])
 
+    def test_answer_question_accepts_grounded_paraphrase(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund period is 30 days."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, "The refund period is 30 days.")
+        self.assertEqual(answer.answer_status, "answered")
+
+    def test_answer_question_accepts_brief_grounded_numeric_answer(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "It lasts 30 days."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, "It lasts 30 days.")
+        self.assertEqual(answer.answer_status, "answered")
+
     def test_qa_questions_route_to_semantic_retrieval_policy(self):
         policy = _select_retrieval_policy("What is the refund window?", total_chunks=12)
 
@@ -416,6 +462,29 @@ class RagPipelineTestCase(unittest.TestCase):
             answer.answer,
             "Refund window: 30 days\n\nFrom the purchase date.",
         )
+        self.assertEqual(answer.answer_status, "answered")
+
+    def test_answer_question_preserves_code_formatting_when_requested(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="Use the command pip install app to install the package.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "```bash\\npip install app\\n```"}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What install command?")
+
+        self.assertEqual(answer.answer, "```bash\npip install app\n```")
         self.assertEqual(answer.answer_status, "answered")
 
     def test_qa_questions_do_not_fall_back_to_head_context(self):
