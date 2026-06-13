@@ -45,6 +45,8 @@ class RagPipelineTestCase(unittest.TestCase):
             "metadatas": [query_metadatas],
             "ids": [query_ids],
         }
+        vectordb.embeddings = Mock()
+        vectordb.embeddings.embed_query.return_value = [0.1, 0.2, 0.3]
         return vectordb
 
     def test_answer_question_uses_llm_for_grounded_retrieval(self):
@@ -81,7 +83,7 @@ class RagPipelineTestCase(unittest.TestCase):
             ],
         )
         vectordb._collection.query.assert_called_once_with(
-            query_texts=["What is the refund window?"],
+            query_embeddings=[[0.1, 0.2, 0.3]],
             n_results=4,
             include=["documents", "metadatas"],
         )
@@ -505,7 +507,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.answer_status, "insufficient_context")
         self.assertEqual(answer.citations, [])
         vectordb._collection.query.assert_called_once_with(
-            query_texts=["What is the refund window?"],
+            query_embeddings=[[0.1, 0.2, 0.3]],
             n_results=4,
             include=["documents", "metadatas"],
         )

@@ -460,8 +460,12 @@ def _cited_context_from_query_result(result: dict) -> RetrievedContext:
 
 
 def _semantic_context(vectordb, question: str, limit: int) -> RetrievedContext:
+    embedding_function = getattr(vectordb, "embeddings", None)
+    if embedding_function is None:
+        raise ValueError("Vector store is missing an embedding function.")
+    query_embedding = embedding_function.embed_query(question)
     result = vectordb._collection.query(
-        query_texts=[question],
+        query_embeddings=[query_embedding],
         n_results=limit,
         include=["documents", "metadatas"],
     )

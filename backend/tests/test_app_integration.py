@@ -589,6 +589,47 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_chat_returns_structured_502_when_rag_pipeline_fails(self):
+        status, _, response_body = await _request_asgi(
+            self.app,
+            method="POST",
+            path="/conversations",
+            body=json.dumps({"document_id": "doc-a"}).encode("utf-8"),
+            headers=[
+                (b"x-test-user", b"user-a"),
+                (b"content-type", b"application/json"),
+            ],
+        )
+        self.assertEqual(status, 200)
+        conversation_id = json.loads(response_body)["conversation_id"]
+
+        with patch(
+            "backend.routers.chat.answer_question",
+            side_effect=RuntimeError("model unavailable"),
+        ):
+            status, _, response_body = await _request_asgi(
+                self.app,
+                method="POST",
+                path="/chat",
+                body=json.dumps(
+                    {
+                        "document_id": "doc-a",
+                        "conversation_id": conversation_id,
+                        "message": "Summarize the document",
+                    }
+                ).encode("utf-8"),
+                headers=[
+                    (b"x-test-user", b"user-a"),
+                    (b"content-type", b"application/json"),
+                ],
+            )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(
+            json.loads(response_body),
+            {"detail": "model unavailable"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
