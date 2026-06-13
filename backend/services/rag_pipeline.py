@@ -4,22 +4,23 @@ from dataclasses import dataclass
 from typing import Iterable, List, Literal, Sequence
 
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, ValidationError
 
 from .vector_store import get_vector_store
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant that answers questions based strictly on the provided "
-    "document excerpts. If the user asks for a summary or what the document is about, "
-    "summarize the excerpts. If the answer is not found in the excerpts, say \"I couldn't "
-    "find that information in the document.\" Do not make up information. Be concise and accurate. "
-    "Write in clear, human-readable prose. Paraphrase instead of copying exact wording from the source. "
-    "Avoid markdown formatting such as bold text, italics, or code blocks unless the user explicitly asks for it. "
-    "Use short paragraphs or simple bullets only when they genuinely improve readability."
+    "You answer questions using only the provided document excerpts. "
+    "Do not invent facts that are not supported by the excerpts."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (
     "I couldn't find enough information in the document to answer that question."
+)
+_STRUCTURED_OUTPUT_RETRY_LIMIT = 2
+_STRUCTURED_OUTPUT_INSTRUCTION = (
+    'Return only valid JSON with this exact shape: {"answer": string}. '
+    "Do not include markdown, code fences, or any extra keys."
 )
 
 _QUESTION_STOPWORDS = {
@@ -53,7 +54,40 @@ _QUESTION_STOPWORDS = {
     "why",
     "with",
 }
-
+_GROUNDING_STOPWORDS = _QUESTION_STOPWORDS | {
+    "about",
+    "all",
+    "also",
+    "answer",
+    "based",
+    "can",
+    "document",
+    "enough",
+    "enrollment",
+    "exception",
+    "final",
+    "found",
+    "helpful",
+    "here",
+    "information",
+    "into",
+    "its",
+    "more",
+    "not",
+    "only",
+    "should",
+    "than",
+    "their",
+    "them",
+    "there",
+    "these",
+    "they",
+    "through",
+    "under",
+    "using",
+    "user",
+    "your",
+}
 Intent = Literal["summary", "qa"]
 RetrievalMode = Literal["head", "semantic"]
 
@@ -87,6 +121,153 @@ class RetrievedContext:
     citations: list[AnswerCitation]
 
 
+class LlmAnswerPayload(BaseModel):
+    answer: str
+
+
+def _build_generation_prompt(question: str, context: str) -> str:
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"{_STRUCTURED_OUTPUT_INSTRUCTION}\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question: {question}\n"
+        "JSON Response:"
+    )
+
+
+def _build_retry_prompt(question: str, context: str, invalid_response: str, error: str) -> str:
+    return (
+        f"{_build_generation_prompt(question, context)}\n\n"
+        "Your previous response did not match the required JSON contract.\n"
+        f"Validation error: {error}\n"
+        f"Previous response:\n{invalid_response}\n\n"
+        'Reply again with only valid JSON matching exactly {"answer": string}.'
+    )
+
+
+def _coerce_response_text(response) -> str:
+    content = getattr(response, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts).strip()
+
+    return str(content).strip()
+
+
+def _parse_structured_answer(response_text: str, question: str) -> LlmAnswerPayload:
+    payload = LlmAnswerPayload.model_validate_json(response_text)
+    normalized_answer = _normalize_answer_text(payload.answer, question)
+    if not normalized_answer:
+        raise ValueError("answer must not be empty")
+    return LlmAnswerPayload(answer=normalized_answer)
+
+
+def _question_requests_literal_formatting(question: str) -> bool:
+    q = question.lower()
+    formatting_triggers = (
+        "code",
+        "command",
+        "commands",
+        "snippet",
+        "script",
+        "json",
+        "yaml",
+        "sql",
+        "regex",
+        "markdown",
+        "example output",
+    )
+    return any(trigger in q for trigger in formatting_triggers)
+
+
+def _answer_looks_like_code(answer: str) -> bool:
+    stripped = answer.strip()
+    if not stripped:
+        return False
+
+    stripped = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", stripped)
+    stripped = stripped.replace("```", "")
+
+    code_markers = (
+        "import ",
+        "from ",
+        "def ",
+        "class ",
+        "SELECT ",
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+        "npm ",
+        "pip ",
+        "python ",
+        "curl ",
+        "{",
+        "[",
+    )
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    return any(
+        any(line.startswith(marker) for marker in code_markers)
+        for line in lines
+    )
+
+
+def _normalize_answer_text(answer: str, question: str) -> str:
+    text = answer.replace("\r\n", "\n").strip()
+    if not text:
+        return ""
+
+    if _question_requests_literal_formatting(question) or _answer_looks_like_code(text):
+        return text
+
+    text = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", text)
+    text = text.replace("```", "")
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
+    text = re.sub(r"(^|[\s(])(\*|_)([^*_]+?)\2(?=[\s).,!?]|$)", r"\1\3", text)
+
+    normalized_lines = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            normalized_lines.append("")
+            continue
+
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^>\s?", "", line)
+        line = re.sub(r"^[-*+]\s+", "- ", line)
+        normalized_lines.append(line)
+
+    normalized_text = "\n".join(normalized_lines)
+    normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
+    return normalized_text.strip()
+
+
+def _generate_structured_answer(llm, question: str, context: str) -> str | None:
+    prompt = _build_generation_prompt(question, context)
+
+    for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
+        response = llm.invoke(prompt)
+        response_text = _coerce_response_text(response)
+
+        try:
+            return _parse_structured_answer(response_text, question).answer
+        except (ValidationError, ValueError) as exc:
+            if attempt == _STRUCTURED_OUTPUT_RETRY_LIMIT - 1:
+                return None
+            prompt = _build_retry_prompt(question, context, response_text, str(exc))
+
+    return None
+
+
 def _format_texts(texts: Iterable[str]) -> str:
     return "\n\n".join(text for text in texts if text).strip()
 
@@ -113,6 +294,74 @@ def _has_sufficient_context(question: str, context: str) -> bool:
     required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
     return len(overlap) >= required_overlap
 
+
+def _extract_grounding_terms(text: str) -> set[str]:
+    return {
+        term
+        for term in re.findall(r"[a-z0-9]+", text.lower())
+        if len(term) > 2 and term not in _GROUNDING_STOPWORDS
+    }
+
+
+def _extract_numeric_tokens(text: str) -> set[str]:
+    return set(re.findall(r"\d+(?:\.\d+)?", text.lower()))
+
+
+def _split_answer_segments(answer: str) -> list[str]:
+    normalized = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", answer)
+    normalized = normalized.replace("```", "")
+    normalized = re.sub(r"`([^`]+)`", r"\1", normalized)
+    lines = [line.strip(" -") for line in normalized.splitlines()]
+    segments = []
+    for line in lines:
+        if not line:
+            continue
+        parts = re.split(r"(?<=[.!?])\s+", line)
+        for part in parts:
+            segment = part.strip()
+            if segment:
+                segments.append(segment)
+    return segments or [answer.strip()]
+
+
+def _is_segment_grounded(segment: str, evidence_terms: set[str], evidence_numbers: set[str]) -> bool:
+    segment_terms = _extract_grounding_terms(segment)
+    segment_numbers = _extract_numeric_tokens(segment)
+
+    if segment_numbers and not segment_numbers.issubset(evidence_numbers):
+        return False
+
+    if not segment_terms:
+        return bool(segment_numbers) or not segment.strip()
+
+    overlap = segment_terms & evidence_terms
+    unsupported_terms = segment_terms - evidence_terms
+    if not overlap:
+        return False
+
+    if segment_numbers:
+        return len(unsupported_terms) <= len(overlap)
+
+    required_overlap = 1 if len(segment_terms) <= 3 else 2
+    overlap_ratio = len(overlap) / len(segment_terms)
+    return len(overlap) >= required_overlap and overlap_ratio >= 0.7
+
+
+def _is_answer_grounded(answer: str, citations: Sequence[AnswerCitation]) -> bool:
+    evidence_text = _format_texts(citation.excerpt for citation in citations)
+    if not evidence_text:
+        return False
+
+    evidence_terms = _extract_grounding_terms(evidence_text)
+    evidence_numbers = _extract_numeric_tokens(evidence_text)
+    segments = _split_answer_segments(answer)
+    if not segments:
+        return False
+
+    return all(
+        _is_segment_grounded(segment, evidence_terms, evidence_numbers)
+        for segment in segments
+    )
 
 def _route_intent(question: str) -> Intent:
     q = question.strip().lower()
@@ -262,15 +511,14 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
-    prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Context:\n{context.text}\n\n"
-        f"Question: {question}\n"
-        "Answer:"
-    )
-    response = llm.invoke(prompt)
+    answer = _generate_structured_answer(llm, question, context.text)
+    if answer is None:
+        return _insufficient_context_decision(policy)
+    if not _is_answer_grounded(answer, context.citations):
+        return _insufficient_context_decision(policy)
+
     return AnswerDecision(
-        answer=response.content.strip(),
+        answer=answer,
         intent=policy.intent,
         retrieval_mode=policy.mode,
         answer_status="answered",
