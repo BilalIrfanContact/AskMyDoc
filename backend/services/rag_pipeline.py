@@ -54,6 +54,40 @@ _QUESTION_STOPWORDS = {
     "why",
     "with",
 }
+_GROUNDING_STOPWORDS = _QUESTION_STOPWORDS | {
+    "about",
+    "all",
+    "also",
+    "answer",
+    "based",
+    "can",
+    "document",
+    "enough",
+    "enrollment",
+    "exception",
+    "final",
+    "found",
+    "helpful",
+    "here",
+    "information",
+    "into",
+    "its",
+    "more",
+    "not",
+    "only",
+    "should",
+    "than",
+    "their",
+    "them",
+    "there",
+    "these",
+    "they",
+    "through",
+    "under",
+    "using",
+    "user",
+    "your",
+}
 Intent = Literal["summary", "qa"]
 RetrievalMode = Literal["head", "semantic"]
 
@@ -208,6 +242,65 @@ def _has_sufficient_context(question: str, context: str) -> bool:
     required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
     return len(overlap) >= required_overlap
 
+
+def _extract_grounding_terms(text: str) -> set[str]:
+    return {
+        term
+        for term in re.findall(r"[a-z0-9]+", text.lower())
+        if len(term) > 2 and term not in _GROUNDING_STOPWORDS
+    }
+
+
+def _extract_numeric_tokens(text: str) -> set[str]:
+    return set(re.findall(r"\d+(?:\.\d+)?", text.lower()))
+
+
+def _split_answer_segments(answer: str) -> list[str]:
+    lines = [line.strip(" -") for line in answer.splitlines()]
+    segments = []
+    for line in lines:
+        if not line:
+            continue
+        parts = re.split(r"(?<=[.!?])\s+", line)
+        for part in parts:
+            segment = part.strip()
+            if segment:
+                segments.append(segment)
+    return segments or [answer.strip()]
+
+
+def _is_segment_grounded(segment: str, evidence_terms: set[str], evidence_numbers: set[str]) -> bool:
+    segment_terms = _extract_grounding_terms(segment)
+    segment_numbers = _extract_numeric_tokens(segment)
+
+    if segment_numbers and not segment_numbers.issubset(evidence_numbers):
+        return False
+
+    if not segment_terms:
+        return bool(segment_numbers) or not segment.strip()
+
+    overlap = segment_terms & evidence_terms
+    required_overlap = 1 if len(segment_terms) <= 3 else 2
+    overlap_ratio = len(overlap) / len(segment_terms)
+    return len(overlap) >= required_overlap and overlap_ratio >= 0.75
+
+
+def _is_answer_grounded(answer: str, citations: Sequence[AnswerCitation]) -> bool:
+    evidence_text = _format_texts(citation.excerpt for citation in citations)
+    if not evidence_text:
+        return False
+
+    evidence_terms = _extract_grounding_terms(evidence_text)
+    evidence_numbers = _extract_numeric_tokens(evidence_text)
+    segments = _split_answer_segments(answer)
+    if not segments:
+        return False
+
+    return all(
+        _is_segment_grounded(segment, evidence_terms, evidence_numbers)
+        for segment in segments
+    )
+
 def _route_intent(question: str) -> Intent:
     q = question.strip().lower()
     triggers = (
@@ -358,6 +451,8 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
     llm = ChatOpenAI(model=model, temperature=0)
     answer = _generate_structured_answer(llm, question, context.text)
     if answer is None:
+        return _insufficient_context_decision(policy)
+    if not _is_answer_grounded(answer, context.citations):
         return _insufficient_context_decision(policy)
 
     return AnswerDecision(

@@ -139,6 +139,30 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.citations, [])
         self.assertEqual(llm.invoke.call_count, 2)
 
+    def test_answer_question_rejects_ungrounded_generated_answer(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 45 days and includes free returns."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
+
     def test_qa_questions_route_to_semantic_retrieval_policy(self):
         policy = _select_retrieval_policy("What is the refund window?", total_chunks=12)
 
@@ -323,6 +347,47 @@ class RagPipelineTestCase(unittest.TestCase):
 
         self.assertEqual(answer.answer_status, "answered")
         self.assertEqual(answer.citations[0].chunk_id, "legacy-head-2")
+
+    def test_summary_answer_must_be_grounded_in_head_context(self):
+        vectordb = self._build_vector_store(
+            docs=[],
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+            head_metadatas=[{"chunk_id": "doc-1:chunk:0"}],
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "It explains benefits, time-off rules, and stock option grants."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "Summarize this document.")
+
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
+
+    def test_summary_paraphrase_can_pass_grounding_validation(self):
+        vectordb = self._build_vector_store(
+            docs=[],
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+            head_metadatas=[{"chunk_id": "doc-1:chunk:0"}],
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The handbook covers benefits policy and time-off rules."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "Summarize this document.")
+
+        self.assertEqual(answer.answer, "The handbook covers benefits policy and time-off rules.")
+        self.assertEqual(answer.answer_status, "answered")
 
     def test_answer_question_normalizes_markdown_formatting_in_model_output(self):
         vectordb = self._build_vector_store(
