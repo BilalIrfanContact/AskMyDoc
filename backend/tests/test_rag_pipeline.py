@@ -56,7 +56,9 @@ class RagPipelineTestCase(unittest.TestCase):
             ]
         )
         llm = Mock()
-        llm.invoke.return_value = SimpleNamespace(content="The refund window is 30 days.")
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 30 days."}'
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
@@ -84,6 +86,57 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         chat_openai_mock.assert_called_once()
         llm.invoke.assert_called_once()
+
+    def test_answer_question_retries_when_model_breaks_json_contract(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.side_effect = [
+            SimpleNamespace(content="The refund window is 30 days."),
+            SimpleNamespace(content='{"answer": "The refund window is 30 days."}'),
+        ]
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, "The refund window is 30 days.")
+        self.assertEqual(answer.answer_status, "answered")
+        self.assertEqual(llm.invoke.call_count, 2)
+
+    def test_answer_question_falls_back_after_repeated_json_contract_failures(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.side_effect = [
+            SimpleNamespace(content="The refund window is 30 days."),
+            SimpleNamespace(content='{"answer": ""}'),
+        ]
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(answer.answer, INSUFFICIENT_CONTEXT_ANSWER)
+        self.assertEqual(answer.answer_status, "insufficient_context")
+        self.assertEqual(answer.citations, [])
+        self.assertEqual(llm.invoke.call_count, 2)
 
     def test_qa_questions_route_to_semantic_retrieval_policy(self):
         policy = _select_retrieval_policy("What is the refund window?", total_chunks=12)
@@ -172,7 +225,9 @@ class RagPipelineTestCase(unittest.TestCase):
             query_ids=["legacy-chunk-7"],
         )
         llm = Mock()
-        llm.invoke.return_value = SimpleNamespace(content="The refund window is 30 days.")
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 30 days."}'
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
@@ -197,7 +252,9 @@ class RagPipelineTestCase(unittest.TestCase):
             head_metadatas=[{"chunk_id": "doc-1:chunk:0"}],
         )
         llm = Mock()
-        llm.invoke.return_value = SimpleNamespace(content="It explains benefits and time off.")
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "It explains benefits and time off."}'
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
@@ -241,7 +298,9 @@ class RagPipelineTestCase(unittest.TestCase):
             head_ids=["legacy-head-2"],
         )
         llm = Mock()
-        llm.invoke.return_value = SimpleNamespace(content="It explains benefits and time off.")
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "It explains benefits and time off."}'
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable, List, Literal, Sequence
 
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, ValidationError
 
 from .vector_store import get_vector_store
 
@@ -20,6 +21,11 @@ SYSTEM_PROMPT = (
 
 INSUFFICIENT_CONTEXT_ANSWER = (
     "I couldn't find enough information in the document to answer that question."
+)
+_STRUCTURED_OUTPUT_RETRY_LIMIT = 2
+_STRUCTURED_OUTPUT_INSTRUCTION = (
+    'Return only valid JSON with this exact shape: {"answer": string}. '
+    "Do not include markdown, code fences, or any extra keys."
 )
 
 _QUESTION_STOPWORDS = {
@@ -53,7 +59,6 @@ _QUESTION_STOPWORDS = {
     "why",
     "with",
 }
-
 Intent = Literal["summary", "qa"]
 RetrievalMode = Literal["head", "semantic"]
 
@@ -87,6 +92,72 @@ class RetrievedContext:
     citations: list[AnswerCitation]
 
 
+class LlmAnswerPayload(BaseModel):
+    answer: str
+
+
+def _build_generation_prompt(question: str, context: str) -> str:
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"{_STRUCTURED_OUTPUT_INSTRUCTION}\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question: {question}\n"
+        "JSON Response:"
+    )
+
+
+def _build_retry_prompt(question: str, context: str, invalid_response: str, error: str) -> str:
+    return (
+        f"{_build_generation_prompt(question, context)}\n\n"
+        "Your previous response did not match the required JSON contract.\n"
+        f"Validation error: {error}\n"
+        f"Previous response:\n{invalid_response}\n\n"
+        'Reply again with only valid JSON matching exactly {"answer": string}.'
+    )
+
+
+def _coerce_response_text(response) -> str:
+    content = getattr(response, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts).strip()
+
+    return str(content).strip()
+
+
+def _parse_structured_answer(response_text: str) -> LlmAnswerPayload:
+    payload = LlmAnswerPayload.model_validate_json(response_text)
+    if not payload.answer.strip():
+        raise ValueError("answer must not be empty")
+    return LlmAnswerPayload(answer=payload.answer.strip())
+
+
+def _generate_structured_answer(llm, question: str, context: str) -> str | None:
+    prompt = _build_generation_prompt(question, context)
+
+    for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
+        response = llm.invoke(prompt)
+        response_text = _coerce_response_text(response)
+
+        try:
+            return _parse_structured_answer(response_text).answer
+        except (ValidationError, ValueError) as exc:
+            if attempt == _STRUCTURED_OUTPUT_RETRY_LIMIT - 1:
+                return None
+            prompt = _build_retry_prompt(question, context, response_text, str(exc))
+
+    return None
+
+
 def _format_texts(texts: Iterable[str]) -> str:
     return "\n\n".join(text for text in texts if text).strip()
 
@@ -112,7 +183,6 @@ def _has_sufficient_context(question: str, context: str) -> bool:
     overlap = question_terms & context_terms
     required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
     return len(overlap) >= required_overlap
-
 
 def _route_intent(question: str) -> Intent:
     q = question.strip().lower()
@@ -262,15 +332,12 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
-    prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Context:\n{context.text}\n\n"
-        f"Question: {question}\n"
-        "Answer:"
-    )
-    response = llm.invoke(prompt)
+    answer = _generate_structured_answer(llm, question, context.text)
+    if answer is None:
+        return _insufficient_context_decision(policy)
+
     return AnswerDecision(
-        answer=response.content.strip(),
+        answer=answer,
         intent=policy.intent,
         retrieval_mode=policy.mode,
         answer_status="answered",
