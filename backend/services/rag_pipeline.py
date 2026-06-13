@@ -10,13 +10,8 @@ from .vector_store import get_vector_store
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant that answers questions based strictly on the provided "
-    "document excerpts. If the user asks for a summary or what the document is about, "
-    "summarize the excerpts. If the answer is not found in the excerpts, say \"I couldn't "
-    "find that information in the document.\" Do not make up information. Be concise and accurate. "
-    "Write in clear, human-readable prose. Paraphrase instead of copying exact wording from the source. "
-    "Avoid markdown formatting such as bold text, italics, or code blocks unless the user explicitly asks for it. "
-    "Use short paragraphs or simple bullets only when they genuinely improve readability."
+    "You answer questions using only the provided document excerpts. "
+    "Do not invent facts that are not supported by the excerpts."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (
@@ -136,9 +131,38 @@ def _coerce_response_text(response) -> str:
 
 def _parse_structured_answer(response_text: str) -> LlmAnswerPayload:
     payload = LlmAnswerPayload.model_validate_json(response_text)
-    if not payload.answer.strip():
+    normalized_answer = _normalize_answer_text(payload.answer)
+    if not normalized_answer:
         raise ValueError("answer must not be empty")
-    return LlmAnswerPayload(answer=payload.answer.strip())
+    return LlmAnswerPayload(answer=normalized_answer)
+
+
+def _normalize_answer_text(answer: str) -> str:
+    text = answer.replace("\r\n", "\n").strip()
+    if not text:
+        return ""
+
+    text = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", text)
+    text = text.replace("```", "")
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
+    text = re.sub(r"(^|[\s(])(\*|_)([^*_]+?)\2(?=[\s).,!?]|$)", r"\1\3", text)
+
+    normalized_lines = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            normalized_lines.append("")
+            continue
+
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^>\s?", "", line)
+        line = re.sub(r"^[-*+]\s+", "- ", line)
+        normalized_lines.append(line)
+
+    normalized_text = "\n".join(normalized_lines)
+    normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
+    return normalized_text.strip()
 
 
 def _generate_structured_answer(llm, question: str, context: str) -> str | None:

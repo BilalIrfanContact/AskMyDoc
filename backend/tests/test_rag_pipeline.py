@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from backend.services.rag_pipeline import (
     AnswerCitation,
     INSUFFICIENT_CONTEXT_ANSWER,
+    _build_generation_prompt,
     _route_intent,
     _select_retrieval_policy,
     answer_question,
@@ -156,6 +157,18 @@ class RagPipelineTestCase(unittest.TestCase):
 
     def test_route_intent_treats_main_points_as_summary(self):
         self.assertEqual(_route_intent("What are the main points of this PDF?"), "summary")
+
+    def test_generation_prompt_is_thin_and_harness_owned(self):
+        prompt = _build_generation_prompt("What is the refund window?", "Refunds are allowed for 30 days.")
+
+        self.assertIn(
+            "You answer questions using only the provided document excerpts.",
+            prompt,
+        )
+        self.assertIn("Do not invent facts", prompt)
+        self.assertNotIn("I couldn't find enough information", prompt)
+        self.assertNotIn("Avoid markdown formatting", prompt)
+        self.assertNotIn("Use short paragraphs or simple bullets", prompt)
 
     def test_answer_question_returns_deterministic_fallback_for_low_evidence_retrieval(self):
         vectordb = self._build_vector_store(
@@ -310,6 +323,35 @@ class RagPipelineTestCase(unittest.TestCase):
 
         self.assertEqual(answer.answer_status, "answered")
         self.assertEqual(answer.citations[0].chunk_id, "legacy-head-2")
+
+    def test_answer_question_normalizes_markdown_formatting_in_model_output(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content=(
+                '{"answer": "**Refund window:** 30 days\\n\\n```text\\n'
+                'From the purchase date.\\n```"}'
+            )
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            answer = answer_question("doc-1", "What is the refund window?")
+
+        self.assertEqual(
+            answer.answer,
+            "Refund window: 30 days\n\nFrom the purchase date.",
+        )
+        self.assertEqual(answer.answer_status, "answered")
 
     def test_qa_questions_do_not_fall_back_to_head_context(self):
         vectordb = self._build_vector_store(
