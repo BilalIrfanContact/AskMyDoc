@@ -320,11 +320,13 @@ class FakeVectorCollection:
     def __init__(self, *, count: int, query_result: dict):
         self._count = count
         self._query_result = query_result
+        self.query_call_count = 0
 
     def count(self) -> int:
         return self._count
 
     def query(self, *, query_embeddings, n_results: int, include: list[str]) -> dict:
+        self.query_call_count += 1
         return self._query_result
 
 
@@ -341,6 +343,7 @@ class FakeVectorStore:
         query_ids: list[str | None] | None = None,
     ):
         self.embeddings = SimpleNamespace(embed_query=lambda question: [0.1, 0.2, 0.3])
+        self.get_call_count = 0
         self._head_result = {
             "documents": head_documents or [],
             "metadatas": head_metadatas or [],
@@ -356,6 +359,7 @@ class FakeVectorStore:
         )
 
     def get(self, *, limit: int, include: list[str]) -> dict:
+        self.get_call_count += 1
         return self._head_result
 
 
@@ -821,6 +825,66 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         )
+        self.assertEqual(vectordb.get_call_count, 0)
+        self.assertEqual(vectordb._collection.query_call_count, 1)
+
+    async def test_chat_runs_real_summary_head_retrieval_path_and_persists_citations(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            count=6,
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+            head_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
+            head_ids=[None],
+        )
+        llm = SimpleNamespace(
+            invoke=lambda prompt: SimpleNamespace(
+                content='{"answer": "The handbook covers benefits policy and time-off rules."}'
+            )
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            status, payload = await self._chat(conversation_id, "Summarize this document.")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": "The handbook covers benefits policy and time-off rules.",
+                "intent": "summary",
+                "retrieval_mode": "head",
+                "answer_status": "answered",
+                "citations": [
+                    {
+                        "chunk_id": "doc-a:chunk:0",
+                        "excerpt": "This handbook explains the benefits policy and time-off rules.",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "Summarize this document.",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": "The handbook covers benefits policy and time-off rules.",
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+        self.assertEqual(vectordb.get_call_count, 1)
+        self.assertEqual(vectordb._collection.query_call_count, 0)
 
     async def test_chat_returns_deterministic_fallback_when_retrieval_evidence_is_too_weak(self):
         conversation_id = await self._create_conversation()
