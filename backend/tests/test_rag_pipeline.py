@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -48,6 +49,10 @@ class RagPipelineTestCase(unittest.TestCase):
         vectordb.embeddings = Mock()
         vectordb.embeddings.embed_query.return_value = [0.1, 0.2, 0.3]
         return vectordb
+
+    @staticmethod
+    def _logged_event(logger_mock) -> dict:
+        return json.loads(logger_mock.info.call_args.args[0])
 
     def test_answer_question_uses_llm_for_grounded_retrieval(self):
         vectordb = self._build_vector_store(
@@ -512,6 +517,200 @@ class RagPipelineTestCase(unittest.TestCase):
             include=["documents", "metadatas"],
         )
         vectordb.get.assert_not_called()
+        chat_openai_mock.assert_not_called()
+
+    def test_answer_question_logs_retrieval_quality_metrics_for_answered_decision(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 30 days."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["event"], "answer_policy_decision")
+        self.assertEqual(event["document_id"], "doc-1")
+        self.assertEqual(event["answer_status"], "answered")
+        self.assertIsNone(event["fallback_reason_code"])
+        self.assertEqual(event["retrieval_mode"], "semantic")
+        self.assertEqual(event["total_chunk_count"], 4)
+        self.assertTrue(event["chunk_count_available"])
+        self.assertEqual(event["retrieved_document_count"], 1)
+        self.assertEqual(event["citation_count"], 1)
+        self.assertEqual(event["missing_citation_count"], 0)
+        self.assertEqual(event["citation_completeness_ratio"], 1.0)
+        self.assertEqual(event["question_term_count"], 2)
+        self.assertEqual(event["overlap_term_count"], 2)
+        self.assertEqual(event["required_term_overlap"], 2)
+        self.assertTrue(event["has_sufficient_context"])
+        self.assertEqual(event["structured_output_retry_count"], 0)
+        self.assertTrue(event["answer_grounded"])
+
+    def test_answer_question_logs_explicit_reason_when_quality_gate_fails(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The onboarding checklist covers payroll setup and laptop pickup.",
+                    metadata={"chunk_id": "doc-1:chunk:3"},
+                )
+            ]
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["answer_status"], "insufficient_context")
+        self.assertEqual(event["fallback_reason_code"], "retrieval_quality_gate_failed")
+        self.assertTrue(event["quality_gate_applied"])
+        self.assertFalse(event["has_sufficient_context"])
+        self.assertEqual(event["overlap_term_count"], 0)
+        self.assertEqual(event["structured_output_retry_count"], 0)
+        self.assertIsNone(event["answer_grounded"])
+        chat_openai_mock.assert_not_called()
+
+    def test_answer_question_logs_citation_completeness_when_chunk_ids_are_missing(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={},
+                )
+            ]
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["answer_status"], "insufficient_context")
+        self.assertEqual(event["fallback_reason_code"], "empty_context")
+        self.assertEqual(event["retrieved_document_count"], 1)
+        self.assertEqual(event["citation_count"], 0)
+        self.assertEqual(event["missing_citation_count"], 1)
+        self.assertEqual(event["citation_completeness_ratio"], 0.0)
+        self.assertEqual(event["retrieved_context_char_count"], 0)
+        chat_openai_mock.assert_not_called()
+
+    def test_answer_question_logs_structured_output_failure_reason(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.side_effect = [
+            SimpleNamespace(content="The refund window is 30 days."),
+            SimpleNamespace(content='{"answer": ""}'),
+        ]
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["answer_status"], "insufficient_context")
+        self.assertEqual(event["fallback_reason_code"], "structured_output_invalid")
+        self.assertEqual(event["structured_output_retry_count"], 2)
+        self.assertIsNone(event["answer_grounded"])
+
+    def test_answer_question_logs_ungrounded_answer_failure_reason(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 45 days and includes free returns."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["answer_status"], "insufficient_context")
+        self.assertEqual(event["fallback_reason_code"], "answer_not_grounded")
+        self.assertFalse(event["answer_grounded"])
+        self.assertEqual(event["structured_output_retry_count"], 0)
+
+    def test_answer_question_logs_unknown_chunk_count_when_count_lookup_fails(self):
+        vectordb = self._build_vector_store(
+            docs=[
+                SimpleNamespace(
+                    page_content="The refund window is 30 days from the purchase date.",
+                    metadata={"chunk_id": "doc-1:chunk:0"},
+                )
+            ]
+        )
+        vectordb._collection.count.side_effect = RuntimeError("count unavailable")
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"answer": "The refund window is 30 days."}'
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertIsNone(event["total_chunk_count"])
+        self.assertFalse(event["chunk_count_available"])
+
+    def test_answer_question_logs_null_citation_completeness_when_nothing_is_retrieved(self):
+        vectordb = self._build_vector_store(docs=[])
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.logger") as logger_mock,
+        ):
+            answer_question("doc-1", "What is the refund window?")
+
+        event = self._logged_event(logger_mock)
+        self.assertEqual(event["answer_status"], "insufficient_context")
+        self.assertEqual(event["fallback_reason_code"], "empty_context")
+        self.assertEqual(event["retrieved_document_count"], 0)
+        self.assertEqual(event["citation_count"], 0)
+        self.assertEqual(event["missing_citation_count"], 0)
+        self.assertIsNone(event["citation_completeness_ratio"])
         chat_openai_mock.assert_not_called()
 
 
