@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -7,6 +8,9 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
 
 from .vector_store import get_vector_store
+
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = (
@@ -90,6 +94,12 @@ _GROUNDING_STOPWORDS = _QUESTION_STOPWORDS | {
 }
 Intent = Literal["summary", "qa"]
 RetrievalMode = Literal["head", "semantic"]
+FallbackReasonCode = Literal[
+    "retrieval_quality_gate_failed",
+    "empty_context",
+    "structured_output_invalid",
+    "answer_not_grounded",
+]
 
 
 @dataclass(frozen=True)
@@ -119,6 +129,13 @@ class AnswerCitation:
 class RetrievedContext:
     text: str
     citations: list[AnswerCitation]
+    retrieved_document_count: int
+
+
+@dataclass(frozen=True)
+class StructuredAnswerResult:
+    answer: str | None
+    invalid_attempt_count: int
 
 
 class LlmAnswerPayload(BaseModel):
@@ -251,21 +268,29 @@ def _normalize_answer_text(answer: str, question: str) -> str:
     return normalized_text.strip()
 
 
-def _generate_structured_answer(llm, question: str, context: str) -> str | None:
+def _generate_structured_answer(llm, question: str, context: str) -> StructuredAnswerResult:
     prompt = _build_generation_prompt(question, context)
+    invalid_attempt_count = 0
 
     for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
         response = llm.invoke(prompt)
         response_text = _coerce_response_text(response)
 
         try:
-            return _parse_structured_answer(response_text, question).answer
+            return StructuredAnswerResult(
+                answer=_parse_structured_answer(response_text, question).answer,
+                invalid_attempt_count=invalid_attempt_count,
+            )
         except (ValidationError, ValueError) as exc:
+            invalid_attempt_count += 1
             if attempt == _STRUCTURED_OUTPUT_RETRY_LIMIT - 1:
-                return None
+                return StructuredAnswerResult(
+                    answer=None,
+                    invalid_attempt_count=invalid_attempt_count,
+                )
             prompt = _build_retry_prompt(question, context, response_text, str(exc))
 
-    return None
+    return StructuredAnswerResult(answer=None, invalid_attempt_count=invalid_attempt_count)
 
 
 def _format_texts(texts: Iterable[str]) -> str:
@@ -293,6 +318,24 @@ def _has_sufficient_context(question: str, context: str) -> bool:
     overlap = question_terms & context_terms
     required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
     return len(overlap) >= required_overlap
+
+
+def _retrieval_overlap_metrics(question: str, context: str) -> tuple[int, int, bool]:
+    if not context:
+        question_terms = _extract_question_terms(question)
+        required_overlap = 0 if not question_terms else (
+            1 if len(question_terms) == 1 else min(2, len(question_terms))
+        )
+        return 0, required_overlap, False
+
+    question_terms = _extract_question_terms(question)
+    if not question_terms:
+        return 0, 0, True
+
+    context_terms = set(re.findall(r"[a-z0-9]+", context.lower()))
+    overlap_count = len(question_terms & context_terms)
+    required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
+    return overlap_count, required_overlap, overlap_count >= required_overlap
 
 
 def _extract_grounding_terms(text: str) -> set[str]:
@@ -419,7 +462,11 @@ def _head_context(vectordb, limit: int = 6) -> RetrievedContext:
             continue
         citations.append(citation)
         cited_documents.append(document)
-    return RetrievedContext(text=_format_texts(cited_documents), citations=citations)
+    return RetrievedContext(
+        text=_format_texts(cited_documents),
+        citations=citations,
+        retrieved_document_count=len([document for document in documents if document]),
+    )
 
 
 def _citation_from_metadata(
@@ -456,7 +503,11 @@ def _cited_context_from_query_result(result: dict) -> RetrievedContext:
             continue
         citations.append(citation)
         cited_texts.append(document)
-    return RetrievedContext(text=_format_texts(cited_texts), citations=citations)
+    return RetrievedContext(
+        text=_format_texts(cited_texts),
+        citations=citations,
+        retrieved_document_count=len([document for document in documents if document]),
+    )
 
 
 def _semantic_context(vectordb, question: str, limit: int) -> RetrievedContext:
@@ -487,6 +538,58 @@ def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> Retri
     return _semantic_context(vectordb, question, policy.limit)
 
 
+def _citation_completeness_ratio(context: RetrievedContext) -> float:
+    if context.retrieved_document_count == 0:
+        return 1.0
+    return len(context.citations) / context.retrieved_document_count
+
+
+def _emit_answer_policy_telemetry(
+    *,
+    document_id: str,
+    question: str,
+    total_chunks: int,
+    policy: RetrievalPolicy,
+    context: RetrievedContext,
+    answer_status: Literal["answered", "insufficient_context"],
+    fallback_reason_code: FallbackReasonCode | None,
+    structured_output_retry_count: int,
+    answer_grounded: bool | None,
+) -> None:
+    overlap_term_count, required_term_overlap, has_sufficient_context = _retrieval_overlap_metrics(
+        question,
+        context.text,
+    )
+    question_term_count = len(_extract_question_terms(question))
+    citation_count = len(context.citations)
+    citation_completeness_ratio = _citation_completeness_ratio(context)
+    logger.info(
+        "answer_policy_decision",
+        extra={
+            "answer_policy_event": {
+                "document_id": document_id,
+                "intent": policy.intent,
+                "retrieval_mode": policy.mode,
+                "answer_status": answer_status,
+                "fallback_reason_code": fallback_reason_code,
+                "quality_gate_applied": policy.enforce_quality_gate,
+                "total_chunk_count": total_chunks,
+                "retrieved_document_count": context.retrieved_document_count,
+                "retrieved_context_char_count": len(context.text),
+                "question_term_count": question_term_count,
+                "overlap_term_count": overlap_term_count,
+                "required_term_overlap": required_term_overlap,
+                "has_sufficient_context": has_sufficient_context,
+                "citation_count": citation_count,
+                "missing_citation_count": context.retrieved_document_count - citation_count,
+                "citation_completeness_ratio": citation_completeness_ratio,
+                "structured_output_retry_count": structured_output_retry_count,
+                "answer_grounded": answer_grounded,
+            }
+        },
+    )
+
+
 def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
     return AnswerDecision(
         answer=INSUFFICIENT_CONTEXT_ANSWER,
@@ -507,24 +610,85 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
     policy = _select_retrieval_policy(question, total)
     context = _retrieve_context(vectordb, question, policy)
 
-    if policy.enforce_quality_gate and not _has_sufficient_context(question, context.text):
-        return _insufficient_context_decision(policy)
-
     if not context.text:
-        return _insufficient_context_decision(policy)
+        decision = _insufficient_context_decision(policy)
+        _emit_answer_policy_telemetry(
+            document_id=document_id,
+            question=question,
+            total_chunks=total,
+            policy=policy,
+            context=context,
+            answer_status=decision.answer_status,
+            fallback_reason_code="empty_context",
+            structured_output_retry_count=0,
+            answer_grounded=None,
+        )
+        return decision
+
+    if policy.enforce_quality_gate and not _has_sufficient_context(question, context.text):
+        decision = _insufficient_context_decision(policy)
+        _emit_answer_policy_telemetry(
+            document_id=document_id,
+            question=question,
+            total_chunks=total,
+            policy=policy,
+            context=context,
+            answer_status=decision.answer_status,
+            fallback_reason_code="retrieval_quality_gate_failed",
+            structured_output_retry_count=0,
+            answer_grounded=None,
+        )
+        return decision
 
     model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     llm = ChatOpenAI(model=model, temperature=0)
-    answer = _generate_structured_answer(llm, question, context.text)
-    if answer is None:
-        return _insufficient_context_decision(policy)
-    if not _is_answer_grounded(answer, context.citations):
-        return _insufficient_context_decision(policy)
+    structured_answer = _generate_structured_answer(llm, question, context.text)
+    if structured_answer.answer is None:
+        decision = _insufficient_context_decision(policy)
+        _emit_answer_policy_telemetry(
+            document_id=document_id,
+            question=question,
+            total_chunks=total,
+            policy=policy,
+            context=context,
+            answer_status=decision.answer_status,
+            fallback_reason_code="structured_output_invalid",
+            structured_output_retry_count=structured_answer.invalid_attempt_count,
+            answer_grounded=None,
+        )
+        return decision
+    answer_grounded = _is_answer_grounded(structured_answer.answer, context.citations)
+    if not answer_grounded:
+        decision = _insufficient_context_decision(policy)
+        _emit_answer_policy_telemetry(
+            document_id=document_id,
+            question=question,
+            total_chunks=total,
+            policy=policy,
+            context=context,
+            answer_status=decision.answer_status,
+            fallback_reason_code="answer_not_grounded",
+            structured_output_retry_count=structured_answer.invalid_attempt_count,
+            answer_grounded=answer_grounded,
+        )
+        return decision
 
-    return AnswerDecision(
-        answer=answer,
+    decision = AnswerDecision(
+        answer=structured_answer.answer,
         intent=policy.intent,
         retrieval_mode=policy.mode,
         answer_status="answered",
         citations=context.citations,
     )
+    _emit_answer_policy_telemetry(
+        document_id=document_id,
+        question=question,
+        total_chunks=total,
+        policy=policy,
+        context=context,
+        answer_status=decision.answer_status,
+        fallback_reason_code=None,
+        structured_output_retry_count=structured_answer.invalid_attempt_count,
+        answer_grounded=answer_grounded,
+    )
+    return decision
