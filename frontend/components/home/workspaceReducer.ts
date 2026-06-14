@@ -1,10 +1,11 @@
 import type { PersistedDocument } from "../../lib/api";
 import type { DocumentMeta, Message, TransitionMode, ViewState, WorkspaceState } from "./types";
 
-type WorkspaceAction =
+export type WorkspaceAction =
   | { type: "documents/load-start" }
   | { type: "documents/load-success"; documents: PersistedDocument[] }
   | { type: "documents/load-failure"; error: string }
+  | { type: "documents/load-finish" }
   | { type: "search/open" }
   | { type: "search/set-query"; query: string }
   | { type: "search/start-close" }
@@ -71,6 +72,11 @@ export function workspaceReducer(
       return {
         ...state,
         error: action.error,
+        loadingDocuments: false
+      };
+    case "documents/load-finish":
+      return {
+        ...state,
         loadingDocuments: false
       };
     case "search/open":
@@ -154,6 +160,7 @@ export function workspaceReducer(
         documentId: null,
         conversationId: null,
         documentMeta: null,
+        busyDocumentId: null,
         messages: [],
         error: null,
         resetSignal: state.resetSignal + 1,

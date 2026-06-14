@@ -1,28 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+import { useEffect, useMemo, useReducer, useRef } from "react";
 
-import {
-  askQuestion,
-  createConversation,
-  DeleteFlowError,
-  deleteUserDocument,
-  getConversationMessages,
-  getUserConversations,
-  getUserDocuments,
-  type PersistedDocument
-} from "../../lib/api";
-import type { UploadBootstrapResult, UploadMeta, WorkspaceState } from "./types";
+import { createWorkspaceStateModule } from "./workspaceStateModule";
+import type { WorkspaceState } from "./types";
 import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
-
-function waitForTransition() {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 1200);
-  });
-}
 
 export function useHomeWorkspace() {
   const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialWorkspaceState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const moduleRef = useRef<ReturnType<typeof createWorkspaceStateModule> | null>(null);
+  if (!moduleRef.current) {
+    moduleRef.current = createWorkspaceStateModule({
+      dispatch,
+      getState: () => stateRef.current
+    });
+  }
+  const workspaceStateModule = moduleRef.current;
 
   const filteredDocuments = useMemo(() => {
     const query = state.searchQuery.trim().toLowerCase();
@@ -30,161 +26,20 @@ export function useHomeWorkspace() {
     return state.documents.filter((doc) => doc.filename.toLowerCase().includes(query));
   }, [state.documents, state.searchQuery]);
 
-  const openSearch = useCallback(() => {
-    dispatch({ type: "search/open" });
-  }, []);
-
-  const closeSearch = useCallback(() => {
-    dispatch({ type: "search/start-close" });
-    window.setTimeout(() => {
-      dispatch({ type: "search/finish-close" });
-    }, 250);
-  }, []);
-
-  const refreshDocuments = useCallback(async () => {
-    dispatch({ type: "documents/load-start" });
-    try {
-      const nextDocuments = await getUserDocuments();
-      dispatch({ type: "documents/load-success", documents: nextDocuments });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load documents.";
-      dispatch({ type: "documents/load-failure", error: message });
-    }
-  }, []);
-
   useEffect(() => {
-    void refreshDocuments();
-  }, [refreshDocuments]);
+    void workspaceStateModule.refreshDocuments();
+  }, [workspaceStateModule]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && state.isSearchOpen) {
-        closeSearch();
+        workspaceStateModule.closeSearch();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeSearch, state.isSearchOpen]);
-
-  const handleUploaded = useCallback(async (id: string, meta: UploadMeta) => {
-    dispatch({ type: "workflow/upload-start", documentId: id, documentMeta: meta });
-
-    try {
-      await refreshDocuments();
-      const [conversation] = await Promise.all([createConversation(id), waitForTransition()]);
-      dispatch({
-        type: "workflow/chat-ready",
-        conversationId: conversation.conversation_id,
-        messages: []
-      });
-      return { status: "ready" } satisfies UploadBootstrapResult;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to prepare conversation.";
-      const recoveryMessage = `${message} The document was uploaded successfully. Select it from the sidebar to try again.`;
-      dispatch({ type: "workflow/bootstrap-failure", error: recoveryMessage });
-      return {
-        status: "document-ready",
-        message: recoveryMessage
-      } satisfies UploadBootstrapResult;
-    }
-  }, [refreshDocuments]);
-
-  const handleSelectDocument = useCallback(async (document: PersistedDocument) => {
-    dispatch({
-      type: "workflow/select-start",
-      documentId: document.id,
-      documentMeta: {
-        fileName: document.filename,
-        uploadedAt: document.uploaded_at
-      }
-    });
-
-    try {
-      const [conversations] = await Promise.all([getUserConversations(document.id), waitForTransition()]);
-      const activeConversation = conversations[0];
-      const nextConversationId = activeConversation
-        ? activeConversation.id
-        : (await createConversation(document.id)).conversation_id;
-      const persistedMessages = await getConversationMessages(nextConversationId);
-
-      dispatch({
-        type: "workflow/chat-ready",
-        conversationId: nextConversationId,
-        messages: persistedMessages.map((message) => ({
-          role: message.role,
-          content: message.content
-        }))
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load document.";
-      dispatch({ type: "workflow/failure", error: message });
-    } finally {
-      closeSearch();
-    }
-  }, [closeSearch]);
-
-  const handleClear = useCallback(() => {
-    dispatch({ type: "workflow/clear" });
-  }, []);
-
-  const openDeleteDialog = useCallback((document: PersistedDocument) => {
-    dispatch({ type: "delete/open", document });
-  }, []);
-
-  const closeDeleteDialog = useCallback(() => {
-    dispatch({ type: "delete/close" });
-  }, []);
-
-  const handleDeleteDocument = useCallback(async () => {
-    if (!state.documentToDelete) return;
-
-    dispatch({ type: "delete/start" });
-
-    try {
-      await deleteUserDocument(state.documentToDelete.id);
-
-      if (state.documentId === state.documentToDelete.id) {
-        handleClear();
-      }
-
-      dispatch({ type: "delete/success", documentId: state.documentToDelete.id });
-    } catch (err) {
-      if (
-        err instanceof DeleteFlowError &&
-        (
-          err.reasonCode === "conversation_cleanup_failed" ||
-          err.reasonCode === "indexing_cleanup_failed"
-        )
-      ) {
-        if (state.documentId === state.documentToDelete.id) {
-          handleClear();
-        }
-        await refreshDocuments();
-      }
-
-      const message = getDeleteErrorMessage(err);
-      dispatch({ type: "delete/failure", error: message });
-    }
-  }, [handleClear, refreshDocuments, state.documentId, state.documentToDelete]);
-
-  const handleSend = useCallback(async (question: string) => {
-    if (!state.documentId || !state.conversationId) return;
-
-    dispatch({ type: "chat/send-start", question });
-
-    try {
-      const response = await askQuestion({
-        documentId: state.documentId,
-        conversationId: state.conversationId,
-        message: question
-      });
-      dispatch({ type: "chat/send-success", answer: response.answer });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong.";
-      dispatch({ type: "chat/send-failure", error: message });
-    }
-  }, [state.conversationId, state.documentId]);
+  }, [state.isSearchOpen, workspaceStateModule]);
 
   return {
     state: {
@@ -192,17 +47,17 @@ export function useHomeWorkspace() {
       filteredDocuments,
     },
     actions: {
-      setSearchQuery: (query: string) => dispatch({ type: "search/set-query", query }),
-      toggleSidebar: () => dispatch({ type: "sidebar/toggle" }),
-      openSearch,
-      closeSearch,
-      handleUploaded,
-      handleSelectDocument,
-      handleClear,
-      openDeleteDialog,
-      closeDeleteDialog,
-      handleDeleteDocument,
-      handleSend
+      setSearchQuery: workspaceStateModule.setSearchQuery,
+      toggleSidebar: workspaceStateModule.toggleSidebar,
+      openSearch: workspaceStateModule.openSearch,
+      closeSearch: workspaceStateModule.closeSearch,
+      handleUploaded: workspaceStateModule.handleUploaded,
+      handleSelectDocument: workspaceStateModule.handleSelectDocument,
+      handleClear: workspaceStateModule.clearWorkspace,
+      openDeleteDialog: workspaceStateModule.openDeleteDialog,
+      closeDeleteDialog: workspaceStateModule.closeDeleteDialog,
+      handleDeleteDocument: workspaceStateModule.handleDeleteDocument,
+      handleSend: workspaceStateModule.handleSend
     },
     helpers: {
       getInitials(name: string) {
@@ -216,43 +71,4 @@ export function useHomeWorkspace() {
   };
 }
 
-function getDeleteErrorMessage(error: unknown) {
-  if (!(error instanceof Error)) {
-    return "Failed to delete document.";
-  }
-
-  if (!(error instanceof DeleteFlowError)) {
-    return error.message;
-  }
-
-  const recoveryNote =
-    error.cleanupStatus === "not-started"
-      ? " No cleanup steps were applied."
-      : error.cleanupStatus === "partial"
-        ? error.reasonCode === "conversation_cleanup_failed" ||
-          error.reasonCode === "indexing_cleanup_failed"
-          ? " The document has already been removed from the workspace."
-          : " Some cleanup steps already ran. Retry delete to finish removing the document."
-        : "";
-
-  if (error.reasonCode === "conversation_lookup_failed") {
-    return `${error.message}${recoveryNote} Delete did not start, so the document should still be visible.`;
-  }
-
-  if (error.reasonCode === "conversation_cleanup_failed") {
-    return `${error.message}${recoveryNote} The document was removed, but chat cleanup is still incomplete.`;
-  }
-
-  if (error.reasonCode === "indexing_cleanup_failed") {
-    return `${error.message}${recoveryNote} The document was removed, but retrieval cleanup is still incomplete.`;
-  }
-
-  if (
-    error.reasonCode === "storage_delete_failed" ||
-    error.reasonCode === "metadata_delete_failed"
-  ) {
-    return `${error.message}${recoveryNote} The document may still appear until deletion finishes.`;
-  }
-
-  return `${error.message}${recoveryNote}`;
-}
+export type HomeWorkspaceController = ReturnType<typeof useHomeWorkspace>;

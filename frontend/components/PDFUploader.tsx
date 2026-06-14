@@ -71,6 +71,10 @@ export default function PDFUploader({
         storedCount: response.stored_count
       });
 
+      if (uploadResult.status === "cancelled") {
+        return;
+      }
+
       if (uploadResult.status === "ready") {
         setStage("ready");
         setStatus("PDF indexed and ready for questions.");
