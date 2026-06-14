@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { PersistedConversation, PersistedDocument, PersistedMessage } from "../../lib/api";
+import {
+  DeleteFlowError,
+  type PersistedConversation,
+  type PersistedDocument,
+  type PersistedMessage
+} from "../../lib/api";
 import type { ChatResponseBody } from "../../lib/api-contract";
 import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 import { createWorkspaceStateModule, type WorkspaceServices } from "./workspaceStateModule";
@@ -92,6 +97,50 @@ function createHarness() {
   };
 }
 
+test("upload transitions from indexing to ready chat workspace", async () => {
+  const harness = createHarness();
+  const workspaceModule = harness.createModule();
+
+  const result = await workspaceModule.handleUploaded("doc-upload", {
+    fileName: "upload.pdf",
+    fileSize: "20 KB",
+    chunkCount: 3,
+    storedCount: 3
+  });
+
+  assert.deepEqual(result, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+  assert.equal(harness.getState().documentId, "doc-upload");
+  assert.equal(harness.getState().conversationId, "conv-new-doc-upload");
+  assert.deepEqual(harness.getState().messages, []);
+});
+
+test("upload bootstrap failure returns the user to upload with recovery guidance", async () => {
+  const harness = createHarness();
+  harness.services.createConversation = async () => {
+    throw new Error("Conversation bootstrap failed.");
+  };
+
+  const workspaceModule = harness.createModule();
+  const result = await workspaceModule.handleUploaded("doc-upload", {
+    fileName: "upload.pdf",
+    fileSize: "20 KB",
+    chunkCount: 3,
+    storedCount: 3
+  });
+
+  assert.deepEqual(result, {
+    status: "document-ready",
+    message: "Conversation bootstrap failed. The document was uploaded successfully. Select it from the sidebar to try again."
+  });
+  assert.equal(harness.getState().view, "upload");
+  assert.equal(harness.getState().conversationId, null);
+  assert.equal(
+    harness.getState().error,
+    "Conversation bootstrap failed. The document was uploaded successfully. Select it from the sidebar to try again."
+  );
+});
+
 test("ignores upload bootstrap completion after the workspace is cleared", async () => {
   const harness = createHarness();
   const documentsDeferred = createDeferred<PersistedDocument[]>();
@@ -162,6 +211,50 @@ test("latest document selection wins when requests resolve out of order", async 
   assert.deepEqual(harness.getState().messages, [{ role: "assistant", content: "beta" }]);
 });
 
+test("send appends the user question and assistant answer in chat view", async () => {
+  const harness = createHarness();
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("What is alpha?");
+
+  assert.deepEqual(harness.getState().messages, [
+    { role: "user", content: "What is alpha?" },
+    { role: "assistant", content: "answer:What is alpha?" }
+  ]);
+  assert.equal(harness.getState().isAssistantTyping, false);
+  assert.equal(harness.getState().error, null);
+});
+
+test("send failure keeps the user question and surfaces the chat error", async () => {
+  const harness = createHarness();
+  harness.services.askQuestion = async () => {
+    throw new Error("Chat failed.");
+  };
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("What is alpha?");
+
+  assert.deepEqual(harness.getState().messages, [
+    { role: "user", content: "What is alpha?" }
+  ]);
+  assert.equal(harness.getState().isAssistantTyping, false);
+  assert.equal(harness.getState().error, "Chat failed.");
+});
+
 test("ignores stale chat responses after clearing the workspace", async () => {
   const harness = createHarness();
   const chatDeferred = createDeferred<ChatResponseBody>();
@@ -190,4 +283,63 @@ test("ignores stale chat responses after clearing the workspace", async () => {
   assert.equal(harness.getState().view, "upload");
   assert.equal(harness.getState().messages.length, 0);
   assert.equal(harness.getState().error, null);
+});
+
+test("delete success removes the document and clears the active workspace", async () => {
+  const harness = createHarness();
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documents: harness.documents,
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  workspaceModule.openDeleteDialog(harness.documents[0]);
+  await workspaceModule.handleDeleteDocument();
+
+  assert.equal(harness.getState().documentId, null);
+  assert.equal(harness.getState().conversationId, null);
+  assert.equal(harness.getState().view, "upload");
+  assert.deepEqual(harness.getState().documents.map((document) => document.id), ["doc-b"]);
+  assert.equal(harness.getState().documentToDelete, null);
+  assert.equal(harness.getState().isDeletingDocument, false);
+});
+
+test("delete recovery failure refreshes documents, clears the workspace, and reports follow-up guidance", async () => {
+  const harness = createHarness();
+  let refreshCalls = 0;
+  harness.services.getUserDocuments = async () => {
+    refreshCalls += 1;
+    return harness.documents;
+  };
+  harness.services.deleteUserDocument = async () => {
+    throw new DeleteFlowError("Conversation cleanup failed.", {
+      reasonCode: "conversation_cleanup_failed",
+      cleanupStatus: "partial"
+    });
+  };
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documents: harness.documents,
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  workspaceModule.openDeleteDialog(harness.documents[0]);
+  await workspaceModule.handleDeleteDocument();
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(harness.getState().documentId, null);
+  assert.equal(harness.getState().conversationId, null);
+  assert.equal(harness.getState().view, "upload");
+  assert.equal(
+    harness.getState().deleteError,
+    "Conversation cleanup failed. The document has already been removed from the workspace. The document was removed, but chat cleanup is still incomplete."
+  );
 });
