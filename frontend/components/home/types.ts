@@ -25,6 +25,7 @@ export type UploadMeta = {
 
 export type UploadBootstrapResult =
   | { status: "ready" }
+  | { status: "cancelled" }
   | { status: "document-ready"; message: string };
 
 export type WorkspaceState = {

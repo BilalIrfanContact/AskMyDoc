@@ -1,7 +1,7 @@
 import type { PersistedDocument } from "../../lib/api";
 import type { DocumentMeta, Message, TransitionMode, ViewState, WorkspaceState } from "./types";
 
-type WorkspaceAction =
+export type WorkspaceAction =
   | { type: "documents/load-start" }
   | { type: "documents/load-success"; documents: PersistedDocument[] }
   | { type: "documents/load-failure"; error: string }
