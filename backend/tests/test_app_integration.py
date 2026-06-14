@@ -3,13 +3,13 @@ import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
 from urllib.parse import urlsplit
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import FastAPI, Request
 
 from backend.routers import chat, conversations, documents, upload
 from backend.services.internal_auth import require_authenticated_user
-from backend.services.rag_pipeline import AnswerDecision
+from backend.services.rag_pipeline import AnswerDecision, INSUFFICIENT_CONTEXT_ANSWER
 
 
 def _build_test_app() -> FastAPI:
@@ -314,6 +314,53 @@ class InMemoryAppState:
 
     def delete_vector_store(self, document_id: str) -> None:
         self.vector_deleted.append(document_id)
+
+
+class FakeVectorCollection:
+    def __init__(self, *, count: int, query_result: dict):
+        self._count = count
+        self._query_result = query_result
+        self.query_call_count = 0
+
+    def count(self) -> int:
+        return self._count
+
+    def query(self, *, query_embeddings, n_results: int, include: list[str]) -> dict:
+        self.query_call_count += 1
+        return self._query_result
+
+
+class FakeVectorStore:
+    def __init__(
+        self,
+        *,
+        count: int = 4,
+        head_documents: list[str] | None = None,
+        head_metadatas: list[dict | None] | None = None,
+        head_ids: list[str | None] | None = None,
+        query_documents: list[str | None] | None = None,
+        query_metadatas: list[dict | None] | None = None,
+        query_ids: list[str | None] | None = None,
+    ):
+        self.embeddings = SimpleNamespace(embed_query=lambda question: [0.1, 0.2, 0.3])
+        self.get_call_count = 0
+        self._head_result = {
+            "documents": head_documents or [],
+            "metadatas": head_metadatas or [],
+            "ids": head_ids or [],
+        }
+        self._collection = FakeVectorCollection(
+            count=count,
+            query_result={
+                "documents": [query_documents or []],
+                "metadatas": [query_metadatas or []],
+                "ids": [query_ids or []],
+            },
+        )
+
+    def get(self, *, limit: int, include: list[str]) -> dict:
+        self.get_call_count += 1
+        return self._head_result
 
 
 class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
@@ -629,6 +676,362 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             json.loads(response_body),
             {"detail": "model unavailable"},
         )
+
+        status, _, response_body = await _request_asgi(
+            self.app,
+            method="GET",
+            path=f"/conversations/{conversation_id}/messages",
+            headers=[(b"x-test-user", b"user-a")],
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            json.loads(response_body)["messages"],
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "Summarize the document",
+                    "created_at": "2026-06-11T12:01:00Z",
+                }
+            ],
+        )
+
+
+class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.app = _build_test_app()
+        self.state = InMemoryAppState()
+        self.postgrest_client = FakePostgrestClient(self.state)
+        self.exit_stack = ExitStack()
+
+        for target in (
+            "backend.services.persistence.documents_repository.get_postgrest_client",
+            "backend.services.persistence.conversations_repository.get_postgrest_client",
+            "backend.services.persistence.messages_repository.get_postgrest_client",
+        ):
+            self.exit_stack.enter_context(patch(target, return_value=self.postgrest_client))
+
+        self.exit_stack.enter_context(
+            patch(
+                "backend.services.persistence.conversations_repository.uuid",
+                new=SimpleNamespace(uuid4=lambda: f"convo-{self.state.conversation_counter + 1}"),
+            )
+        )
+        self.exit_stack.enter_context(
+            patch(
+                "backend.services.persistence.messages_repository.uuid",
+                new=SimpleNamespace(uuid4=lambda: f"msg-{self.state.message_counter + 1}"),
+            )
+        )
+
+    def tearDown(self):
+        self.exit_stack.close()
+        self.app.dependency_overrides.clear()
+
+    async def _create_conversation(self, document_id: str = "doc-a") -> str:
+        status, _, response_body = await _request_asgi(
+            self.app,
+            method="POST",
+            path="/conversations",
+            body=json.dumps({"document_id": document_id}).encode("utf-8"),
+            headers=[
+                (b"x-test-user", b"user-a"),
+                (b"content-type", b"application/json"),
+            ],
+        )
+        self.assertEqual(status, 200)
+        return json.loads(response_body)["conversation_id"]
+
+    async def _chat(self, conversation_id: str, message: str) -> tuple[int, dict]:
+        status, _, response_body = await _request_asgi(
+            self.app,
+            method="POST",
+            path="/chat",
+            body=json.dumps(
+                {
+                    "document_id": "doc-a",
+                    "conversation_id": conversation_id,
+                    "message": message,
+                }
+            ).encode("utf-8"),
+            headers=[
+                (b"x-test-user", b"user-a"),
+                (b"content-type", b"application/json"),
+            ],
+        )
+        return status, json.loads(response_body)
+
+    async def _messages(self, conversation_id: str) -> list[dict]:
+        status, _, response_body = await _request_asgi(
+            self.app,
+            method="GET",
+            path=f"/conversations/{conversation_id}/messages",
+            headers=[(b"x-test-user", b"user-a")],
+        )
+        self.assertEqual(status, 200)
+        return json.loads(response_body)["messages"]
+
+    async def test_chat_runs_real_grounded_answer_path_and_persists_citations(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            count=6,
+            query_documents=["The refund window is 30 days from the purchase date."],
+            query_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
+            query_ids=[None],
+        )
+        llm = SimpleNamespace(
+            invoke=lambda prompt: SimpleNamespace(content='{"answer": "The refund window is 30 days."}')
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            status, payload = await self._chat(conversation_id, "What is the refund window?")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": "The refund window is 30 days.",
+                "intent": "qa",
+                "retrieval_mode": "semantic",
+                "answer_status": "answered",
+                "citations": [
+                    {
+                        "chunk_id": "doc-a:chunk:0",
+                        "excerpt": "The refund window is 30 days from the purchase date.",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "What is the refund window?",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": "The refund window is 30 days.",
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+        self.assertEqual(vectordb.get_call_count, 0)
+        self.assertEqual(vectordb._collection.query_call_count, 1)
+
+    async def test_chat_runs_real_summary_head_retrieval_path_and_persists_citations(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            count=6,
+            head_documents=["This handbook explains the benefits policy and time-off rules."],
+            head_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
+            head_ids=[None],
+        )
+        llm = SimpleNamespace(
+            invoke=lambda prompt: SimpleNamespace(
+                content='{"answer": "The handbook covers benefits policy and time-off rules."}'
+            )
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            status, payload = await self._chat(conversation_id, "Summarize this document.")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": "The handbook covers benefits policy and time-off rules.",
+                "intent": "summary",
+                "retrieval_mode": "head",
+                "answer_status": "answered",
+                "citations": [
+                    {
+                        "chunk_id": "doc-a:chunk:0",
+                        "excerpt": "This handbook explains the benefits policy and time-off rules.",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "Summarize this document.",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": "The handbook covers benefits policy and time-off rules.",
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+        self.assertEqual(vectordb.get_call_count, 1)
+        self.assertEqual(vectordb._collection.query_call_count, 0)
+
+    async def test_chat_returns_deterministic_fallback_when_retrieval_evidence_is_too_weak(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            query_documents=["The onboarding checklist covers payroll setup and laptop pickup."],
+            query_metadatas=[{"chunk_id": "doc-a:chunk:3"}],
+            query_ids=[None],
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            status, payload = await self._chat(conversation_id, "What is the refund window?")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": INSUFFICIENT_CONTEXT_ANSWER,
+                "intent": "qa",
+                "retrieval_mode": "semantic",
+                "answer_status": "insufficient_context",
+                "citations": [],
+            },
+        )
+        chat_openai_mock.assert_not_called()
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "What is the refund window?",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+
+    async def test_chat_rejects_ungrounded_model_answer_before_persisting_response_citations(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            query_documents=["The refund window is 30 days from the purchase date."],
+            query_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
+            query_ids=[None],
+        )
+        llm = SimpleNamespace(
+            invoke=lambda prompt: SimpleNamespace(
+                content='{"answer": "The refund window is 45 days and includes free returns."}'
+            )
+        )
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            status, payload = await self._chat(conversation_id, "What is the refund window?")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": INSUFFICIENT_CONTEXT_ANSWER,
+                "intent": "qa",
+                "retrieval_mode": "semantic",
+                "answer_status": "insufficient_context",
+                "citations": [],
+            },
+        )
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "What is the refund window?",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+
+    async def test_chat_falls_back_when_model_repeatedly_breaks_structured_output_contract(self):
+        conversation_id = await self._create_conversation()
+        vectordb = FakeVectorStore(
+            query_documents=["The refund window is 30 days from the purchase date."],
+            query_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
+            query_ids=[None],
+        )
+        llm = Mock()
+        llm.invoke.side_effect = [
+            SimpleNamespace(content="The refund window is 30 days."),
+            SimpleNamespace(content='{"answer": ""}'),
+        ]
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+        ):
+            status, payload = await self._chat(conversation_id, "What is the refund window?")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "answer": INSUFFICIENT_CONTEXT_ANSWER,
+                "intent": "qa",
+                "retrieval_mode": "semantic",
+                "answer_status": "insufficient_context",
+                "citations": [],
+            },
+        )
+        self.assertEqual(
+            await self._messages(conversation_id),
+            [
+                {
+                    "id": "msg-1",
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": "What is the refund window?",
+                    "created_at": "2026-06-11T12:01:00Z",
+                },
+                {
+                    "id": "msg-2",
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "created_at": "2026-06-11T12:02:00Z",
+                },
+            ],
+        )
+        self.assertEqual(llm.invoke.call_count, 2)
 
 
 if __name__ == "__main__":
