@@ -30,6 +30,10 @@ type WorkspaceStateModuleOptions = {
   services?: Partial<WorkspaceServices>;
 };
 
+type RefreshDocumentsOptions = {
+  suppressFailureError?: boolean;
+};
+
 const defaultServices: WorkspaceServices = {
   askQuestion,
   createConversation,
@@ -76,13 +80,18 @@ export function createWorkspaceStateModule({
   const workflowRuns = createFlowTracker();
   const chatRuns = createFlowTracker();
 
-  async function refreshDocuments() {
+  async function refreshDocuments(options?: RefreshDocumentsOptions) {
     dispatch({ type: "documents/load-start" });
     try {
       const nextDocuments = await services.getUserDocuments();
       dispatch({ type: "documents/load-success", documents: nextDocuments });
       return nextDocuments;
     } catch (error) {
+      if (options?.suppressFailureError) {
+        dispatch({ type: "documents/load-finish" });
+        return getState().documents;
+      }
+
       const message = error instanceof Error ? error.message : "Failed to load documents.";
       dispatch({ type: "documents/load-failure", error: message });
       throw error;
@@ -120,7 +129,7 @@ export function createWorkspaceStateModule({
     dispatch({ type: "workflow/upload-start", documentId, documentMeta: meta });
 
     try {
-      await refreshDocuments();
+      await refreshDocuments({ suppressFailureError: true });
       const [conversation] = await Promise.all([
         services.createConversation(documentId),
         services.waitForTransition()
@@ -233,7 +242,11 @@ export function createWorkspaceStateModule({
         if (getState().documentId === documentToDelete.id) {
           clearWorkspace();
         }
-        await refreshDocuments();
+        try {
+          await refreshDocuments();
+        } catch {
+          // Keep the original delete error as the visible failure and always exit deleting state.
+        }
       }
 
       const message = getDeleteErrorMessage(error);

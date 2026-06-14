@@ -141,6 +141,27 @@ test("upload bootstrap failure returns the user to upload with recovery guidance
   );
 });
 
+test("upload still enters chat when the document refresh fails", async () => {
+  const harness = createHarness();
+  harness.services.getUserDocuments = async () => {
+    throw new Error("Documents refresh failed.");
+  };
+
+  const workspaceModule = harness.createModule();
+  const result = await workspaceModule.handleUploaded("doc-upload", {
+    fileName: "upload.pdf",
+    fileSize: "20 KB",
+    chunkCount: 3,
+    storedCount: 3
+  });
+
+  assert.deepEqual(result, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+  assert.equal(harness.getState().conversationId, "conv-new-doc-upload");
+  assert.equal(harness.getState().loadingDocuments, false);
+  assert.equal(harness.getState().error, null);
+});
+
 test("ignores upload bootstrap completion after the workspace is cleared", async () => {
   const harness = createHarness();
   const documentsDeferred = createDeferred<PersistedDocument[]>();
@@ -173,6 +194,7 @@ test("ignores upload bootstrap completion after the workspace is cleared", async
   assert.equal(harness.getState().view, "upload");
   assert.equal(harness.getState().documentId, null);
   assert.equal(harness.getState().conversationId, null);
+  assert.equal(harness.getState().busyDocumentId, null);
 });
 
 test("latest document selection wins when requests resolve out of order", async () => {
@@ -338,6 +360,39 @@ test("delete recovery failure refreshes documents, clears the workspace, and rep
   assert.equal(harness.getState().documentId, null);
   assert.equal(harness.getState().conversationId, null);
   assert.equal(harness.getState().view, "upload");
+  assert.equal(
+    harness.getState().deleteError,
+    "Conversation cleanup failed. The document has already been removed from the workspace. The document was removed, but chat cleanup is still incomplete."
+  );
+});
+
+test("delete recovery failure still exits deleting state when the refresh also fails", async () => {
+  const harness = createHarness();
+  harness.services.getUserDocuments = async () => {
+    throw new Error("Refresh failed.");
+  };
+  harness.services.deleteUserDocument = async () => {
+    throw new DeleteFlowError("Conversation cleanup failed.", {
+      reasonCode: "conversation_cleanup_failed",
+      cleanupStatus: "partial"
+    });
+  };
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documents: harness.documents,
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  workspaceModule.openDeleteDialog(harness.documents[0]);
+  await workspaceModule.handleDeleteDocument();
+
+  assert.equal(harness.getState().isDeletingDocument, false);
+  assert.equal(harness.getState().documentId, null);
+  assert.equal(harness.getState().conversationId, null);
   assert.equal(
     harness.getState().deleteError,
     "Conversation cleanup failed. The document has already been removed from the workspace. The document was removed, but chat cleanup is still incomplete."
