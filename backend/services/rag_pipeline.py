@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -538,9 +539,9 @@ def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> Retri
     return _semantic_context(vectordb, question, policy.limit)
 
 
-def _citation_completeness_ratio(context: RetrievedContext) -> float:
+def _citation_completeness_ratio(context: RetrievedContext) -> float | None:
     if context.retrieved_document_count == 0:
-        return 1.0
+        return None
     return len(context.citations) / context.retrieved_document_count
 
 
@@ -548,7 +549,7 @@ def _emit_answer_policy_telemetry(
     *,
     document_id: str,
     question: str,
-    total_chunks: int,
+    total_chunks: int | None,
     policy: RetrievalPolicy,
     context: RetrievedContext,
     answer_status: Literal["answered", "insufficient_context"],
@@ -563,30 +564,30 @@ def _emit_answer_policy_telemetry(
     question_term_count = len(_extract_question_terms(question))
     citation_count = len(context.citations)
     citation_completeness_ratio = _citation_completeness_ratio(context)
+    event = {
+        "event": "answer_policy_decision",
+        "document_id": document_id,
+        "intent": policy.intent,
+        "retrieval_mode": policy.mode,
+        "answer_status": answer_status,
+        "fallback_reason_code": fallback_reason_code,
+        "quality_gate_applied": policy.enforce_quality_gate,
+        "total_chunk_count": total_chunks,
+        "chunk_count_available": total_chunks is not None,
+        "retrieved_document_count": context.retrieved_document_count,
+        "retrieved_context_char_count": len(context.text),
+        "question_term_count": question_term_count,
+        "overlap_term_count": overlap_term_count,
+        "required_term_overlap": required_term_overlap,
+        "has_sufficient_context": has_sufficient_context,
+        "citation_count": citation_count,
+        "missing_citation_count": context.retrieved_document_count - citation_count,
+        "citation_completeness_ratio": citation_completeness_ratio,
+        "structured_output_retry_count": structured_output_retry_count,
+        "answer_grounded": answer_grounded,
+    }
     logger.info(
-        "answer_policy_decision",
-        extra={
-            "answer_policy_event": {
-                "document_id": document_id,
-                "intent": policy.intent,
-                "retrieval_mode": policy.mode,
-                "answer_status": answer_status,
-                "fallback_reason_code": fallback_reason_code,
-                "quality_gate_applied": policy.enforce_quality_gate,
-                "total_chunk_count": total_chunks,
-                "retrieved_document_count": context.retrieved_document_count,
-                "retrieved_context_char_count": len(context.text),
-                "question_term_count": question_term_count,
-                "overlap_term_count": overlap_term_count,
-                "required_term_overlap": required_term_overlap,
-                "has_sufficient_context": has_sufficient_context,
-                "citation_count": citation_count,
-                "missing_citation_count": context.retrieved_document_count - citation_count,
-                "citation_completeness_ratio": citation_completeness_ratio,
-                "structured_output_retry_count": structured_output_retry_count,
-                "answer_grounded": answer_grounded,
-            }
-        },
+        json.dumps(event, sort_keys=True),
     )
 
 
@@ -602,8 +603,10 @@ def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
 
 def answer_question(document_id: str, question: str) -> AnswerDecision:
     vectordb = get_vector_store(document_id=document_id)
+    total_chunks: int | None = None
     try:
         total = vectordb._collection.count()
+        total_chunks = total
     except Exception:
         total = 4
 
@@ -615,7 +618,7 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         _emit_answer_policy_telemetry(
             document_id=document_id,
             question=question,
-            total_chunks=total,
+            total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
@@ -630,7 +633,7 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         _emit_answer_policy_telemetry(
             document_id=document_id,
             question=question,
-            total_chunks=total,
+            total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
@@ -648,7 +651,7 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         _emit_answer_policy_telemetry(
             document_id=document_id,
             question=question,
-            total_chunks=total,
+            total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
@@ -663,7 +666,7 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         _emit_answer_policy_telemetry(
             document_id=document_id,
             question=question,
-            total_chunks=total,
+            total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
@@ -683,7 +686,7 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
     _emit_answer_policy_telemetry(
         document_id=document_id,
         question=question,
-        total_chunks=total,
+        total_chunks=total_chunks,
         policy=policy,
         context=context,
         answer_status=decision.answer_status,
