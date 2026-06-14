@@ -70,3 +70,5 @@ export function useHomeWorkspace() {
     }
   };
 }
+
+export type HomeWorkspaceController = ReturnType<typeof useHomeWorkspace>;
