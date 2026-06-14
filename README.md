@@ -4,10 +4,6 @@
 
 AskMyDoc is a full-stack document Q&A app where users can upload PDFs, open a document-specific workspace, and ask grounded questions against retrieved evidence. What started as a local prototype is now a contract-driven v3 application with authenticated backend access, document lifecycle handling, persistent conversations, structured answer decisions, and integration coverage across the stack.
 
-<img width="1835" height="943" alt="AskMyDoc workspace" src="https://github.com/user-attachments/assets/a2b5de3f-2083-42a2-a484-71eaae53e659" />
-
-<img width="1835" height="943" alt="AskMyDoc chat view" src="https://github.com/user-attachments/assets/85b45629-167f-4340-bfda-b348ad0145b3" />
-
 ---
 
 ## Why I Built This
