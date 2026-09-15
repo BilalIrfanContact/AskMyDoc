@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test \"**/*.test.ts\""
+    "test": "tsx --test components/home/workspaceStateModule.test.ts lib/uploadValidation.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
