@@ -1,65 +1,33 @@
-import { NextResponse } from "next/server";
-
-import { auth } from "../../../auth";
-import { createBackendAuthHeaders, getBackendUrl } from "../../../lib/backend-proxy";
+import { forwardToBackend } from "../../../lib/backend-proxy";
 
 export async function GET(request: Request) {
-  const session = await auth();
-  const userId = session?.user?.id;
-
-  if (!userId) {
-    return NextResponse.json({ detail: "Authentication required." }, { status: 401 });
-  }
-
   const url = new URL(request.url);
   const documentId = url.searchParams.get("document_id");
-  const backendUrl = new URL(getBackendUrl("/conversations"));
+  const query = new URLSearchParams();
   if (documentId) {
-    backendUrl.searchParams.set("document_id", documentId);
+    query.set("document_id", documentId);
   }
 
-  const response = await fetch(backendUrl, {
+  return forwardToBackend({
+    path: query.toString() ? `/conversations?${query.toString()}` : "/conversations",
     method: "GET",
-    headers: createBackendAuthHeaders(userId),
     cache: "no-store"
-  });
-
-  const body = await response.text();
-  return new NextResponse(body, {
-    status: response.status,
-    headers: {
-      "content-type": response.headers.get("content-type") || "application/json"
-    }
   });
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  const userId = session?.user?.id;
-
-  if (!userId) {
-    return NextResponse.json({ detail: "Authentication required." }, { status: 401 });
-  }
-
-  const payload = (await request.json()) as Record<string, unknown>;
-  if (payload && typeof payload === "object") {
-    delete payload.user_id;
-  }
-
-  const response = await fetch(getBackendUrl("/conversations"), {
+  return forwardToBackend({
+    path: "/conversations",
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
-      ...createBackendAuthHeaders(userId)
+      "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
-  });
-
-  const body = await response.text();
-  return new NextResponse(body, {
-    status: response.status,
-    headers: {
-      "content-type": response.headers.get("content-type") || "application/json"
+    prepareBody: async () => {
+      const payload = (await request.json()) as Record<string, unknown>;
+      if (payload && typeof payload === "object") {
+        delete payload.user_id;
+      }
+      return JSON.stringify(payload);
     }
   });
 }
