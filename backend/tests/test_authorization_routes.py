@@ -89,7 +89,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_rejects_cross_user_conversation(self):
         with patch(
-            "backend.routers.chat.require_user_conversation",
+            "backend.services.conversation_turn.require_user_conversation",
             side_effect=HTTPException(
                 status_code=403,
                 detail="You are not authorized to access this conversation.",
@@ -114,11 +114,11 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_chat_rejects_mismatched_owned_document(self):
         with (
             patch(
-                "backend.routers.chat.require_user_conversation",
+                "backend.services.conversation_turn.require_user_conversation",
                 return_value={"id": "convo-a", "user_id": "user-a", "document_id": "doc-a"},
             ),
             patch(
-                "backend.routers.chat.require_user_document",
+                "backend.services.conversation_turn.require_user_document",
                 return_value={"id": "doc-other", "user_id": "user-a"},
             ),
         ):
