@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend.services.document_lifecycle import delete_document, upload_document
 from backend.services.persistence.common import PersistenceError
@@ -276,12 +276,12 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             call_order,
             [
-                "storage",
-                "metadata",
                 "message:convo-1",
                 "message:convo-2",
                 "conversations",
                 "index",
+                "storage",
+                "metadata",
             ],
         )
         self.assertEqual(result.to_response().lifecycle_status, "deleted")
@@ -332,6 +332,50 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
                 "reason_code": "storage_delete_failed",
                 "cleanup_status": "partial",
             },
+        )
+
+    async def test_delete_document_keeps_metadata_for_a_retry_after_partial_cleanup(self):
+        delete_messages_mock = Mock(
+            side_effect=[
+                PersistenceError("Failed to delete conversation messages"),
+                None,
+            ]
+        )
+
+        with (
+            patch(
+                "backend.services.document_lifecycle.list_document_conversation_ids",
+                return_value=["convo-1"],
+            ),
+            patch(
+                "backend.services.document_lifecycle.delete_messages_for_conversation",
+                side_effect=delete_messages_mock,
+            ),
+            patch("backend.services.document_lifecycle.delete_user_document_conversations"),
+            patch("backend.services.document_lifecycle.delete_vector_store"),
+            patch("backend.services.document_lifecycle.delete_storage_object"),
+            patch("backend.services.document_lifecycle.delete_document_record") as delete_document_record_mock,
+        ):
+            first_result = delete_document(
+                document_id="doc-1",
+                user_id="user-a",
+                storage_url="documents/user-a/doc-1/report.pdf",
+            )
+
+            self.assertEqual(first_result.failure_stage, "conversations")
+            self.assertEqual(first_result.cleanup_status, "partial")
+            delete_document_record_mock.assert_not_called()
+
+            second_result = delete_document(
+                document_id="doc-1",
+                user_id="user-a",
+                storage_url="documents/user-a/doc-1/report.pdf",
+            )
+
+        self.assertEqual(second_result.status, "completed")
+        delete_document_record_mock.assert_called_once_with(
+            document_id="doc-1",
+            user_id="user-a",
         )
 
 
