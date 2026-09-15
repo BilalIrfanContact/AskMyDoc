@@ -432,9 +432,9 @@ class DocumentLifecycleHttpIntegrationTestCase(unittest.IsolatedAsyncioTestCase)
             },
         )
         delete_document_record_mock.assert_not_called()
-        delete_messages_mock.assert_not_called()
-        delete_conversations_mock.assert_not_called()
-        delete_vector_store_mock.assert_not_called()
+        delete_messages_mock.assert_called_once_with("convo-1")
+        delete_conversations_mock.assert_called_once_with(user_id="user-a", document_id="doc-1")
+        delete_vector_store_mock.assert_called_once_with("doc-1")
 
 
 if __name__ == "__main__":
