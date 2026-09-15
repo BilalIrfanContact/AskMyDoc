@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Literal, Sequence
+from typing import Callable, Iterable, Literal, Protocol, Sequence
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
@@ -140,6 +140,22 @@ class StructuredAnswerResult:
     invalid_attempt_count: int
 
 
+class RetrievalAdapter(Protocol):
+    def count(self) -> int | None: ...
+
+    def retrieve(self, mode: RetrievalMode, question: str, limit: int) -> RetrievedContext: ...
+
+
+class GenerationAdapter(Protocol):
+    def invoke(self, prompt: str) -> object: ...
+
+
+@dataclass(frozen=True)
+class RagDependencies:
+    retrieval_factory: Callable[[str], RetrievalAdapter]
+    generation: GenerationAdapter
+
+
 class LlmAnswerPayload(BaseModel):
     answer: str
 
@@ -270,12 +286,16 @@ def _normalize_answer_text(answer: str, question: str) -> str:
     return normalized_text.strip()
 
 
-def _generate_structured_answer(llm, question: str, context: str) -> StructuredAnswerResult:
+def _generate_structured_answer(
+    generator: GenerationAdapter,
+    question: str,
+    context: str,
+) -> StructuredAnswerResult:
     prompt = _build_generation_prompt(question, context)
     invalid_attempt_count = 0
 
     for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
-        response = llm.invoke(prompt)
+        response = generator.invoke(prompt)
         response_text = _coerce_response_text(response)
 
         try:
@@ -402,7 +422,28 @@ def _is_answer_grounded(answer: str, citations: Sequence[AnswerCitation]) -> boo
         for segment in segments
     )
 
-def _route_intent(question: str) -> RouteIntent:
+def _default_generation_adapter() -> GenerationAdapter:
+    from .rag_adapters import OpenAIChatAdapter
+
+    model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
+    return OpenAIChatAdapter(ChatOpenAI(model=model, temperature=0))
+
+
+def _default_dependencies() -> RagDependencies:
+    from .rag_adapters import ChromaRetrievalAdapter
+
+    return RagDependencies(
+        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
+            get_vector_store(document_id=document_id),
+        ),
+        generation=_default_generation_adapter(),
+    )
+
+
+def _route_intent(
+    question: str,
+    generator: GenerationAdapter | None = None,
+) -> RouteIntent:
     prompt = (
         "Classify the user's question for a document Q&A app.\n"
         "Return exactly one label: summary, qa, or off_topic.\n"
@@ -414,9 +455,8 @@ def _route_intent(question: str) -> RouteIntent:
     )
 
     try:
-        model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
-        llm = ChatOpenAI(model=model, temperature=0)
-        response_text = _coerce_response_text(llm.invoke(prompt)).lower()
+        active_generator = generator or _default_generation_adapter()
+        response_text = _coerce_response_text(active_generator.invoke(prompt)).lower()
     except Exception:
         return "qa"
 
@@ -426,9 +466,13 @@ def _route_intent(question: str) -> RouteIntent:
     return "qa"
 
 
-def _select_retrieval_policy(question: str, total_chunks: int) -> RetrievalPolicy:
+def _select_retrieval_policy(
+    question: str,
+    total_chunks: int,
+    generator: GenerationAdapter | None = None,
+) -> RetrievalPolicy:
     limit = min(8, max(1, total_chunks))
-    routed_intent = _route_intent(question)
+    routed_intent = _route_intent(question, generator=generator)
     if routed_intent == "summary":
         return RetrievalPolicy(
             intent="summary",
@@ -445,95 +489,12 @@ def _select_retrieval_policy(question: str, total_chunks: int) -> RetrievalPolic
     )
 
 
-def _head_context(vectordb, limit: int = 6) -> RetrievedContext:
-    result = vectordb.get(limit=limit, include=["documents", "metadatas"])
-    documents: Sequence[str] = result.get("documents") or []
-    metadatas: Sequence[dict | None] = result.get("metadatas") or []
-    ids: Sequence[str | None] = result.get("ids") or []
-    citations = []
-    cited_documents = []
-    for index, document in enumerate(documents):
-        if not document:
-            continue
-        citation = _citation_from_metadata(metadatas, ids, index, document)
-        if citation is None:
-            continue
-        citations.append(citation)
-        cited_documents.append(document)
-    return RetrievedContext(
-        text=_format_texts(cited_documents),
-        citations=citations,
-        retrieved_document_count=len([document for document in documents if document]),
-    )
-
-
-def _citation_from_metadata(
-    metadatas: Sequence[dict | None],
-    ids: Sequence[str | None],
-    index: int,
-    document_text: str,
-) -> AnswerCitation | None:
-    metadata = metadatas[index] if index < len(metadatas) else None
-    chunk_id = metadata.get("chunk_id") if isinstance(metadata, dict) else None
-    if not chunk_id and index < len(ids):
-        chunk_id = ids[index]
-    if not chunk_id:
-        return None
-    return AnswerCitation(chunk_id=chunk_id, excerpt=document_text)
-
-
-def _cited_context_from_query_result(result: dict) -> RetrievedContext:
-    documents_groups: Sequence[Sequence[str | None]] = result.get("documents") or []
-    metadatas_groups: Sequence[Sequence[dict | None]] = result.get("metadatas") or []
-    ids_groups: Sequence[Sequence[str | None]] = result.get("ids") or []
-
-    documents = documents_groups[0] if documents_groups else []
-    metadatas = metadatas_groups[0] if metadatas_groups else []
-    ids = ids_groups[0] if ids_groups else []
-
-    citations = []
-    cited_texts = []
-    for index, document in enumerate(documents):
-        if not document:
-            continue
-        citation = _citation_from_metadata(metadatas, ids, index, document)
-        if citation is None:
-            continue
-        citations.append(citation)
-        cited_texts.append(document)
-    return RetrievedContext(
-        text=_format_texts(cited_texts),
-        citations=citations,
-        retrieved_document_count=len([document for document in documents if document]),
-    )
-
-
-def _semantic_context(vectordb, question: str, limit: int) -> RetrievedContext:
-    embedding_function = getattr(vectordb, "embeddings", None)
-    if embedding_function is None:
-        raise ValueError("Vector store is missing an embedding function.")
-    query_embedding = embedding_function.embed_query(question)
-    result = vectordb._collection.query(
-        query_embeddings=[query_embedding],
-        n_results=limit,
-        include=["documents", "metadatas"],
-    )
-    return _cited_context_from_query_result(result)
-
-
-def _citation_from_doc(doc) -> AnswerCitation | None:
-    metadata = getattr(doc, "metadata", None)
-    chunk_id = metadata.get("chunk_id") if isinstance(metadata, dict) else None
-    page_content = getattr(doc, "page_content", "")
-    if not chunk_id or not page_content:
-        return None
-    return AnswerCitation(chunk_id=chunk_id, excerpt=page_content)
-
-
-def _retrieve_context(vectordb, question: str, policy: RetrievalPolicy) -> RetrievedContext:
-    if policy.mode == "head":
-        return _head_context(vectordb, limit=policy.limit)
-    return _semantic_context(vectordb, question, policy.limit)
+def _retrieve_context(
+    retriever: RetrievalAdapter,
+    question: str,
+    policy: RetrievalPolicy,
+) -> RetrievedContext:
+    return retriever.retrieve(policy.mode, question, policy.limit)
 
 
 def _citation_completeness_ratio(context: RetrievedContext) -> float | None:
@@ -598,17 +559,23 @@ def _insufficient_context_decision(policy: RetrievalPolicy) -> AnswerDecision:
     )
 
 
-def answer_question(document_id: str, question: str) -> AnswerDecision:
-    vectordb = get_vector_store(document_id=document_id)
-    total_chunks: int | None = None
-    try:
-        total = vectordb._collection.count()
-        total_chunks = total
-    except Exception:
-        total = 4
+def answer_question(
+    document_id: str,
+    question: str,
+    *,
+    dependencies: RagDependencies | None = None,
+) -> AnswerDecision:
+    active_dependencies = dependencies or _default_dependencies()
+    retriever = active_dependencies.retrieval_factory(document_id)
+    total_chunks = retriever.count()
+    total = total_chunks if total_chunks is not None else 4
 
-    policy = _select_retrieval_policy(question, total)
-    context = _retrieve_context(vectordb, question, policy)
+    policy = _select_retrieval_policy(
+        question,
+        total,
+        generator=active_dependencies.generation,
+    )
+    context = _retrieve_context(retriever, question, policy)
 
     if not context.text:
         decision = _insufficient_context_decision(policy)
@@ -640,9 +607,11 @@ def answer_question(document_id: str, question: str) -> AnswerDecision:
         )
         return decision
 
-    model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
-    llm = ChatOpenAI(model=model, temperature=0)
-    structured_answer = _generate_structured_answer(llm, question, context.text)
+    structured_answer = _generate_structured_answer(
+        active_dependencies.generation,
+        question,
+        context.text,
+    )
     if structured_answer.answer is None:
         decision = _insufficient_context_decision(policy)
         _emit_answer_policy_telemetry(
