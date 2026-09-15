@@ -400,7 +400,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.exit_stack.enter_context(
             patch(
-                "backend.routers.chat.answer_question",
+                "backend.services.conversation_turn.answer_question",
                 return_value=AnswerDecision(
                     answer="Document summary answer",
                     intent="summary",
@@ -660,7 +660,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         conversation_id = json.loads(response_body)["conversation_id"]
 
         with patch(
-            "backend.routers.chat.answer_question",
+            "backend.services.conversation_turn.answer_question",
             side_effect=RuntimeError("model unavailable"),
         ):
             status, _, response_body = await _request_asgi(
