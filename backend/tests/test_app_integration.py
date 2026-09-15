@@ -845,11 +845,13 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             head_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
             head_ids=[None],
         )
-        llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(
+        llm = Mock()
+        llm.invoke.side_effect = [
+            SimpleNamespace(content="summary"),
+            SimpleNamespace(
                 content='{"answer": "The handbook covers benefits policy and time-off rules."}'
-            )
-        )
+            ),
+        ]
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
@@ -920,7 +922,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 "citations": [],
             },
         )
-        chat_openai_mock.assert_not_called()
+        chat_openai_mock.assert_called_once()
         self.assertEqual(
             await self._messages(conversation_id),
             [
@@ -1000,6 +1002,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         )
         llm = Mock()
         llm.invoke.side_effect = [
+            SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
             SimpleNamespace(content='{"answer": ""}'),
         ]
@@ -1040,7 +1043,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         )
-        self.assertEqual(llm.invoke.call_count, 2)
+        self.assertEqual(llm.invoke.call_count, 3)
 
 
 if __name__ == "__main__":
