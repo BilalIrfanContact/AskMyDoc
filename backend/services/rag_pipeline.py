@@ -311,7 +311,9 @@ def _extract_question_terms(text: str) -> set[str]:
 def _has_sufficient_context(question: str, context: str) -> bool:
     if not context:
         return False
-    return len(context.strip()) >= 50
+    if len(context.strip()) < 50:
+        return False
+    return _retrieval_overlap_metrics(question, context)[2]
 
 
 def _retrieval_overlap_metrics(question: str, context: str) -> tuple[int, int, bool]:
