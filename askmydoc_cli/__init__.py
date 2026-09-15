@@ -1,1 +1,0 @@
-"""AskMyDoc CLI package."""
