@@ -6,6 +6,8 @@ from unittest.mock import Mock, patch
 from backend.services.rag_pipeline import (
     AnswerCitation,
     INSUFFICIENT_CONTEXT_ANSWER,
+    RagDependencies,
+    RetrievedContext,
     _build_generation_prompt,
     _route_intent,
     _select_retrieval_policy,
@@ -92,8 +94,45 @@ class RagPipelineTestCase(unittest.TestCase):
             n_results=4,
             include=["documents", "metadatas"],
         )
-        self.assertEqual(chat_openai_mock.call_count, 2)
+        self.assertEqual(chat_openai_mock.call_count, 1)
         self.assertEqual(llm.invoke.call_count, 2)
+
+    def test_answer_question_uses_injected_adapters_without_constructing_production_clients(self):
+        retriever = Mock()
+        retriever.count.return_value = 1
+        retriever.retrieve.return_value = RetrievedContext(
+            text="The refund window is 30 days from the purchase date.",
+            citations=[
+                AnswerCitation(
+                    chunk_id="doc-1:chunk:0",
+                    excerpt="The refund window is 30 days from the purchase date.",
+                )
+            ],
+            retrieved_document_count=1,
+        )
+        generator = Mock()
+        generator.invoke.side_effect = [
+            SimpleNamespace(content="qa"),
+            SimpleNamespace(content='{"answer": "The refund window is 30 days."}'),
+        ]
+
+        with (
+            patch("backend.services.rag_pipeline.get_vector_store") as get_vector_store_mock,
+            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+        ):
+            answer = answer_question(
+                "doc-1",
+                "What is the refund window?",
+                dependencies=RagDependencies(
+                    retrieval_factory=lambda _: retriever,
+                    generation=generator,
+                ),
+            )
+
+        self.assertEqual(answer.answer_status, "answered")
+        retriever.retrieve.assert_called_once_with("semantic", "What is the refund window?", 1)
+        get_vector_store_mock.assert_not_called()
+        chat_openai_mock.assert_not_called()
 
     def test_answer_question_retries_when_model_breaks_json_contract(self):
         vectordb = self._build_vector_store(
