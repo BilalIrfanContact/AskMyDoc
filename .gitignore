@@ -31,3 +31,4 @@ venv/
 plans/
 .graphify_detect.json
 .playwright-mcp/
+design-concepts/
