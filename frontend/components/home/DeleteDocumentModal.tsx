@@ -36,9 +36,7 @@ export default function DeleteDocumentModal({
         <div className="delete-modal-body">
           <p className="delete-eyebrow">This cannot be undone</p>
           <h2 className="delete-modal-title" id="delete-dialog-title">Delete {documentName}?</h2>
-          <p className="delete-modal-text" id="delete-dialog-description">
-            This removes the document, its conversation history, and its search index. This cannot be undone.
-          </p>
+
           <p className="delete-return-note">You will return to the document library.</p>
           {error ? (
             <p className="delete-error" role="alert">{error}</p>
@@ -63,7 +61,6 @@ export default function DeleteDocumentModal({
             {isDeleting ? "Deleting…" : "Delete document"}
           </button>
         </div>
-        <p className="delete-cleanup-note">If cleanup only partly completes, AskMyDoc will explain what remains.</p>
       </section>
     </div>
   );
