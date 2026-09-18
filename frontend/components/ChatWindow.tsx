@@ -68,7 +68,7 @@ export default function ChatWindow({
                 </div>
               ) : (
                 <article className={`assistant-answer ${message.answerStatus === "insufficient_context" ? "is-insufficient" : ""}`} key={`message-${index}`}>
-                  <h2>{message.answerStatus === "insufficient_context" ? "Not enough support" : "Answer"}</h2>
+                  {message.answerStatus === "insufficient_context" ? <h2>Not enough support</h2> : null}
                   <p className="answer-copy">{message.content}</p>
                   {message.answerStatus === "insufficient_context" ? (
                     <p className="answer-status">The document does not contain enough evidence for a reliable answer. Try a narrower question.</p>

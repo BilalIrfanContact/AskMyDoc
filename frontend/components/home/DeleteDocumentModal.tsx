@@ -34,7 +34,7 @@ export default function DeleteDocumentModal({
         <div className="delete-accent" />
         <button type="button" className="dialog-close" onClick={onCancel} disabled={isDeleting} aria-label="Close delete dialog">×</button>
         <div className="delete-modal-body">
-          <p className="delete-eyebrow">Permanent action</p>
+          <p className="delete-eyebrow">This cannot be undone</p>
           <h2 className="delete-modal-title" id="delete-dialog-title">Delete {documentName}?</h2>
           <p className="delete-modal-text" id="delete-dialog-description">
             This removes the document, its conversation history, and its search index. This cannot be undone.
