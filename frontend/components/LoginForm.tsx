@@ -56,7 +56,6 @@ export default function LoginForm() {
           <Link href="/login" className="auth-wordmark">AskMyDoc</Link>
           <div className="auth-story-copy">
             <h1 id="auth-story-title">Ask questions.<br />Check the source.</h1>
-            <p className="auth-story-kicker">Documents<br />Ideas<br />Answers<br />With provenance</p>
           </div>
           <AuthDocumentArtwork />
           <p className="auth-story-note">A clearer way to work with your documents.</p>
