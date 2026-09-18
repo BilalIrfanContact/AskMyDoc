@@ -248,10 +248,43 @@ test("send appends the user question and assistant answer in chat view", async (
 
   assert.deepEqual(harness.getState().messages, [
     { role: "user", content: "What is alpha?" },
-    { role: "assistant", content: "answer:What is alpha?" }
+    {
+      role: "assistant",
+      content: "answer:What is alpha?",
+      answerStatus: "answered",
+      citations: []
+    }
   ]);
   assert.equal(harness.getState().isAssistantTyping, false);
   assert.equal(harness.getState().error, null);
+});
+
+test("send preserves answer status and citations for the grounded answer UI", async () => {
+  const harness = createHarness();
+  harness.services.askQuestion = async (): Promise<ChatResponseBody> => ({
+    answer: "The launch remains on October 14.",
+    answer_status: "answered",
+    citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }],
+    intent: "qa",
+    retrieval_mode: "semantic"
+  });
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("When is the launch?");
+
+  assert.deepEqual(harness.getState().messages[1], {
+    role: "assistant",
+    content: "The launch remains on October 14.",
+    answerStatus: "answered",
+    citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }]
+  });
 });
 
 test("send failure keeps the user question and surfaces the chat error", async () => {

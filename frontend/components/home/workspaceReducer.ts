@@ -23,7 +23,12 @@ export type WorkspaceAction =
   | { type: "delete/failure"; error: string }
   | { type: "delete/close" }
   | { type: "chat/send-start"; question: string }
-  | { type: "chat/send-success"; answer: string }
+  | {
+      type: "chat/send-success";
+      answer: string;
+      answerStatus: "answered" | "insufficient_context";
+      citations: Message["citations"];
+    }
   | { type: "chat/send-failure"; error: string };
 
 const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
@@ -216,7 +221,15 @@ export function workspaceReducer(
     case "chat/send-success":
       return {
         ...state,
-        messages: [...state.messages, { role: "assistant", content: action.answer }],
+        messages: [
+          ...state.messages,
+          {
+            role: "assistant",
+            content: action.answer,
+            answerStatus: action.answerStatus,
+            citations: action.citations
+          }
+        ],
         isAssistantTyping: false
       };
     case "chat/send-failure":

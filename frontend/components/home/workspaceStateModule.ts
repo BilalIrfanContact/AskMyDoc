@@ -280,7 +280,12 @@ export function createWorkspaceStateModule({
         return;
       }
 
-      dispatch({ type: "chat/send-success", answer: response.answer });
+      dispatch({
+        type: "chat/send-success",
+        answer: response.answer,
+        answerStatus: response.answer_status,
+        citations: response.citations
+      });
     } catch (error) {
       const nextState = getState();
       if (

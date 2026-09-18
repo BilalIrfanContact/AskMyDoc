@@ -1,8 +1,11 @@
 import type { PersistedDocument } from "../../lib/api";
+import type { AnswerCitation, ChatResponseBody } from "../../lib/api-contract";
 
 export type Message = {
   role: "user" | "assistant";
   content: string;
+  answerStatus?: ChatResponseBody["answer_status"];
+  citations?: AnswerCitation[];
 };
 
 export type ViewState = "upload" | "indexing" | "chat";

@@ -47,6 +47,7 @@ export function useHomeWorkspace() {
       filteredDocuments,
     },
     actions: {
+      refreshDocuments: workspaceStateModule.refreshDocuments,
       setSearchQuery: workspaceStateModule.setSearchQuery,
       toggleSidebar: workspaceStateModule.toggleSidebar,
       openSearch: workspaceStateModule.openSearch,
