@@ -1137,7 +1137,7 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
-.upload-dropzone > span:not(.upload-document-icon):not(.upload-indeterminate) {
+.upload-dropzone > span:not(.upload-document-icon) {
   margin-top: 8px;
   color: var(--muted);
 }
@@ -1147,45 +1147,9 @@ textarea:focus-visible {
   margin-top: 16px;
 }
 
-.upload-indeterminate {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 34%;
-  height: 3px;
-  background: var(--clay);
-  animation: indeterminate 1.2s infinite cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.upload-live-status,
-.upload-meta,
 .uploader-status-message {
   padding: 12px 14px;
   font-size: 13px;
-}
-
-.upload-live-status {
-  background: var(--warning-bg);
-  color: var(--warning-text);
-}
-
-.upload-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid var(--rule);
-  background: var(--paper);
-}
-
-.upload-meta > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.uploader-status {
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 .uploader-status-message {
@@ -1530,19 +1494,13 @@ textarea:focus-visible {
   white-space: pre-wrap;
 }
 
-.assistant-answer.is-insufficient {
-  padding: 26px;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--warning-text);
-  background: var(--warning-bg);
-}
-
-.assistant-answer.is-insufficient h2 {
-  font-size: 28px;
-}
-
-.assistant-answer.is-insufficient .answer-copy {
-  margin-top: 20px;
+.insufficient-message {
+  margin: 4px 0 32px;
+  padding: 12px 0 12px 16px;
+  border-left: 2px solid var(--warning-text);
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .answer-status {
@@ -2034,12 +1992,6 @@ kbd {
   to { background-position: -200% 0; }
 }
 
-@keyframes indeterminate {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(180%); }
-  100% { transform: translateX(360%); }
-}
-
 @keyframes loading-lines {
   0%, 100% { transform: scaleX(0.72); opacity: 0.45; }
   50% { transform: scaleX(1); opacity: 1; }
@@ -2410,7 +2362,7 @@ kbd {
 
   .upload-document-icon,
   .upload-dropzone > strong,
-  .upload-dropzone > span:not(.upload-indeterminate) {
+  .upload-dropzone > span {
     display: none;
   }
 

@@ -30,16 +30,17 @@ export default function ChatWindow({
   }, [messages, isAssistantTyping]);
 
   useEffect(() => {
-    let latestCitedAnswer = -1;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === "assistant" && message.citations?.length) {
-        latestCitedAnswer = index;
-        break;
-      }
+    setSourceMessageIndex(null);
+  }, [documentName]);
+
+  useEffect(() => {
+    if (
+      sourceMessageIndex !== null &&
+      !messages[sourceMessageIndex]?.citations?.length
+    ) {
+      setSourceMessageIndex(null);
     }
-    if (latestCitedAnswer >= 0) setSourceMessageIndex(latestCitedAnswer);
-  }, [messages]);
+  }, [messages, sourceMessageIndex]);
 
   const sourceMessage = sourceMessageIndex === null ? null : messages[sourceMessageIndex];
 
@@ -66,13 +67,13 @@ export default function ChatWindow({
                 <div className="user-message" key={`message-${index}`}>
                   <p>{message.content}</p>
                 </div>
+              ) : message.answerStatus === "insufficient_context" ? (
+                <p className="insufficient-message" role="status" key={`message-${index}`}>
+                  {message.content}
+                </p>
               ) : (
-                <article className={`assistant-answer ${message.answerStatus === "insufficient_context" ? "is-insufficient" : ""}`} key={`message-${index}`}>
-                  {message.answerStatus === "insufficient_context" ? <h2>Not enough support</h2> : null}
+                <article className="assistant-answer" key={`message-${index}`}>
                   <p className="answer-copy">{message.content}</p>
-                  {message.answerStatus === "insufficient_context" ? (
-                    <p className="answer-status">The document does not contain enough evidence for a reliable answer. Try a narrower question.</p>
-                  ) : null}
                   {message.citations?.length ? (
                     <p className="answer-status">Grounded in {message.citations.length} {message.citations.length === 1 ? "passage" : "passages"}</p>
                   ) : null}

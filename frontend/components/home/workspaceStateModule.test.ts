@@ -7,7 +7,7 @@ import {
   type PersistedDocument,
   type PersistedMessage
 } from "../../lib/api";
-import type { ChatResponseBody } from "../../lib/api-contract";
+import type { ChatResponseBody, UploadPdfResponse } from "../../lib/api-contract";
 import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 import { createWorkspaceStateModule, type WorkspaceServices } from "./workspaceStateModule";
 import type { WorkspaceState } from "./types";
@@ -70,6 +70,13 @@ function createHarness() {
       return conversationsByDocument.get(documentId) ?? [];
     },
     getUserDocuments: async () => documents,
+    uploadPdf: async () => ({
+      chunk_count: 3,
+      document_id: "doc-upload",
+      lifecycle_status: "ready" as const,
+      status: "success" as const,
+      stored_count: 3
+    }),
     scheduleSearchClose: (callback: () => void) => callback(),
     waitForTransition: async () => {}
   };
@@ -96,6 +103,36 @@ function createHarness() {
     }
   };
 }
+
+test("upload shows the processing workspace before the request finishes", async () => {
+  const harness = createHarness();
+  const uploadDeferred = createDeferred<UploadPdfResponse>();
+  harness.services.uploadPdf = async () => uploadDeferred.promise;
+  const workspaceModule = harness.createModule();
+
+  const uploadPromise = workspaceModule.handleUpload(
+    new File(["document"], "upload.pdf", { type: "application/pdf" }),
+    "8 B"
+  );
+
+  assert.equal(harness.getState().view, "indexing");
+  assert.deepEqual(harness.getState().documentMeta, {
+    fileName: "upload.pdf",
+    fileSize: "8 B"
+  });
+  assert.equal(harness.getState().documentId, null);
+
+  uploadDeferred.resolve({
+    chunk_count: 3,
+    document_id: "doc-upload",
+    lifecycle_status: "ready",
+    status: "success",
+    stored_count: 3
+  });
+
+  assert.deepEqual(await uploadPromise, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+});
 
 test("upload transitions from indexing to ready chat workspace", async () => {
   const harness = createHarness();

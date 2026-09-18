@@ -11,6 +11,7 @@ export type WorkspaceAction =
   | { type: "search/start-close" }
   | { type: "search/finish-close" }
   | { type: "sidebar/toggle" }
+  | { type: "workflow/upload-pending"; documentMeta: DocumentMeta }
   | { type: "workflow/upload-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/select-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/chat-ready"; conversationId: string; messages: Message[] }
@@ -111,6 +112,18 @@ export function workspaceReducer(
       return {
         ...state,
         isSidebarOpen: !state.isSidebarOpen
+      };
+    case "workflow/upload-pending":
+      return {
+        ...state,
+        transitionMode: "indexing",
+        view: "indexing",
+        busyDocumentId: null,
+        documentId: null,
+        conversationId: null,
+        documentMeta: action.documentMeta,
+        messages: [],
+        error: null
       };
     case "workflow/upload-start":
       return {

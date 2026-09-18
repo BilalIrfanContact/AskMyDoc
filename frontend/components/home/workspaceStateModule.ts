@@ -6,6 +6,8 @@ import {
   getConversationMessages,
   getUserConversations,
   getUserDocuments,
+  uploadPdf,
+  UploadFlowError,
   type PersistedDocument
 } from "../../lib/api";
 import type { WorkspaceAction } from "./workspaceReducer";
@@ -20,6 +22,7 @@ export type WorkspaceServices = {
   getConversationMessages: typeof getConversationMessages;
   getUserConversations: typeof getUserConversations;
   getUserDocuments: typeof getUserDocuments;
+  uploadPdf: typeof uploadPdf;
   waitForTransition: () => Promise<void>;
   scheduleSearchClose: (callback: () => void) => void;
 };
@@ -41,6 +44,7 @@ const defaultServices: WorkspaceServices = {
   getConversationMessages,
   getUserConversations,
   getUserDocuments,
+  uploadPdf,
   waitForTransition() {
     return new Promise<void>((resolve) => {
       window.setTimeout(resolve, 1200);
@@ -123,11 +127,10 @@ export function createWorkspaceStateModule({
     dispatch({ type: "workflow/clear" });
   }
 
-  async function handleUploaded(documentId: string, meta: UploadMeta): Promise<UploadBootstrapResult> {
-    const runId = workflowRuns.begin();
-
-    dispatch({ type: "workflow/upload-start", documentId, documentMeta: meta });
-
+  async function bootstrapUploadedDocument(
+    runId: number,
+    documentId: string
+  ): Promise<UploadBootstrapResult> {
     try {
       await refreshDocuments({ suppressFailureError: true });
       const [conversation] = await Promise.all([
@@ -159,6 +162,48 @@ export function createWorkspaceStateModule({
         message: recoveryMessage
       };
     }
+  }
+
+  async function handleUpload(file: File, fileSize: string): Promise<UploadBootstrapResult> {
+    const runId = workflowRuns.begin();
+    dispatch({
+      type: "workflow/upload-pending",
+      documentMeta: { fileName: file.name, fileSize }
+    });
+
+    try {
+      const response = await services.uploadPdf(file);
+      if (!workflowRuns.isActive(runId)) {
+        return { status: "cancelled" };
+      }
+
+      const meta: UploadMeta = {
+        fileName: file.name,
+        fileSize,
+        chunkCount: response.chunk_count,
+        storedCount: response.stored_count
+      };
+      dispatch({
+        type: "workflow/upload-start",
+        documentId: response.document_id,
+        documentMeta: meta
+      });
+      return bootstrapUploadedDocument(runId, response.document_id);
+    } catch (error) {
+      if (!workflowRuns.isActive(runId)) {
+        return { status: "cancelled" };
+      }
+
+      const message = getUploadErrorMessage(error);
+      dispatch({ type: "workflow/failure", error: message });
+      return { status: "upload-failed", message };
+    }
+  }
+
+  async function handleUploaded(documentId: string, meta: UploadMeta): Promise<UploadBootstrapResult> {
+    const runId = workflowRuns.begin();
+    dispatch({ type: "workflow/upload-start", documentId, documentMeta: meta });
+    return bootstrapUploadedDocument(runId, documentId);
   }
 
   async function handleSelectDocument(document: PersistedDocument) {
@@ -308,6 +353,7 @@ export function createWorkspaceStateModule({
     setSearchQuery,
     toggleSidebar,
     clearWorkspace,
+    handleUpload,
     handleUploaded,
     handleSelectDocument,
     openDeleteDialog,
@@ -315,6 +361,36 @@ export function createWorkspaceStateModule({
     handleDeleteDocument,
     handleSend
   };
+}
+
+function getUploadErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Upload failed.";
+  }
+
+  if (!(error instanceof UploadFlowError)) {
+    return error.message;
+  }
+
+  if (
+    error.reasonCode === "storage_upload_failed" ||
+    error.reasonCode === "metadata_persist_failed"
+  ) {
+    const recoveryNote =
+      error.cleanupStatus === "completed"
+        ? " Partial upload data was rolled back."
+        : error.cleanupStatus === "failed"
+          ? " Cleanup may be incomplete. Retry once and remove any partial document entry if it appears."
+          : "";
+
+    return `${error.message}${recoveryNote}`;
+  }
+
+  if (error.reasonCode === "no_chunks_stored") {
+    return "Document indexing did not store any chunks. Check the embedding configuration and try again.";
+  }
+
+  return error.message;
 }
 
 function getDeleteErrorMessage(error: unknown) {

@@ -52,7 +52,7 @@ export function useHomeWorkspace() {
       toggleSidebar: workspaceStateModule.toggleSidebar,
       openSearch: workspaceStateModule.openSearch,
       closeSearch: workspaceStateModule.closeSearch,
-      handleUploaded: workspaceStateModule.handleUploaded,
+      handleUpload: workspaceStateModule.handleUpload,
       handleSelectDocument: workspaceStateModule.handleSelectDocument,
       handleClear: workspaceStateModule.clearWorkspace,
       openDeleteDialog: workspaceStateModule.openDeleteDialog,

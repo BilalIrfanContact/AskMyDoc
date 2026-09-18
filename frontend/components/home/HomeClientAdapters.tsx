@@ -91,7 +91,7 @@ export function HomeWorkspaceAdapter({
       onRetryDocuments={() => void actions.refreshDocuments()}
       onSelectDocument={(document) => void actions.handleSelectDocument(document)}
       onDeleteDocument={actions.openDeleteDialog}
-      onUploaded={actions.handleUploaded}
+      onUpload={actions.handleUpload}
       onClear={actions.handleClear}
       onSend={actions.handleSend}
     />

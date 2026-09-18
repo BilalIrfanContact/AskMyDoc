@@ -26,10 +26,7 @@ type HomeWorkspaceProps = {
   onRetryDocuments: () => void;
   onSelectDocument: (document: PersistedDocument) => void;
   onDeleteDocument: (document: PersistedDocument) => void;
-  onUploaded: (
-    documentId: string,
-    meta: { fileName: string; fileSize: string; chunkCount: number; storedCount: number }
-  ) => Promise<UploadBootstrapResult>;
+  onUpload: (file: File, fileSize: string) => Promise<UploadBootstrapResult>;
   onClear: () => void;
   onSend: (question: string) => Promise<void>;
 };
@@ -55,7 +52,7 @@ export default function HomeWorkspace({
   onRetryDocuments,
   onSelectDocument,
   onDeleteDocument,
-  onUploaded,
+  onUpload,
   onClear,
   onSend
 }: HomeWorkspaceProps) {
@@ -146,9 +143,7 @@ export default function HomeWorkspace({
                 <p>PDF or Markdown</p>
               </div>
               <PDFUploader
-                onUploaded={onUploaded}
-                onClear={onClear}
-                activeDocumentId={documentId}
+                onUpload={onUpload}
                 resetSignal={resetSignal}
               />
             </aside>
