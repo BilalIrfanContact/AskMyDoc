@@ -68,7 +68,6 @@ export default function ChatInput({ disabled, onSend, documentName }: ChatInputP
           <SendIcon />
         </button>
       </div>
-      <p className="composer-helper">Enter to send · Shift + Enter for a new line</p>
     </form>
   );
 }
