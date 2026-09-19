@@ -58,6 +58,13 @@ def get_vector_store(document_id: str) -> Chroma:
     )
 
 
+def get_persisted_collection(document_id: str):
+    """Open a Chroma collection without constructing an embedding model."""
+    _disable_chroma_telemetry()
+    client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())
+    return client.get_collection(name=document_id)
+
+
 def delete_vector_store(document_id: str) -> None:
     _disable_chroma_telemetry()
     client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())

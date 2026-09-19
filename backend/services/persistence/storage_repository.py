@@ -49,3 +49,15 @@ def delete_storage_object(storage_url: str) -> None:
     except Exception as exc:
         if "not found" not in str(exc).lower():
             raise map_persistence_error("Failed to delete document from Supabase Storage", exc) from exc
+
+
+def download_storage_object(storage_url: str) -> bytes:
+    """Download an existing document without changing its storage state."""
+    bucket, _, object_path = storage_url.partition("/")
+    if not bucket or not object_path:
+        raise PersistenceError("Invalid document storage URL.")
+
+    try:
+        return get_storage_client().from_(bucket).download(object_path)
+    except Exception as exc:
+        raise map_persistence_error("Failed to download document from Supabase Storage", exc) from exc
