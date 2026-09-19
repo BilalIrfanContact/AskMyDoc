@@ -1,6 +1,11 @@
 import unittest
 
-from backend.services.pdf_extractor import _extract_page_text, _serialize_table
+from backend.services.pdf_extractor import (
+    _TableContext,
+    _extract_page_text,
+    _extract_page_text_with_context,
+    _serialize_table,
+)
 
 
 class FakeTable:
@@ -53,6 +58,45 @@ class PdfExtractorTestCase(unittest.TestCase):
         self.assertIsNotNone(serialized)
         self.assertIn("2010 | At Risk | Cal Tradd |", serialized)
         self.assertIn("2012 | Jack & Diane | Chris |", serialized)
+
+    def test_structured_value_table_repeats_merged_labels(self):
+        rows = [
+            ["Value", "Mass", "Description"],
+            ["$1", "8.10 g", "Susan B. Anthony"],
+            [None, "8.10 g", "Apollo 11 mission insignia"],
+        ]
+
+        serialized = _serialize_table(rows)
+
+        self.assertIsNotNone(serialized)
+        self.assertIn("$1 | 8.10 g | Apollo 11 mission insignia", serialized)
+
+    def test_continuation_page_reuses_table_header_and_last_label(self):
+        page = FakePage(
+            words=[
+                {"text": "8.10", "x0": 0, "x1": 20, "top": 20, "bottom": 28},
+                {"text": "g", "x0": 25, "x1": 30, "top": 20, "bottom": 28},
+                {"text": "Susan", "x0": 35, "x1": 60, "top": 20, "bottom": 28},
+            ],
+            tables=[
+                FakeTable(
+                    [
+                        [None, "8.10 g", "Susan B. Anthony"],
+                        ["$1", "8.10 g", "Sacagawea"],
+                        [None, "8.10 g", "Native American Themes"],
+                    ],
+                    bbox=(0.0, 10.0, 100.0, 40.0),
+                )
+            ],
+        )
+        previous_context = _TableContext(("Value", "Mass", "Description"), "$1")
+
+        text, context = _extract_page_text_with_context(page, previous_context)
+
+        self.assertIn("Value | Mass | Description", text)
+        self.assertIn("$1 | 8.10 g | Susan B. Anthony", text)
+        self.assertIn("$1 | 8.10 g | Native American Themes", text)
+        self.assertEqual(context.first_column_value, "$1")
 
     def test_structured_table_replaces_flattened_words(self):
         table = FakeTable(
