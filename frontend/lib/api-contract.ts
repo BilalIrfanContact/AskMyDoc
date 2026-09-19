@@ -86,6 +86,8 @@ export interface HTTPValidationError {
 }
 
 export interface MessageRecord {
+  "answer_status"?: "answered" | "insufficient_context" | null;
+  "citations"?: AnswerCitation[] | null;
   "content": string;
   "conversation_id": string;
   "created_at"?: string | null;

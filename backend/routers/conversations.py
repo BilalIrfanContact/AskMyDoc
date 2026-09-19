@@ -77,6 +77,7 @@ async def create_conversation_endpoint(
 @router.get(
     "/conversations/{conversation_id}/messages",
     response_model=ConversationMessagesResponse,
+    response_model_exclude_none=True,
     responses={
         401: {"model": ErrorDetailResponse},
         403: {"model": ErrorDetailResponse},

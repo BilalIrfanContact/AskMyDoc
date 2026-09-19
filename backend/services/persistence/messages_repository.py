@@ -1,15 +1,37 @@
+import json
 import uuid
 from typing import Any, Dict, List
 
 from .common import get_postgrest_client, map_persistence_error
 
 
-def insert_message(conversation_id: str, role: str, content: str) -> Dict[str, Any]:
+_ANSWER_ENVELOPE_PREFIX = "askmydoc:answer:v1:"
+
+
+def insert_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    *,
+    answer_status: str | None = None,
+    citations: List[Dict[str, str]] | None = None,
+) -> Dict[str, Any]:
+    stored_content = content
+    if role == "assistant" and answer_status:
+        stored_content = _ANSWER_ENVELOPE_PREFIX + json.dumps(
+            {
+                "content": content,
+                "answer_status": answer_status,
+                "citations": citations or [],
+            },
+            separators=(",", ":"),
+        )
+
     payload = {
         "id": str(uuid.uuid4()),
         "conversation_id": conversation_id,
         "role": role,
-        "content": content,
+        "content": stored_content,
     }
 
     try:
@@ -33,7 +55,28 @@ def list_conversation_messages(conversation_id: str) -> List[Dict[str, Any]]:
     except Exception as exc:
         raise map_persistence_error("Failed to load conversation history", exc) from exc
 
-    return response.data or []
+    return [_decode_message(row) for row in (response.data or [])]
+
+
+def _decode_message(row: Dict[str, Any]) -> Dict[str, Any]:
+    content = row.get("content")
+    if not isinstance(content, str) or not content.startswith(_ANSWER_ENVELOPE_PREFIX):
+        return row
+
+    try:
+        envelope = json.loads(content.removeprefix(_ANSWER_ENVELOPE_PREFIX))
+    except (json.JSONDecodeError, TypeError):
+        return row
+
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("content"), str):
+        return row
+
+    return {
+        **row,
+        "content": envelope["content"],
+        "answer_status": envelope.get("answer_status"),
+        "citations": envelope.get("citations", []),
+    }
 
 
 def delete_messages_for_conversation(conversation_id: str) -> None:

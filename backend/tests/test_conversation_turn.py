@@ -63,6 +63,8 @@ class ConversationTurnTestCase(unittest.TestCase):
                     conversation_id="convo-a",
                     role="assistant",
                     content="The refund window is 30 days.",
+                    answer_status="answered",
+                    citations=[],
                 ),
             ],
         )

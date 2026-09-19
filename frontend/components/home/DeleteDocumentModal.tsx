@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { useModalFocus } from "./useModalFocus";
+
 type DeleteDocumentModalProps = {
   documentName: string;
   isDeleting: boolean;
@@ -16,9 +18,11 @@ export default function DeleteDocumentModal({
   onConfirm
 }: DeleteDocumentModalProps) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+
+  useModalFocus(dialogRef, cancelRef);
 
   useEffect(() => {
-    cancelRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !isDeleting) onCancel();
     };
@@ -30,12 +34,16 @@ export default function DeleteDocumentModal({
     <div className="modal-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onCancel();
     }}>
-      <section className="delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+      <section ref={dialogRef} className="delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
         <div className="delete-accent" />
         <button type="button" className="dialog-close" onClick={onCancel} disabled={isDeleting} aria-label="Close delete dialog">×</button>
         <div className="delete-modal-body">
           <p className="delete-eyebrow">This cannot be undone</p>
           <h2 className="delete-modal-title" id="delete-dialog-title">Delete {documentName}?</h2>
+
+          <p id="delete-dialog-description" className="visually-hidden">
+            This permanently removes the document and its conversation history.
+          </p>
 
           <p className="delete-return-note">You will return to the document library.</p>
           {error ? (

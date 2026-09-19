@@ -144,6 +144,36 @@ test("upload shows the processing workspace before the request finishes", async 
   ]);
 });
 
+test("refreshes the library when an upload finishes after cancellation", async () => {
+  const harness = createHarness();
+  const uploadDeferred = createDeferred<UploadPdfResponse>();
+  let refreshCount = 0;
+  harness.services.uploadPdf = async () => uploadDeferred.promise;
+  harness.services.getUserDocuments = async () => {
+    refreshCount += 1;
+    return [...harness.documents, createDocument("doc-upload", "upload.pdf")];
+  };
+  const workspaceModule = harness.createModule();
+
+  const uploadPromise = workspaceModule.handleUpload(
+    new File(["document"], "upload.pdf", { type: "application/pdf" }),
+    "8 B"
+  );
+  workspaceModule.clearWorkspace();
+  uploadDeferred.resolve({
+    chunk_count: 3,
+    document_id: "doc-upload",
+    lifecycle_status: "ready",
+    status: "success",
+    stored_count: 3
+  });
+
+  assert.deepEqual(await uploadPromise, { status: "cancelled" });
+  assert.equal(refreshCount, 1);
+  assert.equal(harness.getState().documents.some((document) => document.id === "doc-upload"), true);
+  assert.equal(harness.getState().view, "upload");
+});
+
 test("upload transitions from indexing to ready chat workspace", async () => {
   const harness = createHarness();
   const workspaceModule = harness.createModule();
@@ -299,6 +329,28 @@ test("latest document selection wins when requests resolve out of order", async 
   assert.equal(harness.getState().documentId, "doc-b");
   assert.equal(harness.getState().conversationId, "conv-b");
   assert.deepEqual(harness.getState().messages, [{ role: "assistant", content: "beta" }]);
+});
+
+test("restores answer status and citations from persisted messages", async () => {
+  const harness = createHarness();
+  harness.services.getConversationMessages = async () => [{
+    id: "msg-grounded",
+    conversation_id: "conv-a",
+    role: "assistant",
+    content: "The refund window is 30 days.",
+    answer_status: "answered",
+    citations: [{ chunk_id: "chunk-1", excerpt: "Refunds are available for 30 days." }],
+    created_at: "2026-06-14T00:00:00Z"
+  }];
+
+  await harness.createModule().handleSelectDocument(harness.documents[0]);
+
+  assert.deepEqual(harness.getState().messages, [{
+    role: "assistant",
+    content: "The refund window is 30 days.",
+    answerStatus: "answered",
+    citations: [{ chunk_id: "chunk-1", excerpt: "Refunds are available for 30 days." }]
+  }]);
 });
 
 test("send appends the user question and assistant answer in chat view", async () => {

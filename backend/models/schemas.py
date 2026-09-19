@@ -80,6 +80,8 @@ class MessageRecord(BaseModel):
     conversation_id: str
     role: str
     content: str
+    answer_status: Optional[Literal["answered", "insufficient_context"]] = None
+    citations: Optional[List[AnswerCitation]] = None
     created_at: Optional[str] = None
 
 

@@ -1,4 +1,7 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse, QuestionSuggestionsResponse
 from ..services.authz import require_user_document
@@ -36,6 +39,7 @@ async def get_user_documents(user_id: str = Depends(require_authenticated_user))
         403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
+        504: {"model": ErrorDetailResponse},
     },
 )
 async def get_document_question_suggestions(
@@ -44,7 +48,12 @@ async def get_document_question_suggestions(
 ):
     require_user_document(document_id=document_id, user_id=user_id)
     try:
-        suggestions = generate_question_suggestions(document_id)
+        suggestions = await asyncio.wait_for(
+            run_in_threadpool(generate_question_suggestions, document_id),
+            timeout=20,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Question suggestions timed out.") from exc
     except SuggestionGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:

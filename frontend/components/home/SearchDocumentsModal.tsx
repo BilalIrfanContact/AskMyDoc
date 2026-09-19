@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { PersistedDocument } from "../../lib/api";
 import { FileIcon, MagnifyIcon } from "./HomeIcons";
+import { useModalFocus } from "./useModalFocus";
 
 type SearchDocumentsModalProps = {
   documents: PersistedDocument[];
@@ -24,10 +25,9 @@ export default function SearchDocumentsModal({
 }: SearchDocumentsModalProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
+  useModalFocus(dialogRef, searchRef);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -43,6 +43,7 @@ export default function SearchDocumentsModal({
       if (event.currentTarget === event.target) onClose();
     }}>
       <section
+        ref={dialogRef}
         className={`search-dialog ${isClosing ? "closing" : ""}`}
         role="dialog"
         aria-modal="true"

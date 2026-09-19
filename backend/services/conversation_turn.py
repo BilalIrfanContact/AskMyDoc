@@ -52,5 +52,10 @@ def execute_conversation_turn(
         conversation_id=request.conversation_id,
         role="assistant",
         content=decision.answer,
+        answer_status=decision.answer_status,
+        citations=[
+            {"chunk_id": citation.chunk_id, "excerpt": citation.excerpt}
+            for citation in decision.citations
+        ],
     )
     return decision

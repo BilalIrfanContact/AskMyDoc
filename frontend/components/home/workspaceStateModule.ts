@@ -192,6 +192,7 @@ export function createWorkspaceStateModule({
     try {
       const response = await services.uploadPdf(file);
       if (!workflowRuns.isActive(runId)) {
+        await refreshDocuments({ suppressFailureError: true });
         return { status: "cancelled" };
       }
 
@@ -256,7 +257,9 @@ export function createWorkspaceStateModule({
         conversationId: nextConversationId,
         messages: persistedMessages.map((message) => ({
           role: message.role === "assistant" ? "assistant" : "user",
-          content: message.content
+          content: message.content,
+          ...(message.answer_status ? { answerStatus: message.answer_status } : {}),
+          ...(message.citations ? { citations: message.citations } : {})
         }))
       });
       if (persistedMessages.length === 0) {
