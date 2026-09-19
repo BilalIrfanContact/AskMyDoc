@@ -11,7 +11,7 @@ from .markdown_extractor import extract_text_from_markdown
 from .pdf_extractor import extract_pdf_pages
 from .persistence import PersistenceError
 from .persistence.storage_repository import download_storage_object
-from .text_chunker import chunk_text
+from .text_chunker import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, chunk_text
 from .vector_store import get_persisted_collection
 
 
@@ -288,8 +288,8 @@ def inspect_document_chunks(document_id: str, user_id: str) -> dict[str, Any]:
         "chunking": {
             "chunk_count_from_current_pass": len(derived_chunks),
             "stored_chunk_count": len(chunks),
-            "chunk_size": 2000,
-            "configured_overlap": 200,
+            "chunk_size": DEFAULT_CHUNK_SIZE,
+            "configured_overlap": DEFAULT_CHUNK_OVERLAP,
             "token_encoding": token_encoding,
             "chunks_spanning_pages": spanning_chunks,
         },
