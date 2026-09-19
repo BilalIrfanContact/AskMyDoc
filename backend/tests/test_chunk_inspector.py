@@ -36,7 +36,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
             patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf") as download,
             patch(
                 "backend.services.chunk_inspector._source_pages",
-                return_value=("pdf", ["Revenue: $10 million"], ["Revenue: $10 million"]),
+                return_value=("pdf", ["Revenue: $10 million"], [(1, "Revenue: $10 million")]),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
             patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
@@ -82,7 +82,11 @@ class ChunkInspectorTestCase(unittest.TestCase):
             patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
             patch(
                 "backend.services.chunk_inspector._source_pages",
-                return_value=("pdf", ["First row: 10%\n\nSecond row: 20%"], ["First row: 10%\n\nSecond row: 20%"]),
+                return_value=(
+                    "pdf",
+                    ["First row: 10%\n\nSecond row: 20%"],
+                    [(1, "First row: 10%\n\nSecond row: 20%")],
+                ),
             ),
             patch(
                 "backend.services.chunk_inspector.chunk_text",
@@ -109,7 +113,11 @@ class ChunkInspectorTestCase(unittest.TestCase):
             patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
             patch(
                 "backend.services.chunk_inspector._source_pages",
-                return_value=("pdf", ["Column A\nValue 10", "Column B\nValue 20"], ["Column A\nValue 10", "Column B\nValue 20"]),
+                return_value=(
+                    "pdf",
+                    ["Column A\nValue 10", "Column B\nValue 20"],
+                    [(1, "Column A\nValue 10"), (2, "Column B\nValue 20")],
+                ),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Column A\nValue 10"]),
             patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
@@ -119,6 +127,30 @@ class ChunkInspectorTestCase(unittest.TestCase):
         self.assertEqual(report["chunks"][0]["page_start"], 1)
         self.assertEqual(report["chunks"][0]["page_end"], 1)
         self.assertTrue(any("no stored page locations" in warning for warning in report["warnings"]))
+
+    def test_empty_pdf_pages_do_not_renumber_derived_locations(self):
+        collection = self._collection(
+            ["doc-a:chunk:0"],
+            ["Page two content"],
+            [{"chunk_id": "doc-a:chunk:0", "chunk_index": 0}],
+        )
+
+        with (
+            patch("backend.services.chunk_inspector.require_user_document", return_value=self.document),
+            patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
+            patch(
+                "backend.services.chunk_inspector._source_pages",
+                return_value=("pdf", ["", "Page two content"], [(2, "Page two content")]),
+            ),
+            patch("backend.services.chunk_inspector.chunk_text", return_value=["Page two content"]),
+            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+        ):
+            report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
+
+        self.assertEqual(report["source"]["pages"][0]["page_number"], 1)
+        self.assertEqual(report["source"]["pages"][1]["page_number"], 2)
+        self.assertEqual(report["chunks"][0]["page_start"], 2)
+        self.assertEqual(report["chunks"][0]["page_end"], 2)
 
     def test_empty_extraction_is_reported_without_reindexing(self):
         collection = self._collection([], [], [])
@@ -159,7 +191,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
             patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
             patch(
                 "backend.services.chunk_inspector._source_pages",
-                return_value=("pdf", ["Revenue: $10 million"], ["Revenue: $10 million"]),
+                return_value=("pdf", ["Revenue: $10 million"], [(1, "Revenue: $10 million")]),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
             patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),

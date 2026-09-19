@@ -59,24 +59,28 @@ def _chunk_index(chunk_id: str, metadata: dict[str, Any]) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _source_pages(filename: str, data: bytes) -> tuple[str, list[str], list[str]]:
+def _source_pages(filename: str, data: bytes) -> tuple[str, list[str], list[tuple[int, str]]]:
     if filename.lower().endswith(".pdf"):
         pages = extract_pdf_pages(data)
-        extracted_pages = [page for page in pages if page]
+        extracted_pages = [
+            (page_number, page)
+            for page_number, page in enumerate(pages, start=1)
+            if page
+        ]
         return "pdf", pages, extracted_pages
 
     text = extract_text_from_markdown(data)
-    return "markdown", [text] if text else [], [text] if text else []
+    return "markdown", [text] if text else [], [(1, text)] if text else []
 
 
-def _joined_text_with_page_spans(pages: list[str]) -> tuple[str, list[dict[str, int]]]:
-    joined = "\n\n".join(pages)
+def _joined_text_with_page_spans(pages: list[tuple[int, str]]) -> tuple[str, list[dict[str, int]]]:
+    joined = "\n\n".join(page for _, page in pages)
     text = joined.strip()
     leading_whitespace = len(joined) - len(joined.lstrip())
     spans: list[dict[str, int]] = []
     cursor = 0
 
-    for page_number, page in enumerate(pages, start=1):
+    for page_number, page in pages:
         start = text.find(page, max(0, cursor - leading_whitespace))
         if start < 0:
             continue
@@ -87,10 +91,10 @@ def _joined_text_with_page_spans(pages: list[str]) -> tuple[str, list[dict[str, 
     return text, spans
 
 
-def _repeated_page_lines(pages: list[str]) -> list[str]:
+def _repeated_page_lines(pages: list[tuple[int, str]]) -> list[str]:
     """Find short lines repeated across pages, which are likely page furniture."""
     line_pages: dict[str, set[int]] = {}
-    for page_number, page in enumerate(pages, start=1):
+    for page_number, page in pages:
         for raw_line in page.splitlines():
             line = raw_line.strip()
             if len(line) < 10 or len(line) > 100:
