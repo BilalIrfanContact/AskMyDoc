@@ -93,6 +93,10 @@ export interface MessageRecord {
   "role": string;
 }
 
+export interface QuestionSuggestionsResponse {
+  "suggestions": string[];
+}
+
 export interface UploadErrorDetail {
   "cleanup_status": "not-needed" | "completed" | "failed";
   "failure_stage": "validation" | "indexing" | "storage" | "metadata";

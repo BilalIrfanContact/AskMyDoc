@@ -65,6 +65,11 @@ function createHarness() {
       cleanup_status: "completed" as const
     }),
     getConversationMessages: async (conversationId: string) => messagesByConversation.get(conversationId) ?? [],
+    getDocumentQuestionSuggestions: async (documentId: string) => [
+      `What is the main policy in ${documentId}?`,
+      `Which deadlines are defined in ${documentId}?`,
+      `Who is responsible in ${documentId}?`
+    ],
     getUserConversations: async (documentId?: string) => {
       if (!documentId) return [];
       return conversationsByDocument.get(documentId) ?? [];
@@ -132,6 +137,11 @@ test("upload shows the processing workspace before the request finishes", async 
 
   assert.deepEqual(await uploadPromise, { status: "ready" });
   assert.equal(harness.getState().view, "chat");
+  assert.deepEqual(harness.getState().suggestedQuestions, [
+    "What is the main policy in doc-upload?",
+    "Which deadlines are defined in doc-upload?",
+    "Who is responsible in doc-upload?"
+  ]);
 });
 
 test("upload transitions from indexing to ready chat workspace", async () => {
@@ -150,6 +160,27 @@ test("upload transitions from indexing to ready chat workspace", async () => {
   assert.equal(harness.getState().documentId, "doc-upload");
   assert.equal(harness.getState().conversationId, "conv-new-doc-upload");
   assert.deepEqual(harness.getState().messages, []);
+});
+
+test("suggestion generation failure leaves the empty chat usable", async () => {
+  const harness = createHarness();
+  harness.services.getDocumentQuestionSuggestions = async () => {
+    throw new Error("Suggestion generation failed.");
+  };
+  const workspaceModule = harness.createModule();
+
+  const result = await workspaceModule.handleUploaded("doc-upload", {
+    fileName: "upload.pdf",
+    fileSize: "20 KB",
+    chunkCount: 3,
+    storedCount: 3
+  });
+
+  assert.deepEqual(result, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+  assert.deepEqual(harness.getState().suggestedQuestions, []);
+  assert.equal(harness.getState().loadingSuggestions, false);
+  assert.equal(harness.getState().error, null);
 });
 
 test("upload bootstrap failure returns the user to upload with recovery guidance", async () => {

@@ -99,6 +99,10 @@ class DocumentsResponse(BaseModel):
     documents: List[DocumentRecord]
 
 
+class QuestionSuggestionsResponse(BaseModel):
+    suggestions: List[str]
+
+
 class DeleteErrorDetail(BaseModel):
     message: str
     lifecycle_status: Literal["failed"]

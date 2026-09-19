@@ -83,6 +83,8 @@ export function HomeWorkspaceAdapter({
       conversationId={state.conversationId}
       documentMeta={state.documentMeta}
       messages={state.messages}
+      suggestedQuestions={state.suggestedQuestions}
+      loadingSuggestions={state.loadingSuggestions}
       error={state.error}
       resetSignal={state.resetSignal}
       isAssistantTyping={state.isAssistantTyping}

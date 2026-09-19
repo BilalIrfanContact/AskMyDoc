@@ -1451,6 +1451,20 @@ textarea:focus-visible {
   background: rgba(255, 254, 250, 0.45);
 }
 
+.suggestion-skeleton {
+  margin-top: 42px;
+  border-top: 1px solid var(--rule);
+}
+
+.suggestion-skeleton span {
+  height: 88px;
+  display: block;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(90deg, transparent 15%, rgba(238, 234, 224, 0.7) 38%, transparent 62%);
+  background-size: 220% 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
 .conversation-list {
   width: min(100%, 820px);
   margin: 0 auto;

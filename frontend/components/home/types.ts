@@ -39,6 +39,8 @@ export type WorkspaceState = {
   documents: PersistedDocument[];
   filteredDocuments: PersistedDocument[];
   messages: Message[];
+  suggestedQuestions: string[];
+  loadingSuggestions: boolean;
   error: string | null;
   resetSignal: number;
   view: ViewState;

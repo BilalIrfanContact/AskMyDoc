@@ -11,6 +11,7 @@ import type {
   GetUserConversationsResponseBody,
   GetUserDocumentsResponseBody,
   MessageRecord,
+  QuestionSuggestionsResponse,
   UploadErrorDetail,
   UploadPdfResponse
 } from "./api-contract";
@@ -254,6 +255,17 @@ export async function getUserDocuments() {
 
   const data = (await res.json()) as GetUserDocumentsResponseBody;
   return data.documents;
+}
+
+export async function getDocumentQuestionSuggestions(documentId: string) {
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(documentId)}/suggestions`, {
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    throw new Error(await getErrorMessage(res, "Failed to load question suggestions."));
+  }
+  const data = (await res.json()) as QuestionSuggestionsResponse;
+  return data.suggestions;
 }
 
 export async function deleteUserDocument(documentId: string) {

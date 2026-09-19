@@ -4,6 +4,7 @@ import {
   DeleteFlowError,
   deleteUserDocument,
   getConversationMessages,
+  getDocumentQuestionSuggestions,
   getUserConversations,
   getUserDocuments,
   uploadPdf,
@@ -20,6 +21,7 @@ export type WorkspaceServices = {
   createConversation: typeof createConversation;
   deleteUserDocument: typeof deleteUserDocument;
   getConversationMessages: typeof getConversationMessages;
+  getDocumentQuestionSuggestions: typeof getDocumentQuestionSuggestions;
   getUserConversations: typeof getUserConversations;
   getUserDocuments: typeof getUserDocuments;
   uploadPdf: typeof uploadPdf;
@@ -42,6 +44,7 @@ const defaultServices: WorkspaceServices = {
   createConversation,
   deleteUserDocument,
   getConversationMessages,
+  getDocumentQuestionSuggestions,
   getUserConversations,
   getUserDocuments,
   uploadPdf,
@@ -102,6 +105,20 @@ export function createWorkspaceStateModule({
     }
   }
 
+  async function loadQuestionSuggestions(documentId: string, runId: number) {
+    dispatch({ type: "suggestions/load-start" });
+    try {
+      const questions = await services.getDocumentQuestionSuggestions(documentId);
+      const state = getState();
+      if (!workflowRuns.isActive(runId) || state.documentId !== documentId) return;
+      dispatch({ type: "suggestions/load-success", questions });
+    } catch {
+      const state = getState();
+      if (!workflowRuns.isActive(runId) || state.documentId !== documentId) return;
+      dispatch({ type: "suggestions/load-failure" });
+    }
+  }
+
   function openSearch() {
     dispatch({ type: "search/open" });
   }
@@ -147,6 +164,7 @@ export function createWorkspaceStateModule({
         conversationId: conversation.conversation_id,
         messages: []
       });
+      await loadQuestionSuggestions(documentId, runId);
       return { status: "ready" };
     } catch (error) {
       if (!workflowRuns.isActive(runId)) {
@@ -241,6 +259,9 @@ export function createWorkspaceStateModule({
           content: message.content
         }))
       });
+      if (persistedMessages.length === 0) {
+        await loadQuestionSuggestions(document.id, runId);
+      }
     } catch (error) {
       if (!workflowRuns.isActive(runId)) {
         return;

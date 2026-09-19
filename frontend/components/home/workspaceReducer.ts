@@ -6,6 +6,9 @@ export type WorkspaceAction =
   | { type: "documents/load-success"; documents: PersistedDocument[] }
   | { type: "documents/load-failure"; error: string }
   | { type: "documents/load-finish" }
+  | { type: "suggestions/load-start" }
+  | { type: "suggestions/load-success"; questions: string[] }
+  | { type: "suggestions/load-failure" }
   | { type: "search/open" }
   | { type: "search/set-query"; query: string }
   | { type: "search/start-close" }
@@ -38,6 +41,8 @@ const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
   documentMeta: null,
   documents: [],
   messages: [],
+  suggestedQuestions: [],
+  loadingSuggestions: false,
   error: null,
   resetSignal: 0,
   view: "upload",
@@ -85,6 +90,24 @@ export function workspaceReducer(
         ...state,
         loadingDocuments: false
       };
+    case "suggestions/load-start":
+      return {
+        ...state,
+        suggestedQuestions: [],
+        loadingSuggestions: true
+      };
+    case "suggestions/load-success":
+      return {
+        ...state,
+        suggestedQuestions: action.questions,
+        loadingSuggestions: false
+      };
+    case "suggestions/load-failure":
+      return {
+        ...state,
+        suggestedQuestions: [],
+        loadingSuggestions: false
+      };
     case "search/open":
       return {
         ...state,
@@ -123,6 +146,8 @@ export function workspaceReducer(
         conversationId: null,
         documentMeta: action.documentMeta,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null
       };
     case "workflow/upload-start":
@@ -135,6 +160,8 @@ export function workspaceReducer(
         conversationId: null,
         documentMeta: action.documentMeta,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null
       };
     case "workflow/select-start":
@@ -147,6 +174,8 @@ export function workspaceReducer(
         conversationId: null,
         documentMeta: action.documentMeta,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null
       };
     case "workflow/chat-ready":
@@ -154,6 +183,8 @@ export function workspaceReducer(
         ...state,
         conversationId: action.conversationId,
         messages: action.messages,
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         view: "chat",
         busyDocumentId: null
       };
@@ -180,6 +211,8 @@ export function workspaceReducer(
         documentMeta: null,
         busyDocumentId: null,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null,
         resetSignal: state.resetSignal + 1,
         view: "upload",

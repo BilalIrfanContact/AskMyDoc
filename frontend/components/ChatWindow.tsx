@@ -6,19 +6,17 @@ type ChatWindowProps = {
   messages: Message[];
   isAssistantTyping?: boolean;
   documentName: string;
+  suggestedQuestions: string[];
+  loadingSuggestions: boolean;
   onSuggestion: (question: string) => Promise<void>;
 };
-
-const SUGGESTIONS = [
-  "What decisions were made?",
-  "Summarize the risks",
-  "Which teams own the next steps?"
-];
 
 export default function ChatWindow({
   messages,
   isAssistantTyping = false,
   documentName,
+  suggestedQuestions,
+  loadingSuggestions,
   onSuggestion
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -51,14 +49,20 @@ export default function ChatWindow({
           <div className="chat-empty">
             <h2>What do you need to know?</h2>
             <p>Ask a specific question. Answers will stay within this document.</p>
-            <div className="chat-suggestions" aria-label="Example questions">
-              {SUGGESTIONS.map((question) => (
-                <button type="button" key={question} onClick={() => void onSuggestion(question)}>
-                  <SearchIcon />
-                  <span>{question}</span>
-                </button>
-              ))}
-            </div>
+            {loadingSuggestions ? (
+              <div className="suggestion-skeleton" aria-label="Finding questions in this document" role="status">
+                <span /><span /><span />
+              </div>
+            ) : suggestedQuestions.length ? (
+              <div className="chat-suggestions" aria-label="Questions suggested from this document">
+                {suggestedQuestions.map((question) => (
+                  <button type="button" key={question} onClick={() => void onSuggestion(question)}>
+                    <SearchIcon />
+                    <span>{question}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="conversation-list">

@@ -18,6 +18,8 @@ type HomeWorkspaceProps = {
   conversationId: string | null;
   documentMeta: DocumentMeta | null;
   messages: Message[];
+  suggestedQuestions: string[];
+  loadingSuggestions: boolean;
   error: string | null;
   resetSignal: number;
   isAssistantTyping: boolean;
@@ -44,6 +46,8 @@ export default function HomeWorkspace({
   conversationId,
   documentMeta,
   messages,
+  suggestedQuestions,
+  loadingSuggestions,
   error,
   resetSignal,
   isAssistantTyping,
@@ -197,6 +201,8 @@ export default function HomeWorkspace({
               messages={messages}
               isAssistantTyping={isAssistantTyping}
               documentName={documentMeta?.fileName ?? "this document"}
+              suggestedQuestions={suggestedQuestions}
+              loadingSuggestions={loadingSuggestions}
               onSuggestion={onSend}
             />
 
