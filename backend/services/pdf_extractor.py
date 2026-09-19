@@ -48,11 +48,44 @@ def _clean_cell(value: Any) -> str:
     return " ".join(str(value).split())
 
 
+def _is_header_cell(cell: str) -> bool:
+    normalized = re.sub(r"\[\d+\]", "", cell.lower())
+    normalized = " ".join(re.sub(r"[^a-z0-9]+", " ", normalized).split())
+    return normalized in _TABLE_HEADER_TERMS or (
+        normalized.endswith("s") and normalized[:-1] in _TABLE_HEADER_TERMS
+    )
+
+
 def _looks_like_table_header(row: list[str]) -> bool:
-    return any(
-        any(term in cell.lower() for term in _TABLE_HEADER_TERMS)
-        for cell in row
-        if cell
+    return any(_is_header_cell(cell) for cell in row if cell)
+
+
+def _can_inherit_table_context(
+    page: Any,
+    table: Any,
+    rows: list[list[Any]],
+    previous_context: _TableContext | None,
+) -> bool:
+    if not previous_context:
+        return False
+
+    page_height = getattr(page, "height", None)
+    if page_height is not None and table.bbox[1] > page_height * 0.25:
+        return False
+
+    normalized = [[_clean_cell(cell) for cell in row] for row in rows]
+    first_content_row = next((row for row in normalized if any(row)), None)
+    if first_content_row is None:
+        return False
+
+    column_count = len(previous_context.header)
+    has_only_trailing_extra_cells = len(first_content_row) >= column_count and not any(
+        first_content_row[column_count:]
+    )
+    return (
+        has_only_trailing_extra_cells
+        and sum(bool(cell) for cell in first_content_row) >= 2
+        and not _looks_like_table_header(first_content_row)
     )
 
 
@@ -160,15 +193,20 @@ def _structured_tables(
     except Exception:
         return tables
 
-    context = previous_context
-    for table in candidates:
+    for index, table in enumerate(candidates):
         try:
-            serialized_result = _serialize_table_with_context(table.extract(), context)
+            rows = table.extract()
+            context = (
+                previous_context
+                if index == 0 and _can_inherit_table_context(page, table, rows, previous_context)
+                else None
+            )
+            serialized_result = _serialize_table_with_context(rows, context)
         except Exception:
             continue
         if serialized_result:
-            serialized, context = serialized_result
-            tables.append(_StructuredTable(table.bbox, serialized, context))
+            serialized, table_context = serialized_result
+            tables.append(_StructuredTable(table.bbox, serialized, table_context))
     return tables
 
 
