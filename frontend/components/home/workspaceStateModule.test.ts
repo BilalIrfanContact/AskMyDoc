@@ -7,7 +7,7 @@ import {
   type PersistedDocument,
   type PersistedMessage
 } from "../../lib/api";
-import type { ChatResponseBody } from "../../lib/api-contract";
+import type { ChatResponseBody, UploadPdfResponse } from "../../lib/api-contract";
 import { createInitialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 import { createWorkspaceStateModule, type WorkspaceServices } from "./workspaceStateModule";
 import type { WorkspaceState } from "./types";
@@ -65,11 +65,23 @@ function createHarness() {
       cleanup_status: "completed" as const
     }),
     getConversationMessages: async (conversationId: string) => messagesByConversation.get(conversationId) ?? [],
+    getDocumentQuestionSuggestions: async (documentId: string) => [
+      `What is the main policy in ${documentId}?`,
+      `Which deadlines are defined in ${documentId}?`,
+      `Who is responsible in ${documentId}?`
+    ],
     getUserConversations: async (documentId?: string) => {
       if (!documentId) return [];
       return conversationsByDocument.get(documentId) ?? [];
     },
     getUserDocuments: async () => documents,
+    uploadPdf: async () => ({
+      chunk_count: 3,
+      document_id: "doc-upload",
+      lifecycle_status: "ready" as const,
+      status: "success" as const,
+      stored_count: 3
+    }),
     scheduleSearchClose: (callback: () => void) => callback(),
     waitForTransition: async () => {}
   };
@@ -97,6 +109,71 @@ function createHarness() {
   };
 }
 
+test("upload shows the processing workspace before the request finishes", async () => {
+  const harness = createHarness();
+  const uploadDeferred = createDeferred<UploadPdfResponse>();
+  harness.services.uploadPdf = async () => uploadDeferred.promise;
+  const workspaceModule = harness.createModule();
+
+  const uploadPromise = workspaceModule.handleUpload(
+    new File(["document"], "upload.pdf", { type: "application/pdf" }),
+    "8 B"
+  );
+
+  assert.equal(harness.getState().view, "indexing");
+  assert.deepEqual(harness.getState().documentMeta, {
+    fileName: "upload.pdf",
+    fileSize: "8 B"
+  });
+  assert.equal(harness.getState().documentId, null);
+
+  uploadDeferred.resolve({
+    chunk_count: 3,
+    document_id: "doc-upload",
+    lifecycle_status: "ready",
+    status: "success",
+    stored_count: 3
+  });
+
+  assert.deepEqual(await uploadPromise, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+  assert.deepEqual(harness.getState().suggestedQuestions, [
+    "What is the main policy in doc-upload?",
+    "Which deadlines are defined in doc-upload?",
+    "Who is responsible in doc-upload?"
+  ]);
+});
+
+test("refreshes the library when an upload finishes after cancellation", async () => {
+  const harness = createHarness();
+  const uploadDeferred = createDeferred<UploadPdfResponse>();
+  let refreshCount = 0;
+  harness.services.uploadPdf = async () => uploadDeferred.promise;
+  harness.services.getUserDocuments = async () => {
+    refreshCount += 1;
+    return [...harness.documents, createDocument("doc-upload", "upload.pdf")];
+  };
+  const workspaceModule = harness.createModule();
+
+  const uploadPromise = workspaceModule.handleUpload(
+    new File(["document"], "upload.pdf", { type: "application/pdf" }),
+    "8 B"
+  );
+  workspaceModule.clearWorkspace();
+  uploadDeferred.resolve({
+    chunk_count: 3,
+    document_id: "doc-upload",
+    lifecycle_status: "ready",
+    status: "success",
+    stored_count: 3
+  });
+
+  assert.deepEqual(await uploadPromise, { status: "cancelled" });
+  assert.equal(refreshCount, 1);
+  assert.equal(harness.getState().documents.some((document) => document.id === "doc-upload"), true);
+  assert.equal(harness.getState().view, "upload");
+});
+
 test("upload transitions from indexing to ready chat workspace", async () => {
   const harness = createHarness();
   const workspaceModule = harness.createModule();
@@ -113,6 +190,27 @@ test("upload transitions from indexing to ready chat workspace", async () => {
   assert.equal(harness.getState().documentId, "doc-upload");
   assert.equal(harness.getState().conversationId, "conv-new-doc-upload");
   assert.deepEqual(harness.getState().messages, []);
+});
+
+test("suggestion generation failure leaves the empty chat usable", async () => {
+  const harness = createHarness();
+  harness.services.getDocumentQuestionSuggestions = async () => {
+    throw new Error("Suggestion generation failed.");
+  };
+  const workspaceModule = harness.createModule();
+
+  const result = await workspaceModule.handleUploaded("doc-upload", {
+    fileName: "upload.pdf",
+    fileSize: "20 KB",
+    chunkCount: 3,
+    storedCount: 3
+  });
+
+  assert.deepEqual(result, { status: "ready" });
+  assert.equal(harness.getState().view, "chat");
+  assert.deepEqual(harness.getState().suggestedQuestions, []);
+  assert.equal(harness.getState().loadingSuggestions, false);
+  assert.equal(harness.getState().error, null);
 });
 
 test("upload bootstrap failure returns the user to upload with recovery guidance", async () => {
@@ -233,6 +331,28 @@ test("latest document selection wins when requests resolve out of order", async 
   assert.deepEqual(harness.getState().messages, [{ role: "assistant", content: "beta" }]);
 });
 
+test("restores answer status and citations from persisted messages", async () => {
+  const harness = createHarness();
+  harness.services.getConversationMessages = async () => [{
+    id: "msg-grounded",
+    conversation_id: "conv-a",
+    role: "assistant",
+    content: "The refund window is 30 days.",
+    answer_status: "answered",
+    citations: [{ chunk_id: "chunk-1", excerpt: "Refunds are available for 30 days." }],
+    created_at: "2026-06-14T00:00:00Z"
+  }];
+
+  await harness.createModule().handleSelectDocument(harness.documents[0]);
+
+  assert.deepEqual(harness.getState().messages, [{
+    role: "assistant",
+    content: "The refund window is 30 days.",
+    answerStatus: "answered",
+    citations: [{ chunk_id: "chunk-1", excerpt: "Refunds are available for 30 days." }]
+  }]);
+});
+
 test("send appends the user question and assistant answer in chat view", async () => {
   const harness = createHarness();
   harness.setState({
@@ -248,10 +368,43 @@ test("send appends the user question and assistant answer in chat view", async (
 
   assert.deepEqual(harness.getState().messages, [
     { role: "user", content: "What is alpha?" },
-    { role: "assistant", content: "answer:What is alpha?" }
+    {
+      role: "assistant",
+      content: "answer:What is alpha?",
+      answerStatus: "answered",
+      citations: []
+    }
   ]);
   assert.equal(harness.getState().isAssistantTyping, false);
   assert.equal(harness.getState().error, null);
+});
+
+test("send preserves answer status and citations for the grounded answer UI", async () => {
+  const harness = createHarness();
+  harness.services.askQuestion = async (): Promise<ChatResponseBody> => ({
+    answer: "The launch remains on October 14.",
+    answer_status: "answered",
+    citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }],
+    intent: "qa",
+    retrieval_mode: "semantic"
+  });
+  harness.setState({
+    ...createInitialWorkspaceState(),
+    documentId: "doc-a",
+    conversationId: "conv-a",
+    documentMeta: { fileName: "alpha.pdf" },
+    view: "chat"
+  });
+
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("When is the launch?");
+
+  assert.deepEqual(harness.getState().messages[1], {
+    role: "assistant",
+    content: "The launch remains on October 14.",
+    answerStatus: "answered",
+    citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }]
+  });
 });
 
 test("send failure keeps the user question and surfaces the chat error", async () => {

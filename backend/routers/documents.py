@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
 
-from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse
+from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
+
+from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse, QuestionSuggestionsResponse
 from ..services.authz import require_user_document
 from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
 from ..services.persistence.documents_repository import list_user_documents
+from ..services.question_suggestions import SuggestionGenerationError, generate_question_suggestions
 
 router = APIRouter()
 
@@ -25,6 +29,36 @@ async def get_user_documents(user_id: str = Depends(require_authenticated_user))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return DocumentsResponse(documents=documents)
+
+
+@router.get(
+    "/documents/{document_id}/suggestions",
+    response_model=QuestionSuggestionsResponse,
+    responses={
+        401: {"model": ErrorDetailResponse},
+        403: {"model": ErrorDetailResponse},
+        404: {"model": ErrorDetailResponse},
+        502: {"model": ErrorDetailResponse},
+        504: {"model": ErrorDetailResponse},
+    },
+)
+async def get_document_question_suggestions(
+    document_id: str,
+    user_id: str = Depends(require_authenticated_user),
+):
+    require_user_document(document_id=document_id, user_id=user_id)
+    try:
+        suggestions = await asyncio.wait_for(
+            run_in_threadpool(generate_question_suggestions, document_id),
+            timeout=20,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Question suggestions timed out.") from exc
+    except SuggestionGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Failed to load question suggestions.") from exc
+    return QuestionSuggestionsResponse(suggestions=suggestions)
 
 
 @router.delete(

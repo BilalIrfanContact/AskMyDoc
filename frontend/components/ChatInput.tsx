@@ -3,9 +3,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 type ChatInputProps = {
   disabled: boolean;
   onSend: (question: string) => Promise<void>;
+  documentName?: string;
 };
 
-export default function ChatInput({ disabled, onSend }: ChatInputProps) {
+export default function ChatInput({ disabled, onSend, documentName }: ChatInputProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -38,32 +39,35 @@ export default function ChatInput({ disabled, onSend }: ChatInputProps) {
   };
 
   const SendIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="19" x2="12" y2="5"/>
-      <polyline points="5 12 12 5 19 12"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m4 4 17 8-17 8 4-8z" />
+      <path d="M8 12h13" />
     </svg>
   );
 
   return (
     <form onSubmit={handleSubmit} className="chat-form">
-      <textarea
-        ref={textareaRef}
-        value={question}
-        onChange={(event) => setQuestion(event.target.value)}
-        placeholder={disabled ? "Upload a PDF to start asking questions." : "Ask about the document..."}
-        className="chat-textarea"
-        disabled={disabled}
-        rows={1}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            void handleSubmit(event as unknown as FormEvent);
-          }
-        }}
-      />
-      <button type="submit" disabled={disabled || loading} className="chat-send-btn">
-        <SendIcon />
-      </button>
+      <div className="chat-composer">
+        <textarea
+          ref={textareaRef}
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder={disabled ? "Document workspace is not ready." : `Ask about ${documentName ?? "this document"}`}
+          className="chat-textarea"
+          disabled={disabled}
+          rows={1}
+          aria-label="Ask about this document"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void handleSubmit(event as unknown as FormEvent);
+            }
+          }}
+        />
+        <button type="submit" disabled={disabled || loading || !question.trim()} className="chat-send-btn" aria-label="Send question">
+          <SendIcon />
+        </button>
+      </div>
     </form>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import AuthDocumentArtwork from "./AuthDocumentArtwork";
 
 export default function SignupForm() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -68,16 +70,19 @@ export default function SignupForm() {
 
   return (
     <div className="app-shell auth-shell">
-      <main className="shell-grid auth-grid">
-        <section className="auth-copy">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '24px' }}>
-            <img src="/logo.png" alt="AskMyDoc Logo" width={80} height={80} />
-            <h1 className="hero-title auth-title" style={{ margin: 0 }}>AskMyDoc.</h1>
+      <main className="auth-layout">
+        <section className="auth-story" aria-labelledby="auth-story-title">
+          <Link href="/login" className="auth-wordmark">AskMyDoc</Link>
+          <div className="auth-story-copy">
+            <h1 id="auth-story-title">Keep the document.<br />Find the answer.</h1>
           </div>
-          <p className="text-olive auth-copy-text">Set up email/password access for AskMyDoc.</p>
+          <AuthDocumentArtwork />
+          <p className="auth-story-note">A clearer way to work with your documents.</p>
         </section>
 
-        <section className="card-ivory auth-card" aria-label="Signup form">
+        <section className="auth-panel" aria-labelledby="signup-heading">
+          <div className="auth-card auth-card-signup">
+          <h2 id="signup-heading">Create your account</h2>
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="auth-field">
               <span className="text-label">Name</span>
@@ -106,8 +111,9 @@ export default function SignupForm() {
 
             <label className="auth-field">
               <span className="text-label">Password</span>
-              <input
-                type="password"
+              <span className="password-input-wrap">
+                <input
+                type={showPassword ? "text" : "password"}
                 className="input-text"
                 autoComplete="new-password"
                 value={password}
@@ -115,13 +121,19 @@ export default function SignupForm() {
                 placeholder="At least 8 characters"
                 minLength={8}
                 required
-              />
+                />
+                <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide passwords" : "Show passwords"}>
+                  <EyeIcon />
+                </button>
+              </span>
+              <span className="field-helper">At least 8 characters</span>
             </label>
 
             <label className="auth-field">
               <span className="text-label">Confirm password</span>
-              <input
-                type="password"
+              <span className="password-input-wrap">
+                <input
+                type={showPassword ? "text" : "password"}
                 className="input-text"
                 autoComplete="new-password"
                 value={confirmPassword}
@@ -129,21 +141,35 @@ export default function SignupForm() {
                 placeholder="Repeat password"
                 minLength={8}
                 required
-              />
+                />
+                <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide passwords" : "Show passwords"}>
+                  <EyeIcon />
+                </button>
+              </span>
             </label>
 
             {error ? <p className="auth-error">{error}</p> : null}
 
-            <button type="submit" className="btn-brand auth-submit" disabled={loading}>
-              {loading ? "Creating account..." : "Create account"}
+            <button type="submit" className="button-primary auth-submit" disabled={loading}>
+              {loading ? "Creating account…" : "Create account"}
             </button>
           </form>
 
           <p className="auth-note">
             Already have an account? <Link href="/login">Sign in</Link>
           </p>
+          <p className="auth-privacy"><LockIcon />Your documents stay private to your account.</p>
+          </div>
         </section>
       </main>
     </div>
   );
+}
+
+function EyeIcon() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></svg>;
+}
+
+function LockIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
 }

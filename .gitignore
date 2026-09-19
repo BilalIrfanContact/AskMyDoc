@@ -19,7 +19,16 @@ frontend/tsconfig.tsbuildinfo
 .DS_Store
 .codex
 AGENTS.md
-DESIGN.md
 STORY.md
 TESTING.md
+docs/build-journal/
 frontend/.codex
+graphify-out/
+docs/
+handoffs/
+icon.png
+venv/
+plans/
+.graphify_detect.json
+.playwright-mcp/
+design-concepts/

@@ -47,11 +47,12 @@ export function useHomeWorkspace() {
       filteredDocuments,
     },
     actions: {
+      refreshDocuments: workspaceStateModule.refreshDocuments,
       setSearchQuery: workspaceStateModule.setSearchQuery,
       toggleSidebar: workspaceStateModule.toggleSidebar,
       openSearch: workspaceStateModule.openSearch,
       closeSearch: workspaceStateModule.closeSearch,
-      handleUploaded: workspaceStateModule.handleUploaded,
+      handleUpload: workspaceStateModule.handleUpload,
       handleSelectDocument: workspaceStateModule.handleSelectDocument,
       handleClear: workspaceStateModule.clearWorkspace,
       openDeleteDialog: workspaceStateModule.openDeleteDialog,

@@ -80,6 +80,8 @@ class MessageRecord(BaseModel):
     conversation_id: str
     role: str
     content: str
+    answer_status: Optional[Literal["answered", "insufficient_context"]] = None
+    citations: Optional[List[AnswerCitation]] = None
     created_at: Optional[str] = None
 
 
@@ -97,6 +99,10 @@ class DocumentRecord(BaseModel):
 
 class DocumentsResponse(BaseModel):
     documents: List[DocumentRecord]
+
+
+class QuestionSuggestionsResponse(BaseModel):
+    suggestions: List[str]
 
 
 class DeleteErrorDetail(BaseModel):

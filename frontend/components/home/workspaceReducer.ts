@@ -6,11 +6,15 @@ export type WorkspaceAction =
   | { type: "documents/load-success"; documents: PersistedDocument[] }
   | { type: "documents/load-failure"; error: string }
   | { type: "documents/load-finish" }
+  | { type: "suggestions/load-start" }
+  | { type: "suggestions/load-success"; questions: string[] }
+  | { type: "suggestions/load-failure" }
   | { type: "search/open" }
   | { type: "search/set-query"; query: string }
   | { type: "search/start-close" }
   | { type: "search/finish-close" }
   | { type: "sidebar/toggle" }
+  | { type: "workflow/upload-pending"; documentMeta: DocumentMeta }
   | { type: "workflow/upload-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/select-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/chat-ready"; conversationId: string; messages: Message[] }
@@ -23,7 +27,12 @@ export type WorkspaceAction =
   | { type: "delete/failure"; error: string }
   | { type: "delete/close" }
   | { type: "chat/send-start"; question: string }
-  | { type: "chat/send-success"; answer: string }
+  | {
+      type: "chat/send-success";
+      answer: string;
+      answerStatus: "answered" | "insufficient_context";
+      citations: Message["citations"];
+    }
   | { type: "chat/send-failure"; error: string };
 
 const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
@@ -32,6 +41,8 @@ const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
   documentMeta: null,
   documents: [],
   messages: [],
+  suggestedQuestions: [],
+  loadingSuggestions: false,
   error: null,
   resetSignal: 0,
   view: "upload",
@@ -79,6 +90,24 @@ export function workspaceReducer(
         ...state,
         loadingDocuments: false
       };
+    case "suggestions/load-start":
+      return {
+        ...state,
+        suggestedQuestions: [],
+        loadingSuggestions: true
+      };
+    case "suggestions/load-success":
+      return {
+        ...state,
+        suggestedQuestions: action.questions,
+        loadingSuggestions: false
+      };
+    case "suggestions/load-failure":
+      return {
+        ...state,
+        suggestedQuestions: [],
+        loadingSuggestions: false
+      };
     case "search/open":
       return {
         ...state,
@@ -107,6 +136,20 @@ export function workspaceReducer(
         ...state,
         isSidebarOpen: !state.isSidebarOpen
       };
+    case "workflow/upload-pending":
+      return {
+        ...state,
+        transitionMode: "indexing",
+        view: "indexing",
+        busyDocumentId: null,
+        documentId: null,
+        conversationId: null,
+        documentMeta: action.documentMeta,
+        messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
+        error: null
+      };
     case "workflow/upload-start":
       return {
         ...state,
@@ -117,6 +160,8 @@ export function workspaceReducer(
         conversationId: null,
         documentMeta: action.documentMeta,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null
       };
     case "workflow/select-start":
@@ -129,6 +174,8 @@ export function workspaceReducer(
         conversationId: null,
         documentMeta: action.documentMeta,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null
       };
     case "workflow/chat-ready":
@@ -136,6 +183,8 @@ export function workspaceReducer(
         ...state,
         conversationId: action.conversationId,
         messages: action.messages,
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         view: "chat",
         busyDocumentId: null
       };
@@ -162,6 +211,8 @@ export function workspaceReducer(
         documentMeta: null,
         busyDocumentId: null,
         messages: [],
+        suggestedQuestions: [],
+        loadingSuggestions: false,
         error: null,
         resetSignal: state.resetSignal + 1,
         view: "upload",
@@ -216,7 +267,15 @@ export function workspaceReducer(
     case "chat/send-success":
       return {
         ...state,
-        messages: [...state.messages, { role: "assistant", content: action.answer }],
+        messages: [
+          ...state.messages,
+          {
+            role: "assistant",
+            content: action.answer,
+            answerStatus: action.answerStatus,
+            citations: action.citations
+          }
+        ],
         isAssistantTyping: false
       };
     case "chat/send-failure":

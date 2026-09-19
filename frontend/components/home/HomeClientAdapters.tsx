@@ -7,15 +7,26 @@ import type { HomeWorkspaceController } from "./useHomeWorkspace";
 type SidebarAdapterProps = {
   userName: string;
   workspace: HomeWorkspaceController;
+  isMobileNavOpen: boolean;
+  isMobileLayout: boolean;
+  onCloseMobileNav: () => void;
 };
 
-export function HomeSidebarAdapter({ userName, workspace }: SidebarAdapterProps) {
+export function HomeSidebarAdapter({
+  userName,
+  workspace,
+  isMobileNavOpen,
+  isMobileLayout,
+  onCloseMobileNav
+}: SidebarAdapterProps) {
   const { state, actions, helpers } = workspace;
 
   return (
     <HomeSidebar
       userName={userName}
       userInitials={helpers.getInitials(userName)}
+      isMobileNavOpen={isMobileNavOpen}
+      isMobileLayout={isMobileLayout}
       isSidebarOpen={state.isSidebarOpen}
       activeDocumentId={state.documentId}
       documents={state.documents}
@@ -23,35 +34,66 @@ export function HomeSidebarAdapter({ userName, workspace }: SidebarAdapterProps)
       busyDocumentId={state.busyDocumentId}
       isDeletingDocument={state.isDeletingDocument}
       onToggleSidebar={actions.toggleSidebar}
-      onClear={actions.handleClear}
-      onOpenSearch={actions.openSearch}
-      onSelectDocument={(document) => void actions.handleSelectDocument(document)}
+      onCloseMobileNav={onCloseMobileNav}
+      onClear={() => {
+        actions.handleClear();
+        onCloseMobileNav();
+      }}
+      onOpenSearch={() => {
+        actions.openSearch();
+        onCloseMobileNav();
+      }}
+      onSelectDocument={(document) => {
+        onCloseMobileNav();
+        void actions.handleSelectDocument(document);
+      }}
       onDeleteDocument={actions.openDeleteDialog}
     />
   );
 }
 
 type WorkspaceAdapterProps = {
+  userName: string;
   greeting: string;
   workspace: HomeWorkspaceController;
+  isMobileNavOpen: boolean;
+  onOpenMobileNav: () => void;
 };
 
-export function HomeWorkspaceAdapter({ greeting, workspace }: WorkspaceAdapterProps) {
-  const { state, actions } = workspace;
+export function HomeWorkspaceAdapter({
+  userName,
+  greeting,
+  workspace,
+  isMobileNavOpen,
+  onOpenMobileNav
+}: WorkspaceAdapterProps) {
+  const { state, actions, helpers } = workspace;
 
   return (
     <HomeWorkspace
       greeting={greeting}
+      userInitials={helpers.getInitials(userName)}
+      isMobileNavOpen={isMobileNavOpen}
+      documents={state.documents}
+      loadingDocuments={state.loadingDocuments}
+      busyDocumentId={state.busyDocumentId}
       view={state.view}
       transitionMode={state.transitionMode}
       documentId={state.documentId}
       conversationId={state.conversationId}
       documentMeta={state.documentMeta}
       messages={state.messages}
+      suggestedQuestions={state.suggestedQuestions}
+      loadingSuggestions={state.loadingSuggestions}
       error={state.error}
       resetSignal={state.resetSignal}
       isAssistantTyping={state.isAssistantTyping}
-      onUploaded={actions.handleUploaded}
+      onOpenMobileNav={onOpenMobileNav}
+      onOpenSearch={actions.openSearch}
+      onRetryDocuments={() => void actions.refreshDocuments()}
+      onSelectDocument={(document) => void actions.handleSelectDocument(document)}
+      onDeleteDocument={actions.openDeleteDialog}
+      onUpload={actions.handleUpload}
       onClear={actions.handleClear}
       onSend={actions.handleSend}
     />

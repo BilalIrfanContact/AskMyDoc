@@ -1,8 +1,11 @@
 import type { PersistedDocument } from "../../lib/api";
+import type { AnswerCitation, ChatResponseBody } from "../../lib/api-contract";
 
 export type Message = {
   role: "user" | "assistant";
   content: string;
+  answerStatus?: ChatResponseBody["answer_status"];
+  citations?: AnswerCitation[];
 };
 
 export type ViewState = "upload" | "indexing" | "chat";
@@ -26,6 +29,7 @@ export type UploadMeta = {
 export type UploadBootstrapResult =
   | { status: "ready" }
   | { status: "cancelled" }
+  | { status: "upload-failed"; message: string }
   | { status: "document-ready"; message: string };
 
 export type WorkspaceState = {
@@ -35,6 +39,8 @@ export type WorkspaceState = {
   documents: PersistedDocument[];
   filteredDocuments: PersistedDocument[];
   messages: Message[];
+  suggestedQuestions: string[];
+  loadingSuggestions: boolean;
   error: string | null;
   resetSignal: number;
   view: ViewState;

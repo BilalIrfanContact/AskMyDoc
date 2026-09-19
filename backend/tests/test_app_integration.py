@@ -640,6 +640,8 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "Document summary answer",
+                    "answer_status": "answered",
+                    "citations": [],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
@@ -830,6 +832,13 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "The refund window is 30 days.",
+                    "answer_status": "answered",
+                    "citations": [
+                        {
+                            "chunk_id": "doc-a:chunk:0",
+                            "excerpt": "The refund window is 30 days from the purchase date.",
+                        }
+                    ],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
@@ -890,6 +899,13 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "The handbook covers benefits policy and time-off rules.",
+                    "answer_status": "answered",
+                    "citations": [
+                        {
+                            "chunk_id": "doc-a:chunk:0",
+                            "excerpt": "This handbook explains the benefits policy and time-off rules.",
+                        }
+                    ],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
@@ -938,6 +954,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "answer_status": "insufficient_context",
+                    "citations": [],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
@@ -988,6 +1006,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "answer_status": "insufficient_context",
+                    "citations": [],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
@@ -1039,6 +1059,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,
+                    "answer_status": "insufficient_context",
+                    "citations": [],
                     "created_at": "2026-06-11T12:02:00Z",
                 },
             ],
