@@ -68,6 +68,8 @@ def _can_inherit_table_context(
 ) -> bool:
     if not previous_context:
         return False
+    if not previous_context.bbox:
+        return False
 
     normalized = [[_clean_cell(cell) for cell in row] for row in rows]
     first_content_row = next((row for row in normalized if any(row)), None)
@@ -78,21 +80,18 @@ def _can_inherit_table_context(
     has_only_trailing_extra_cells = len(first_content_row) >= column_count and not any(
         first_content_row[column_count:]
     )
-    has_matching_horizontal_placement = True
-    if previous_context.bbox:
-        previous_x0, _previous_top, previous_x1, _previous_bottom = previous_context.bbox
-        current_x0, _current_top, current_x1, _current_bottom = table.bbox
-        previous_width = previous_x1 - previous_x0
-        current_width = current_x1 - current_x0
-        overlap = max(0.0, min(previous_x1, current_x1) - max(previous_x0, current_x0))
-        has_matching_horizontal_placement = (
-            previous_width > 0
-            and current_width > 0
-            and overlap / min(previous_width, current_width) >= 0.75
-        )
+    previous_x0, _previous_top, previous_x1, _previous_bottom = previous_context.bbox
+    current_x0, _current_top, current_x1, _current_bottom = table.bbox
+    previous_width = previous_x1 - previous_x0
+    current_width = current_x1 - current_x0
+    overlap = max(0.0, min(previous_x1, current_x1) - max(previous_x0, current_x0))
+    has_matching_horizontal_placement = (
+        previous_width > 0
+        and current_width > 0
+        and overlap / min(previous_width, current_width) >= 0.75
+    )
     return (
         has_only_trailing_extra_cells
-        and not first_content_row[0]
         and has_matching_horizontal_placement
         and sum(bool(cell) for cell in first_content_row) >= 2
         and not _looks_like_table_header(first_content_row)

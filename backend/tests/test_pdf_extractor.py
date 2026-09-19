@@ -126,6 +126,30 @@ class PdfExtractorTestCase(unittest.TestCase):
         self.assertIn("Value | Mass | Description", text)
         self.assertIn("$1 | 8.10 g | Susan B. Anthony", text)
 
+    def test_continuation_table_can_start_a_new_labeled_group(self):
+        table = FakeTable(
+            [
+                ["5¢", "5 g", "Thomas Jefferson"],
+                [None, "5 g", "Lewis & Clark designs"],
+                [None, "5 g", "Monticello"],
+            ],
+            bbox=(10.0, 400.0, 110.0, 430.0),
+        )
+        previous_context = _TableContext(
+            ("Value", "Mass", "Description"),
+            "$1",
+            (10.0, 700.0, 110.0, 730.0),
+        )
+
+        text, context = _extract_page_text_with_context(
+            FakePage([], [table]),
+            previous_context,
+        )
+
+        self.assertIn("5¢ | 5 g | Thomas Jefferson", text)
+        self.assertIn("5¢ | 5 g | Lewis & Clark designs", text)
+        self.assertEqual(context.first_column_value, "5¢")
+
     def test_data_rows_are_not_detected_as_headers_by_substring(self):
         rows = [
             ["Massachusetts", "10 years", "evaluation"],
