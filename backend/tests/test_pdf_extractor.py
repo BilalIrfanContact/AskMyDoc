@@ -86,11 +86,15 @@ class PdfExtractorTestCase(unittest.TestCase):
                         ["$1", "8.10 g", "Sacagawea"],
                         [None, "8.10 g", "Native American Themes"],
                     ],
-                    bbox=(0.0, 10.0, 100.0, 40.0),
+                    bbox=(0.0, 400.0, 100.0, 430.0),
                 )
             ],
         )
-        previous_context = _TableContext(("Value", "Mass", "Description"), "$1")
+        previous_context = _TableContext(
+            ("Value", "Mass", "Description"),
+            "$1",
+            (0.0, 700.0, 100.0, 730.0),
+        )
 
         text, context = _extract_page_text_with_context(page, previous_context)
 
@@ -98,6 +102,29 @@ class PdfExtractorTestCase(unittest.TestCase):
         self.assertIn("$1 | 8.10 g | Susan B. Anthony", text)
         self.assertIn("$1 | 8.10 g | Native American Themes", text)
         self.assertEqual(context.first_column_value, "$1")
+
+    def test_continuation_table_can_start_below_page_furniture(self):
+        table = FakeTable(
+            [
+                [None, "8.10 g", "Susan B. Anthony"],
+                [None, "8.10 g", "Sacagawea"],
+                [None, "8.10 g", "Native American Themes"],
+            ],
+            bbox=(10.0, 500.0, 110.0, 530.0),
+        )
+        previous_context = _TableContext(
+            ("Value", "Mass", "Description"),
+            "$1",
+            (10.0, 700.0, 110.0, 730.0),
+        )
+
+        text, _context = _extract_page_text_with_context(
+            FakePage([], [table]),
+            previous_context,
+        )
+
+        self.assertIn("Value | Mass | Description", text)
+        self.assertIn("$1 | 8.10 g | Susan B. Anthony", text)
 
     def test_data_rows_are_not_detected_as_headers_by_substring(self):
         rows = [
