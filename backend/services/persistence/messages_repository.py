@@ -59,6 +59,9 @@ def list_conversation_messages(conversation_id: str) -> List[Dict[str, Any]]:
 
 
 def _decode_message(row: Dict[str, Any]) -> Dict[str, Any]:
+    if row.get("role") != "assistant":
+        return row
+
     content = row.get("content")
     if not isinstance(content, str) or not content.startswith(_ANSWER_ENVELOPE_PREFIX):
         return row
@@ -68,14 +71,27 @@ def _decode_message(row: Dict[str, Any]) -> Dict[str, Any]:
     except (json.JSONDecodeError, TypeError):
         return row
 
-    if not isinstance(envelope, dict) or not isinstance(envelope.get("content"), str):
+    answer_status = envelope.get("answer_status") if isinstance(envelope, dict) else None
+    citations = envelope.get("citations") if isinstance(envelope, dict) else None
+    if (
+        not isinstance(envelope, dict)
+        or not isinstance(envelope.get("content"), str)
+        or answer_status not in {"answered", "insufficient_context"}
+        or not isinstance(citations, list)
+        or any(
+            not isinstance(citation, dict)
+            or not isinstance(citation.get("chunk_id"), str)
+            or not isinstance(citation.get("excerpt"), str)
+            for citation in citations
+        )
+    ):
         return row
 
     return {
         **row,
         "content": envelope["content"],
-        "answer_status": envelope.get("answer_status"),
-        "citations": envelope.get("citations", []),
+        "answer_status": answer_status,
+        "citations": citations,
     }
 
 
