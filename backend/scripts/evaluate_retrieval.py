@@ -51,8 +51,6 @@ def evaluate_cases(
         raise ValueError("limits must contain positive integers")
 
     case_results = []
-    max_limit = max(normalized_limits)
-
     for index, case in enumerate(cases, start=1):
         case_id = str(case.get("case_id") or f"case-{index}")
         document_id = str(case.get("document_id") or "")
@@ -70,27 +68,26 @@ def evaluate_cases(
             continue
 
         try:
-            context = retriever_factory(document_id).retrieve(
-                "semantic",
-                question,
-                max_limit,
-            )
-            retrieved_chunk_ids = [citation.chunk_id for citation in context.citations]
+            retriever = retriever_factory(document_id)
+            results = {}
+            retrieved_document_count = None
+            for limit in normalized_limits:
+                context = retriever.retrieve("semantic", question, limit)
+                retrieved_document_count = context.retrieved_document_count
+                retrieved_chunk_ids = [citation.chunk_id for citation in context.citations]
+                results[f"top_{limit}"] = evaluate_chunk_ids(
+                    retrieved_chunk_ids,
+                    gold_chunk_ids,
+                    limit,
+                )
             case_results.append(
                 {
                     "case_id": case_id,
                     "status": "completed",
                     "document_id": document_id,
                     "question": question,
-                    "retrieved_document_count": context.retrieved_document_count,
-                    "results": {
-                        f"top_{limit}": evaluate_chunk_ids(
-                            retrieved_chunk_ids,
-                            gold_chunk_ids,
-                            limit,
-                        )
-                        for limit in normalized_limits
-                    },
+                    "retrieved_document_count": retrieved_document_count,
+                    "results": results,
                 }
             )
         except Exception as exc:

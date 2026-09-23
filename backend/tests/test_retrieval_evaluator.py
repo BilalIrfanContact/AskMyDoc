@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from backend.services.rag_pipeline import AnswerCitation, RetrievedContext
 from backend.scripts.evaluate_retrieval import evaluate_cases, evaluate_chunk_ids
@@ -18,9 +18,9 @@ class RetrievalEvaluatorTestCase(unittest.TestCase):
         self.assertTrue(result["any_gold_chunk_found"])
         self.assertFalse(result["all_gold_chunks_found"])
 
-    def test_evaluate_cases_uses_one_retrieval_call_for_the_largest_limit(self):
+    def test_evaluate_cases_runs_each_limit_as_an_independent_retrieval(self):
         retriever = Mock()
-        retriever.retrieve.return_value = RetrievedContext(
+        context = RetrievedContext(
             text="context",
             citations=[
                 AnswerCitation(chunk_id="doc:chunk:1", excerpt="one"),
@@ -30,6 +30,7 @@ class RetrievalEvaluatorTestCase(unittest.TestCase):
             ],
             retrieved_document_count=4,
         )
+        retriever.retrieve.side_effect = [context, context]
 
         report = evaluate_cases(
             [
@@ -44,7 +45,13 @@ class RetrievalEvaluatorTestCase(unittest.TestCase):
             limits=(4, 8),
         )
 
-        retriever.retrieve.assert_called_once_with("semantic", "What is the answer?", 8)
+        self.assertEqual(
+            retriever.retrieve.call_args_list,
+            [
+                call("semantic", "What is the answer?", 4),
+                call("semantic", "What is the answer?", 8),
+            ],
+        )
         self.assertTrue(report["cases"][0]["results"]["top_4"]["any_gold_chunk_found"])
         self.assertEqual(report["summary"]["top_8"]["all_gold_chunks_hit_rate"], 1.0)
 
