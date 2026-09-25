@@ -746,6 +746,8 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(event["fallback_reason_code"], "answer_not_grounded")
         self.assertTrue(event["answer_model_called"])
         self.assertFalse(event["answer_grounded"])
+        self.assertEqual(event["grounding_failure"]["reason"], "unsupported_numbers")
+        self.assertEqual(event["grounding_failure"]["unsupported_numbers"], ["45"])
         self.assertEqual(event["structured_output_retry_count"], 0)
 
     def test_answer_question_logs_unknown_chunk_count_when_count_lookup_fails(self):

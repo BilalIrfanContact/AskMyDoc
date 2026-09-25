@@ -384,44 +384,60 @@ def _split_answer_segments(answer: str) -> list[str]:
     return segments or [answer.strip()]
 
 
-def _is_segment_grounded(segment: str, evidence_terms: set[str], evidence_numbers: set[str]) -> bool:
+def _segment_grounding_failure(
+    segment: str, evidence_terms: set[str], evidence_numbers: set[str]
+) -> str | None:
+    """Return why a segment is not grounded in the evidence, or None if it is."""
     segment_terms = _extract_grounding_terms(segment)
     segment_numbers = _extract_numeric_tokens(segment)
 
     if segment_numbers and not segment_numbers.issubset(evidence_numbers):
-        return False
+        return "unsupported_numbers"
 
     if not segment_terms:
-        return bool(segment_numbers) or not segment.strip()
+        return None if segment_numbers or not segment.strip() else "no_terms"
 
     overlap = segment_terms & evidence_terms
     unsupported_terms = segment_terms - evidence_terms
     if not overlap:
-        return False
+        return "no_term_overlap"
 
     if segment_numbers:
-        return len(unsupported_terms) <= len(overlap)
+        return None if len(unsupported_terms) <= len(overlap) else "too_many_unsupported_terms"
 
     required_overlap = 1 if len(segment_terms) <= 3 else 2
     overlap_ratio = len(overlap) / len(segment_terms)
-    return len(overlap) >= required_overlap and overlap_ratio >= 0.7
+    if len(overlap) >= required_overlap and overlap_ratio >= 0.7:
+        return None
+    return "low_term_overlap"
 
 
-def _is_answer_grounded(answer: str, citations: Sequence[AnswerCitation]) -> bool:
+def _find_grounding_failure(
+    answer: str, citations: Sequence[AnswerCitation]
+) -> dict[str, object] | None:
+    """Return the first answer segment the evidence does not support, or None if all are.
+
+    The failure names the reason plus the numbers and terms missing from the evidence,
+    so logs show why an answer was rejected without recording the full answer text.
+    """
     evidence_text = _format_texts(citation.excerpt for citation in citations)
     if not evidence_text:
-        return False
+        return {"reason": "no_evidence", "segment_index": None,
+                "unsupported_numbers": [], "unsupported_terms": []}
 
     evidence_terms = _extract_grounding_terms(evidence_text)
     evidence_numbers = _extract_numeric_tokens(evidence_text)
-    segments = _split_answer_segments(answer)
-    if not segments:
-        return False
+    for index, segment in enumerate(_split_answer_segments(answer)):
+        reason = _segment_grounding_failure(segment, evidence_terms, evidence_numbers)
+        if reason:
+            return {
+                "reason": reason,
+                "segment_index": index,
+                "unsupported_numbers": sorted(_extract_numeric_tokens(segment) - evidence_numbers),
+                "unsupported_terms": sorted(_extract_grounding_terms(segment) - evidence_terms),
+            }
+    return None
 
-    return all(
-        _is_segment_grounded(segment, evidence_terms, evidence_numbers)
-        for segment in segments
-    )
 
 def _default_generation_adapter() -> GenerationAdapter:
     from .rag_adapters import OpenAIChatAdapter
@@ -517,6 +533,7 @@ def _emit_answer_policy_telemetry(
     structured_output_retry_count: int,
     answer_grounded: bool | None,
     answer_model_called: bool,
+    grounding_failure: dict[str, object] | None = None,
 ) -> None:
     overlap_term_count, required_term_overlap, has_sufficient_context = _retrieval_overlap_metrics(
         question,
@@ -548,6 +565,7 @@ def _emit_answer_policy_telemetry(
         "citation_completeness_ratio": citation_completeness_ratio,
         "structured_output_retry_count": structured_output_retry_count,
         "answer_grounded": answer_grounded,
+        "grounding_failure": grounding_failure,
     }
     logger.info(
         json.dumps(event, sort_keys=True),
@@ -641,7 +659,8 @@ def answer_question(
             answer_model_called=True,
         )
         return decision
-    answer_grounded = _is_answer_grounded(structured_answer.answer, context.citations)
+    grounding_failure = _find_grounding_failure(structured_answer.answer, context.citations)
+    answer_grounded = grounding_failure is None
     if not answer_grounded:
         decision = _insufficient_context_decision(policy)
         _emit_answer_policy_telemetry(
@@ -655,6 +674,7 @@ def answer_question(
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=answer_grounded,
             answer_model_called=True,
+            grounding_failure=grounding_failure,
         )
         return decision
 
