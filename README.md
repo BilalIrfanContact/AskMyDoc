@@ -4,6 +4,26 @@
 
 AskMyDoc is a full-stack document Q&A app where users can upload PDFs, open a document-specific workspace, and ask grounded questions against retrieved evidence. What started as a local prototype is now a contract-driven v3 application with authenticated backend access, document lifecycle handling, persistent conversations, structured answer decisions, and integration coverage across the stack.
 
+## Run locally
+
+Use Python 3.11 and Node.js 20. From the repository root, install the backend and frontend dependencies and fill in the two environment files:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+cd frontend && npm ci && cd ..
+cp -n backend/.env.example backend/.env
+cp -n frontend/.env.example frontend/.env
+```
+
+Set the OpenAI, Supabase, and auth values in those files. With the provided templates, set the backend's `INTERNAL_API_SECRET` to the same value as the frontend's `NEXTAUTH_SECRET`; otherwise protected API calls fail. Then start both servers:
+
+```bash
+./dev.sh
+```
+
+The backend runs at `http://localhost:8000` and the frontend at `http://localhost:3000`. Ctrl+C stops both.
+
 ---
 
 ## Why I Built This
