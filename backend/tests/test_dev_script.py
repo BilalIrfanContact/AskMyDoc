@@ -57,7 +57,10 @@ class DevScriptTestCase(unittest.TestCase):
     @staticmethod
     def stop(process, root):
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
         # A broken launcher may leave its separately grouped servers alive.
         for name in ("uvicorn", "npm"):
             pid_file = root / (name + ".pid")
