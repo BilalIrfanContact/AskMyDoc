@@ -2,7 +2,7 @@ export default function AuthDocumentArtwork() {
   return (
     <div className="auth-document-art" aria-hidden="true">
       <div className="art-sheet art-sheet-back">
-        <div className="art-back-heading">Document signals</div>
+        <div className="art-back-heading">Financial statements</div>
         <div className="art-bar-chart">
           <span /><span /><span /><span /><span />
         </div>
@@ -13,8 +13,8 @@ export default function AuthDocumentArtwork() {
 
       <div className="art-sheet art-sheet-front">
         <header className="art-page-header">
-          <span>Ideas in context</span>
-          <span>Chapter 1</span>
+          <span>Form 10-K</span>
+          <span>Item 8</span>
         </header>
 
         <div className="art-page-lead">

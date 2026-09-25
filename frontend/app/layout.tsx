@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AskMyDoc",
-  description: "Upload a PDF and chat with it using AI."
+  title: "AskMyDoc: Q&A for financial filings",
+  description: "Ask questions about 10-Ks, 10-Qs and annual reports and see the passages each answer comes from."
 };
 
 export default function RootLayout({
