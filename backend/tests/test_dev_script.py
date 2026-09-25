@@ -82,7 +82,10 @@ class DevScriptTestCase(unittest.TestCase):
                 except ProcessLookupError:
                     pass
             if process.poll() is None:
-                process.kill()
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
             process.communicate(timeout=5)
 
     def wait_for_servers(self):
