@@ -58,7 +58,7 @@ export default function LoginForm() {
             <h1 id="auth-story-title">Ask questions.<br />Check the source.</h1>
           </div>
           <AuthDocumentArtwork />
-          <p className="auth-story-note">Ask questions of 10-Ks, 10-Qs and annual reports.</p>
+          <p className="auth-story-note">Ask questions of 10&#8209;Ks, 10&#8209;Qs and annual reports.</p>
         </section>
 
         <section className="auth-panel" aria-labelledby="login-heading">

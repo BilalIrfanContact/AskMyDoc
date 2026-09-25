@@ -77,7 +77,7 @@ export default function SignupForm() {
             <h1 id="auth-story-title">Keep the document.<br />Find the answer.</h1>
           </div>
           <AuthDocumentArtwork />
-          <p className="auth-story-note">Ask questions of 10-Ks, 10-Qs and annual reports.</p>
+          <p className="auth-story-note">Ask questions of 10&#8209;Ks, 10&#8209;Qs and annual reports.</p>
         </section>
 
         <section className="auth-panel" aria-labelledby="signup-heading">
