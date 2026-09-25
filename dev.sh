@@ -5,10 +5,40 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# Kill every process started by this script (the whole process group) on exit.
-trap 'trap - EXIT INT TERM; kill 0 2>/dev/null' EXIT INT TERM
+# Give each server pipeline its own process group, including its child processes.
+set -m
+backend_pid=
+frontend_pid=
+cleanup() {
+  if [[ -n "$backend_pid" ]]; then
+    kill -TERM -- "-$backend_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$frontend_pid" ]]; then
+    kill -TERM -- "-$frontend_pid" 2>/dev/null || true
+  fi
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-.venv/bin/uvicorn backend.main:app --reload 2>&1 | sed -u 's/^/[backend]  /' &
-(cd frontend && npm run dev) 2>&1 | sed -u 's/^/[frontend] /' &
+run_backend() {
+  .venv/bin/uvicorn backend.main:app --reload 2>&1 | sed -u 's/^/[backend]  /'
+}
+run_frontend() {
+  (cd frontend && npm run dev) 2>&1 | sed -u 's/^/[frontend] /'
+}
+run_backend &
+backend_pid=$!
+run_frontend &
+frontend_pid=$!
 
-wait -n
+# Bash 3.2 (the system Bash on macOS) does not support wait -n.
+while kill -0 "$backend_pid" 2>/dev/null && kill -0 "$frontend_pid" 2>/dev/null; do
+  sleep 1
+done
+if ! kill -0 "$backend_pid" 2>/dev/null; then
+  wait "$backend_pid"
+else
+  wait "$frontend_pid"
+fi
