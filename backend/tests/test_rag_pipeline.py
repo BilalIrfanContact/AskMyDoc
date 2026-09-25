@@ -134,6 +134,22 @@ class RagPipelineTestCase(unittest.TestCase):
         get_vector_store_mock.assert_not_called()
         chat_openai_mock.assert_not_called()
 
+    def test_answer_question_qa_limit_widens_semantic_retrieval(self):
+        retriever = Mock()
+        retriever.count.return_value = 10
+        retriever.retrieve.return_value = RetrievedContext(text="", citations=[], retrieved_document_count=0)
+        generator = Mock()
+        generator.invoke.return_value = SimpleNamespace(content="qa")
+
+        answer_question(
+            "doc-1",
+            "What is the refund window?",
+            dependencies=RagDependencies(retrieval_factory=lambda _: retriever, generation=generator),
+            qa_limit=8,
+        )
+
+        retriever.retrieve.assert_called_once_with("semantic", "What is the refund window?", 8)
+
     def test_answer_question_retries_when_model_breaks_json_contract(self):
         vectordb = self._build_vector_store(
             docs=[
@@ -608,6 +624,8 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(event["total_chunk_count"], 4)
         self.assertTrue(event["chunk_count_available"])
         self.assertEqual(event["retrieved_document_count"], 1)
+        self.assertEqual(event["retrieved_chunk_ids"], ["doc-1:chunk:0"])
+        self.assertTrue(event["answer_model_called"])
         self.assertEqual(event["citation_count"], 1)
         self.assertEqual(event["missing_citation_count"], 0)
         self.assertEqual(event["citation_completeness_ratio"], 1.0)
@@ -638,6 +656,7 @@ class RagPipelineTestCase(unittest.TestCase):
         event = self._logged_event(logger_mock)
         self.assertEqual(event["answer_status"], "insufficient_context")
         self.assertEqual(event["fallback_reason_code"], "retrieval_quality_gate_failed")
+        self.assertFalse(event["answer_model_called"])
         self.assertTrue(event["quality_gate_applied"])
         self.assertFalse(event["has_sufficient_context"])
         self.assertEqual(event["overlap_term_count"], 0)
@@ -725,6 +744,7 @@ class RagPipelineTestCase(unittest.TestCase):
         event = self._logged_event(logger_mock)
         self.assertEqual(event["answer_status"], "insufficient_context")
         self.assertEqual(event["fallback_reason_code"], "answer_not_grounded")
+        self.assertTrue(event["answer_model_called"])
         self.assertFalse(event["answer_grounded"])
         self.assertEqual(event["structured_output_retry_count"], 0)
 

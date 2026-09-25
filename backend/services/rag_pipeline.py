@@ -23,6 +23,7 @@ INSUFFICIENT_CONTEXT_ANSWER = (
     "I couldn't find enough information in the document to answer that question."
 )
 _STRUCTURED_OUTPUT_RETRY_LIMIT = 2
+DEFAULT_QA_CONTEXT_LIMIT = 4
 _STRUCTURED_OUTPUT_INSTRUCTION = (
     'Return only valid JSON with this exact shape: {"answer": string}. '
     "Do not include markdown, code fences, or any extra keys."
@@ -470,6 +471,7 @@ def _select_retrieval_policy(
     question: str,
     total_chunks: int,
     generator: GenerationAdapter | None = None,
+    qa_limit: int = DEFAULT_QA_CONTEXT_LIMIT,
 ) -> RetrievalPolicy:
     limit = min(8, max(1, total_chunks))
     routed_intent = _route_intent(question, generator=generator)
@@ -484,7 +486,7 @@ def _select_retrieval_policy(
     return RetrievalPolicy(
         intent="qa",
         mode="semantic",
-        limit=min(4, max(1, total_chunks)),
+        limit=min(qa_limit, max(1, total_chunks)),
         enforce_quality_gate=True,
     )
 
@@ -514,6 +516,7 @@ def _emit_answer_policy_telemetry(
     fallback_reason_code: FallbackReasonCode | None,
     structured_output_retry_count: int,
     answer_grounded: bool | None,
+    answer_model_called: bool,
 ) -> None:
     overlap_term_count, required_term_overlap, has_sufficient_context = _retrieval_overlap_metrics(
         question,
@@ -533,7 +536,9 @@ def _emit_answer_policy_telemetry(
         "total_chunk_count": total_chunks,
         "chunk_count_available": total_chunks is not None,
         "retrieved_document_count": context.retrieved_document_count,
+        "retrieved_chunk_ids": [citation.chunk_id for citation in context.citations],
         "retrieved_context_char_count": len(context.text),
+        "answer_model_called": answer_model_called,
         "question_term_count": question_term_count,
         "overlap_term_count": overlap_term_count,
         "required_term_overlap": required_term_overlap,
@@ -564,7 +569,13 @@ def answer_question(
     question: str,
     *,
     dependencies: RagDependencies | None = None,
+    qa_limit: int = DEFAULT_QA_CONTEXT_LIMIT,
 ) -> AnswerDecision:
+    """Answer a question about one document.
+
+    `qa_limit` is how many semantic chunks QA questions send to the answer model.
+    The app uses the default; evaluation scripts override it to compare context sizes.
+    """
     active_dependencies = dependencies or _default_dependencies()
     retriever = active_dependencies.retrieval_factory(document_id)
     total_chunks = retriever.count()
@@ -574,6 +585,7 @@ def answer_question(
         question,
         total,
         generator=active_dependencies.generation,
+        qa_limit=qa_limit,
     )
     context = _retrieve_context(retriever, question, policy)
 
@@ -589,6 +601,7 @@ def answer_question(
             fallback_reason_code="empty_context",
             structured_output_retry_count=0,
             answer_grounded=None,
+            answer_model_called=False,
         )
         return decision
 
@@ -604,6 +617,7 @@ def answer_question(
             fallback_reason_code="retrieval_quality_gate_failed",
             structured_output_retry_count=0,
             answer_grounded=None,
+            answer_model_called=False,
         )
         return decision
 
@@ -624,6 +638,7 @@ def answer_question(
             fallback_reason_code="structured_output_invalid",
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=None,
+            answer_model_called=True,
         )
         return decision
     answer_grounded = _is_answer_grounded(structured_answer.answer, context.citations)
@@ -639,6 +654,7 @@ def answer_question(
             fallback_reason_code="answer_not_grounded",
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=answer_grounded,
+            answer_model_called=True,
         )
         return decision
 
@@ -659,5 +675,6 @@ def answer_question(
         fallback_reason_code=None,
         structured_output_retry_count=structured_answer.invalid_attempt_count,
         answer_grounded=answer_grounded,
+        answer_model_called=True,
     )
     return decision
