@@ -4,6 +4,10 @@ For each case and each limit, this calls the real answer pipeline and records th
 whether it fell back (and why), whether the gold chunks reached the answer model, context
 size, and latency. Correctness is left to a human: compare `answer` with `expected_answer`.
 
+Cases default to `"expected": "answer"` and need `gold_chunk_ids`. Cases marked
+`"expected": "abstain"` ask something the document does not contain; they need no gold
+chunks and count as correct only when the pipeline returns its insufficient-context fallback.
+
     .venv/bin/python -m backend.scripts.evaluate_answers \
         --cases evals/pdfqa-benchmark/retrieval-cases.local.json --limits 4 8
 """
@@ -73,15 +77,20 @@ def evaluate_cases(
     summary = {}
     for limit in normalized_limits:
         runs = [
-            case["results"][f"limit_{limit}"]
+            (case["expected"], case["results"][f"limit_{limit}"])
             for case in case_results
             if f"limit_{limit}" in case.get("results", {})
         ]
-        completed = [run for run in runs if run["status"] == "completed"]
+        completed = [run for _, run in runs if run["status"] == "completed"]
+        answerable = [run for expected, run in runs if expected == "answer" and run["status"] == "completed"]
+        abstain = [run for expected, run in runs if expected == "abstain" and run["status"] == "completed"]
         summary[f"limit_{limit}"] = {
             "run_count": len(runs),
-            "answered_count": sum(run["answer_status"] == "answered" for run in completed),
-            "all_gold_in_context_count": sum(run["all_gold_in_context"] for run in completed),
+            "answerable_run_count": len(answerable),
+            "answered_count": sum(run["answer_status"] == "answered" for run in answerable),
+            "all_gold_in_context_count": sum(run["all_gold_in_context"] for run in answerable),
+            "abstain_run_count": len(abstain),
+            "abstained_count": sum(run["answer_status"] == "insufficient_context" for run in abstain),
             "fallback_reasons": sorted(
                 run["fallback_reason_code"] for run in completed if run["fallback_reason_code"]
             ),
@@ -107,12 +116,15 @@ def _evaluate_case(
     case_id = str(case.get("case_id") or f"case-{index}")
     document_id = str(case.get("document_id") or "")
     question = str(case.get("question") or "").strip()
+    expected = case.get("expected", "answer")
     gold_chunk_ids = [str(chunk_id) for chunk_id in case.get("gold_chunk_ids", [])]
-    if not document_id or not question or not gold_chunk_ids:
+    if expected not in ("answer", "abstain"):
+        return {"case_id": case_id, "status": "invalid", "error": 'expected must be "answer" or "abstain"'}
+    if not document_id or not question or (expected == "answer" and not gold_chunk_ids):
         return {
             "case_id": case_id,
             "status": "invalid",
-            "error": "document_id, question, and gold_chunk_ids are required",
+            "error": "document_id, question, and gold_chunk_ids (for answerable cases) are required",
         }
 
     results = {}
@@ -138,6 +150,7 @@ def _evaluate_case(
             "retrieval_mode": decision.retrieval_mode,
             "answer_status": decision.answer_status,
             "fallback_reason_code": event.get("fallback_reason_code"),
+            "grounding_failure": event.get("grounding_failure"),
             "answer": decision.answer,
             "retrieved_chunk_ids": retrieved,
             "answer_model_called": model_called,
@@ -157,6 +170,7 @@ def _evaluate_case(
         "status": status,
         "document_id": document_id,
         "question": question,
+        "expected": expected,
         "expected_answer": case.get("expected_answer"),
         "gold_chunk_ids": gold_chunk_ids,
         "results": results,

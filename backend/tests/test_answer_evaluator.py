@@ -83,6 +83,36 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
         self.assertFalse(run["all_gold_in_context"])
         self.assertEqual(run["context_char_count"], 0)
 
+    def test_abstain_cases_need_no_gold_and_count_only_fallbacks_as_abstaining(self):
+        answers = {"Unknown A?": "insufficient_context", "Unknown B?": "answered"}
+
+        def fake_answer(document_id, question, limit):
+            rag_pipeline.logger.info(json.dumps({
+                "event": "answer_policy_decision",
+                "retrieved_chunk_ids": ["doc:chunk:1"],
+                "retrieved_context_char_count": 100,
+                "answer_model_called": True,
+            }))
+            return AnswerDecision(
+                answer="...", intent="qa", retrieval_mode="semantic",
+                answer_status=answers[question], citations=[],
+            )
+
+        report = evaluate_cases(
+            [
+                {"document_id": "doc", "question": "Unknown A?", "expected": "abstain"},
+                {"document_id": "doc", "question": "Unknown B?", "expected": "abstain"},
+            ],
+            answer_fn=fake_answer, limits=[4],
+        )
+
+        self.assertEqual([case["status"] for case in report["cases"]], ["completed", "completed"])
+        summary = report["summary"]["limit_4"]
+        self.assertEqual(summary["abstain_run_count"], 2)
+        self.assertEqual(summary["abstained_count"], 1)
+        self.assertEqual(summary["answerable_run_count"], 0)
+        self.assertEqual(summary["answered_count"], 0)
+
     def test_missing_gold_labels_are_invalid(self):
         report = evaluate_cases(
             [{"document_id": "doc", "question": "Why?"}],
