@@ -625,6 +625,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertTrue(event["chunk_count_available"])
         self.assertEqual(event["retrieved_document_count"], 1)
         self.assertEqual(event["retrieved_chunk_ids"], ["doc-1:chunk:0"])
+        self.assertTrue(event["answer_model_called"])
         self.assertEqual(event["citation_count"], 1)
         self.assertEqual(event["missing_citation_count"], 0)
         self.assertEqual(event["citation_completeness_ratio"], 1.0)
@@ -655,6 +656,7 @@ class RagPipelineTestCase(unittest.TestCase):
         event = self._logged_event(logger_mock)
         self.assertEqual(event["answer_status"], "insufficient_context")
         self.assertEqual(event["fallback_reason_code"], "retrieval_quality_gate_failed")
+        self.assertFalse(event["answer_model_called"])
         self.assertTrue(event["quality_gate_applied"])
         self.assertFalse(event["has_sufficient_context"])
         self.assertEqual(event["overlap_term_count"], 0)
@@ -742,6 +744,7 @@ class RagPipelineTestCase(unittest.TestCase):
         event = self._logged_event(logger_mock)
         self.assertEqual(event["answer_status"], "insufficient_context")
         self.assertEqual(event["fallback_reason_code"], "answer_not_grounded")
+        self.assertTrue(event["answer_model_called"])
         self.assertFalse(event["answer_grounded"])
         self.assertEqual(event["structured_output_retry_count"], 0)
 

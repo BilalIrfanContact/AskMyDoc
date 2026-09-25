@@ -516,6 +516,7 @@ def _emit_answer_policy_telemetry(
     fallback_reason_code: FallbackReasonCode | None,
     structured_output_retry_count: int,
     answer_grounded: bool | None,
+    answer_model_called: bool,
 ) -> None:
     overlap_term_count, required_term_overlap, has_sufficient_context = _retrieval_overlap_metrics(
         question,
@@ -537,6 +538,7 @@ def _emit_answer_policy_telemetry(
         "retrieved_document_count": context.retrieved_document_count,
         "retrieved_chunk_ids": [citation.chunk_id for citation in context.citations],
         "retrieved_context_char_count": len(context.text),
+        "answer_model_called": answer_model_called,
         "question_term_count": question_term_count,
         "overlap_term_count": overlap_term_count,
         "required_term_overlap": required_term_overlap,
@@ -599,6 +601,7 @@ def answer_question(
             fallback_reason_code="empty_context",
             structured_output_retry_count=0,
             answer_grounded=None,
+            answer_model_called=False,
         )
         return decision
 
@@ -614,6 +617,7 @@ def answer_question(
             fallback_reason_code="retrieval_quality_gate_failed",
             structured_output_retry_count=0,
             answer_grounded=None,
+            answer_model_called=False,
         )
         return decision
 
@@ -634,6 +638,7 @@ def answer_question(
             fallback_reason_code="structured_output_invalid",
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=None,
+            answer_model_called=True,
         )
         return decision
     answer_grounded = _is_answer_grounded(structured_answer.answer, context.citations)
@@ -649,6 +654,7 @@ def answer_question(
             fallback_reason_code="answer_not_grounded",
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=answer_grounded,
+            answer_model_called=True,
         )
         return decision
 
@@ -669,5 +675,6 @@ def answer_question(
         fallback_reason_code=None,
         structured_output_retry_count=structured_answer.invalid_attempt_count,
         answer_grounded=answer_grounded,
+        answer_model_called=True,
     )
     return decision

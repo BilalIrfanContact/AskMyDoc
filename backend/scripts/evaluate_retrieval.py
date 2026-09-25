@@ -67,11 +67,18 @@ def evaluate_cases(
             )
             continue
 
+        results = {}
+        retrieved_document_count = None
         try:
             retriever = retriever_factory(document_id)
-            results = {}
-            retrieved_document_count = None
-            for limit in normalized_limits:
+        except Exception as exc:
+            case_results.append(
+                {"case_id": case_id, "status": "failed", "document_id": document_id,
+                 "question": question, "error": type(exc).__name__}
+            )
+            continue
+        for limit in normalized_limits:
+            try:
                 context = retriever.retrieve("semantic", question, limit)
                 retrieved_document_count = context.retrieved_document_count
                 retrieved_chunk_ids = [citation.chunk_id for citation in context.citations]
@@ -80,31 +87,26 @@ def evaluate_cases(
                     gold_chunk_ids,
                     limit,
                 )
-            case_results.append(
-                {
-                    "case_id": case_id,
-                    "status": "completed",
-                    "document_id": document_id,
-                    "question": question,
-                    "retrieved_document_count": retrieved_document_count,
-                    "results": results,
-                }
-            )
-        except Exception as exc:
-            case_results.append(
-                {
-                    "case_id": case_id,
-                    "status": "failed",
-                    "document_id": document_id,
-                    "question": question,
-                    "error": type(exc).__name__,
-                }
-            )
+            except Exception as exc:
+                results[f"top_{limit}"] = {"status": "failed", "error": type(exc).__name__}
+        successful_count = sum("gold_chunk_recall" in result for result in results.values())
+        status = "completed" if successful_count == len(normalized_limits) else (
+            "partial" if successful_count else "failed"
+        )
+        case_results.append(
+            {"case_id": case_id, "status": status, "document_id": document_id,
+             "question": question, "retrieved_document_count": retrieved_document_count,
+             "results": results}
+        )
 
     summary = {}
     completed = [case for case in case_results if case["status"] == "completed"]
     for limit in normalized_limits:
-        measurements = [case["results"][f"top_{limit}"] for case in completed]
+        measurements = [
+            case["results"][f"top_{limit}"] for case in case_results
+            if f"top_{limit}" in case.get("results", {})
+            and "gold_chunk_recall" in case["results"][f"top_{limit}"]
+        ]
         any_hit_count = sum(measurement["any_gold_chunk_found"] for measurement in measurements)
         complete_hit_count = sum(measurement["all_gold_chunks_found"] for measurement in measurements)
         recalls = [measurement["gold_chunk_recall"] for measurement in measurements]

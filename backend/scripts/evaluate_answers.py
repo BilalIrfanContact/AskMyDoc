@@ -108,8 +108,12 @@ def _evaluate_case(
     document_id = str(case.get("document_id") or "")
     question = str(case.get("question") or "").strip()
     gold_chunk_ids = [str(chunk_id) for chunk_id in case.get("gold_chunk_ids", [])]
-    if not document_id or not question:
-        return {"case_id": case_id, "status": "invalid", "error": "document_id and question are required"}
+    if not document_id or not question or not gold_chunk_ids:
+        return {
+            "case_id": case_id,
+            "status": "invalid",
+            "error": "document_id, question, and gold_chunk_ids are required",
+        }
 
     results = {}
     for limit in limits:
@@ -122,8 +126,12 @@ def _evaluate_case(
             continue
         latency = time.perf_counter() - started
         event = capture.events[-1] if capture.events else {}
-        # Fallbacks return no citations, so read what the model was shown from telemetry.
-        in_context = event.get("retrieved_chunk_ids", [])
+        if not event:
+            results[f"limit_{limit}"] = {"status": "failed", "error": "TelemetryMissing"}
+            continue
+        retrieved = event.get("retrieved_chunk_ids", [])
+        model_called = event.get("answer_model_called", False)
+        in_context = retrieved if model_called else []
         results[f"limit_{limit}"] = {
             "status": "completed",
             "intent": decision.intent,
@@ -131,16 +139,22 @@ def _evaluate_case(
             "answer_status": decision.answer_status,
             "fallback_reason_code": event.get("fallback_reason_code"),
             "answer": decision.answer,
+            "retrieved_chunk_ids": retrieved,
+            "answer_model_called": model_called,
             "context_chunk_ids": in_context,
             "gold_chunk_ids_in_context": [chunk_id for chunk_id in gold_chunk_ids if chunk_id in in_context],
             "all_gold_in_context": bool(gold_chunk_ids) and all(chunk_id in in_context for chunk_id in gold_chunk_ids),
-            "context_char_count": event.get("retrieved_context_char_count"),
+            "context_char_count": event.get("retrieved_context_char_count") if model_called else 0,
             "latency_seconds": round(latency, 2),
         }
 
+    completed_count = sum(result["status"] == "completed" for result in results.values())
+    status = "completed" if completed_count == len(limits) else (
+        "partial" if completed_count else "failed"
+    )
     return {
         "case_id": case_id,
-        "status": "completed",
+        "status": status,
         "document_id": document_id,
         "question": question,
         "expected_answer": case.get("expected_answer"),
@@ -190,7 +204,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote answer evaluation to {args.output}")
     else:
         print(rendered)
-    return 0
+    return 0 if report["case_count"] and all(
+        case["status"] == "completed" for case in report["cases"]
+    ) else 1
 
 
 if __name__ == "__main__":

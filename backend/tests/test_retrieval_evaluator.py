@@ -64,6 +64,24 @@ class RetrievalEvaluatorTestCase(unittest.TestCase):
         self.assertEqual(report["cases"][0]["status"], "invalid")
         self.assertEqual(report["completed_case_count"], 0)
 
+    def test_later_limit_failure_preserves_earlier_measurement(self):
+        retriever = Mock()
+        retriever.retrieve.side_effect = [
+            RetrievedContext(
+                text="context", citations=[AnswerCitation(chunk_id="gold", excerpt="text")],
+                retrieved_document_count=1,
+            ),
+            RuntimeError("top 8 failed"),
+        ]
+        report = evaluate_cases(
+            [{"document_id": "doc", "question": "Why?", "gold_chunk_ids": ["gold"]}],
+            retriever_factory=lambda _: retriever, limits=[4, 8],
+        )
+        self.assertEqual(report["cases"][0]["status"], "partial")
+        self.assertEqual(report["summary"]["top_4"]["case_count"], 1)
+        self.assertEqual(report["summary"]["top_8"]["case_count"], 0)
+        self.assertEqual(report["cases"][0]["results"]["top_8"]["error"], "RuntimeError")
+
 
 if __name__ == "__main__":
     unittest.main()
