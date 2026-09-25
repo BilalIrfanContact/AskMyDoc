@@ -74,6 +74,25 @@ class BuildEvalCasesTestCase(unittest.TestCase):
         self.assertEqual(evidence["best_chunk_anywhere"], "doc:chunk:3")
         self.assertEqual(evidence["best_coverage_anywhere"], 1.0)
 
+    def test_a_review_note_marks_a_weak_match_as_accepted(self):
+        case = build_case(
+            {
+                "case_id": "glued-words",
+                "question": "What was accounts payable?",
+                "expected": "answer",
+                "gold_evidence_text": ["Accountspayable 25,309 34,616"],
+                "gold_page": [2],
+                "gold_review_note": "Numbers all match; the quote glues words together.",
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
+        self.assertEqual(case["gold_mapping"]["status"], "accepted")
+        self.assertEqual(case["gold_mapping"]["review_note"], "Numbers all match; the quote glues words together.")
+
     def test_abstain_cases_only_get_a_document_id(self):
         case = build_case(
             {"case_id": "absent", "question": "How many Prime members?", "expected": "abstain"},

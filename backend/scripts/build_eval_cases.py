@@ -7,7 +7,8 @@ fewest of those chunks that together contain the quote's words and numbers. Matc
 tokens, not exact text, because the quotes come from a different PDF parser.
 
 A case is marked `review` when the page's chunks cover less than `--min-coverage` of a quote,
-so a person can check it. Rerun after re-indexing: chunk IDs are recomputed, never hand-kept.
+so a person can check it. After checking, add a `gold_review_note` to the proposed case to mark
+it `accepted` on every rerun. Rerun after re-indexing: chunk IDs are recomputed, never hand-kept.
 
     .venv/bin/python -m backend.scripts.build_eval_cases \
         --proposed evals/financial-filings-corpus/proposed-cases.json \
@@ -135,7 +136,10 @@ def build_case(
 
     matched = bool(evidence_results) and all(result["coverage"] >= min_coverage for result in evidence_results)
     case["gold_chunk_ids"] = gold
-    case["gold_mapping"] = {"status": "matched" if matched else "review", "evidence": evidence_results}
+    status = "matched" if matched else ("accepted" if proposed.get("gold_review_note") else "review")
+    case["gold_mapping"] = {"status": status, "evidence": evidence_results}
+    if status == "accepted":
+        case["gold_mapping"]["review_note"] = proposed["gold_review_note"]
     return case
 
 
