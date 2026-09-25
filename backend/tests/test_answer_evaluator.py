@@ -59,11 +59,11 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
         self.assertEqual(report["summary"]["limit_8"]["all_gold_in_context_count"], 1)
         self.assertEqual(report["summary"]["limit_4"]["mean_context_char_count"], 4000)
 
-    def test_quality_gate_fallback_keeps_retrieved_evidence_separate(self):
+    def test_fallback_before_model_call_does_not_count_retrieved_chunks_as_context(self):
         def fake_answer(document_id, question, limit):
             rag_pipeline.logger.info(json.dumps({
                 "event": "answer_policy_decision",
-                "fallback_reason_code": "retrieval_quality_gate_failed",
+                "fallback_reason_code": "empty_context",
                 "retrieved_chunk_ids": ["gold"],
                 "retrieved_context_char_count": 100,
                 "answer_model_called": False,

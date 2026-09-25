@@ -24,8 +24,11 @@ INSUFFICIENT_CONTEXT_ANSWER = (
 )
 _STRUCTURED_OUTPUT_RETRY_LIMIT = 2
 DEFAULT_QA_CONTEXT_LIMIT = 4
+_ANSWER_JSON_SHAPE = '{"found_in_excerpts": boolean, "answer": string}'
 _STRUCTURED_OUTPUT_INSTRUCTION = (
-    'Return only valid JSON with this exact shape: {"answer": string}. '
+    f"Return only valid JSON with this exact shape: {_ANSWER_JSON_SHAPE}. "
+    "Set found_in_excerpts to false when the excerpts do not contain what is needed "
+    "to answer; the answer may then be empty. "
     "Do not include markdown, code fences, or any extra keys."
 )
 
@@ -98,7 +101,7 @@ Intent = Literal["summary", "qa"]
 RouteIntent = Literal["summary", "qa", "off_topic"]
 RetrievalMode = Literal["head", "semantic"]
 FallbackReasonCode = Literal[
-    "retrieval_quality_gate_failed",
+    "model_reported_not_found",
     "empty_context",
     "structured_output_invalid",
     "answer_not_grounded",
@@ -110,7 +113,6 @@ class RetrievalPolicy:
     intent: Intent
     mode: RetrievalMode
     limit: int
-    enforce_quality_gate: bool
 
 
 @dataclass(frozen=True)
@@ -137,7 +139,10 @@ class RetrievedContext:
 
 @dataclass(frozen=True)
 class StructuredAnswerResult:
+    """The model's parsed reply; `answer` is None when it never matched the JSON contract."""
+
     answer: str | None
+    found_in_excerpts: bool
     invalid_attempt_count: int
 
 
@@ -158,6 +163,9 @@ class RagDependencies:
 
 
 class LlmAnswerPayload(BaseModel):
+    """The answer model's JSON contract. `found_in_excerpts` is how it says "not in the document"."""
+
+    found_in_excerpts: bool
     answer: str
 
 
@@ -177,7 +185,7 @@ def _build_retry_prompt(question: str, context: str, invalid_response: str, erro
         "Your previous response did not match the required JSON contract.\n"
         f"Validation error: {error}\n"
         f"Previous response:\n{invalid_response}\n\n"
-        'Reply again with only valid JSON matching exactly {"answer": string}.'
+        f"Reply again with only valid JSON matching exactly {_ANSWER_JSON_SHAPE}."
     )
 
 
@@ -201,10 +209,12 @@ def _coerce_response_text(response) -> str:
 
 def _parse_structured_answer(response_text: str, question: str) -> LlmAnswerPayload:
     payload = LlmAnswerPayload.model_validate_json(response_text)
+    if not payload.found_in_excerpts:
+        return payload
     normalized_answer = _normalize_answer_text(payload.answer, question)
     if not normalized_answer:
-        raise ValueError("answer must not be empty")
-    return LlmAnswerPayload(answer=normalized_answer)
+        raise ValueError("answer must not be empty when found_in_excerpts is true")
+    return LlmAnswerPayload(found_in_excerpts=True, answer=normalized_answer)
 
 
 def _question_requests_literal_formatting(question: str) -> bool:
@@ -300,8 +310,10 @@ def _generate_structured_answer(
         response_text = _coerce_response_text(response)
 
         try:
+            payload = _parse_structured_answer(response_text, question)
             return StructuredAnswerResult(
-                answer=_parse_structured_answer(response_text, question).answer,
+                answer=payload.answer,
+                found_in_excerpts=payload.found_in_excerpts,
                 invalid_attempt_count=invalid_attempt_count,
             )
         except (ValidationError, ValueError) as exc:
@@ -309,50 +321,18 @@ def _generate_structured_answer(
             if attempt == _STRUCTURED_OUTPUT_RETRY_LIMIT - 1:
                 return StructuredAnswerResult(
                     answer=None,
+                    found_in_excerpts=False,
                     invalid_attempt_count=invalid_attempt_count,
                 )
             prompt = _build_retry_prompt(question, context, response_text, str(exc))
 
-    return StructuredAnswerResult(answer=None, invalid_attempt_count=invalid_attempt_count)
+    return StructuredAnswerResult(
+        answer=None, found_in_excerpts=False, invalid_attempt_count=invalid_attempt_count
+    )
 
 
 def _format_texts(texts: Iterable[str]) -> str:
     return "\n\n".join(text for text in texts if text).strip()
-
-
-def _extract_question_terms(text: str) -> set[str]:
-    terms = {
-        term
-        for term in re.findall(r"[a-z0-9]+", text.lower())
-        if len(term) > 2 and term not in _QUESTION_STOPWORDS
-    }
-    return terms
-
-
-def _has_sufficient_context(question: str, context: str) -> bool:
-    if not context:
-        return False
-    if len(context.strip()) < 50:
-        return False
-    return _retrieval_overlap_metrics(question, context)[2]
-
-
-def _retrieval_overlap_metrics(question: str, context: str) -> tuple[int, int, bool]:
-    if not context:
-        question_terms = _extract_question_terms(question)
-        required_overlap = 0 if not question_terms else (
-            1 if len(question_terms) == 1 else min(2, len(question_terms))
-        )
-        return 0, required_overlap, False
-
-    question_terms = _extract_question_terms(question)
-    if not question_terms:
-        return 0, 0, True
-
-    context_terms = set(re.findall(r"[a-z0-9]+", context.lower()))
-    overlap_count = len(question_terms & context_terms)
-    required_overlap = 1 if len(question_terms) == 1 else min(2, len(question_terms))
-    return overlap_count, required_overlap, overlap_count >= required_overlap
 
 
 def _extract_grounding_terms(text: str) -> set[str]:
@@ -496,14 +476,12 @@ def _select_retrieval_policy(
             intent="summary",
             mode="head",
             limit=limit,
-            enforce_quality_gate=False,
         )
 
     return RetrievalPolicy(
         intent="qa",
         mode="semantic",
         limit=min(qa_limit, max(1, total_chunks)),
-        enforce_quality_gate=True,
     )
 
 
@@ -524,7 +502,6 @@ def _citation_completeness_ratio(context: RetrievedContext) -> float | None:
 def _emit_answer_policy_telemetry(
     *,
     document_id: str,
-    question: str,
     total_chunks: int | None,
     policy: RetrievalPolicy,
     context: RetrievedContext,
@@ -535,11 +512,6 @@ def _emit_answer_policy_telemetry(
     answer_model_called: bool,
     grounding_failure: dict[str, object] | None = None,
 ) -> None:
-    overlap_term_count, required_term_overlap, has_sufficient_context = _retrieval_overlap_metrics(
-        question,
-        context.text,
-    )
-    question_term_count = len(_extract_question_terms(question))
     citation_count = len(context.citations)
     citation_completeness_ratio = _citation_completeness_ratio(context)
     event = {
@@ -549,17 +521,12 @@ def _emit_answer_policy_telemetry(
         "retrieval_mode": policy.mode,
         "answer_status": answer_status,
         "fallback_reason_code": fallback_reason_code,
-        "quality_gate_applied": policy.enforce_quality_gate,
         "total_chunk_count": total_chunks,
         "chunk_count_available": total_chunks is not None,
         "retrieved_document_count": context.retrieved_document_count,
         "retrieved_chunk_ids": [citation.chunk_id for citation in context.citations],
         "retrieved_context_char_count": len(context.text),
         "answer_model_called": answer_model_called,
-        "question_term_count": question_term_count,
-        "overlap_term_count": overlap_term_count,
-        "required_term_overlap": required_term_overlap,
-        "has_sufficient_context": has_sufficient_context,
         "citation_count": citation_count,
         "missing_citation_count": context.retrieved_document_count - citation_count,
         "citation_completeness_ratio": citation_completeness_ratio,
@@ -611,28 +578,11 @@ def answer_question(
         decision = _insufficient_context_decision(policy)
         _emit_answer_policy_telemetry(
             document_id=document_id,
-            question=question,
             total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
             fallback_reason_code="empty_context",
-            structured_output_retry_count=0,
-            answer_grounded=None,
-            answer_model_called=False,
-        )
-        return decision
-
-    if policy.enforce_quality_gate and not _has_sufficient_context(question, context.text):
-        decision = _insufficient_context_decision(policy)
-        _emit_answer_policy_telemetry(
-            document_id=document_id,
-            question=question,
-            total_chunks=total_chunks,
-            policy=policy,
-            context=context,
-            answer_status=decision.answer_status,
-            fallback_reason_code="retrieval_quality_gate_failed",
             structured_output_retry_count=0,
             answer_grounded=None,
             answer_model_called=False,
@@ -648,12 +598,26 @@ def answer_question(
         decision = _insufficient_context_decision(policy)
         _emit_answer_policy_telemetry(
             document_id=document_id,
-            question=question,
             total_chunks=total_chunks,
             policy=policy,
             context=context,
             answer_status=decision.answer_status,
             fallback_reason_code="structured_output_invalid",
+            structured_output_retry_count=structured_answer.invalid_attempt_count,
+            answer_grounded=None,
+            answer_model_called=True,
+        )
+        return decision
+    if not structured_answer.found_in_excerpts:
+        # The model's own "not in the document" skips grounding: there is no claim to check.
+        decision = _insufficient_context_decision(policy)
+        _emit_answer_policy_telemetry(
+            document_id=document_id,
+            total_chunks=total_chunks,
+            policy=policy,
+            context=context,
+            answer_status=decision.answer_status,
+            fallback_reason_code="model_reported_not_found",
             structured_output_retry_count=structured_answer.invalid_attempt_count,
             answer_grounded=None,
             answer_model_called=True,
@@ -665,7 +629,6 @@ def answer_question(
         decision = _insufficient_context_decision(policy)
         _emit_answer_policy_telemetry(
             document_id=document_id,
-            question=question,
             total_chunks=total_chunks,
             policy=policy,
             context=context,
@@ -687,7 +650,6 @@ def answer_question(
     )
     _emit_answer_policy_telemetry(
         document_id=document_id,
-        question=question,
         total_chunks=total_chunks,
         policy=policy,
         context=context,

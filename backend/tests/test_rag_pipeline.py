@@ -67,7 +67,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'
         )
 
         with (
@@ -113,7 +113,7 @@ class RagPipelineTestCase(unittest.TestCase):
         generator = Mock()
         generator.invoke.side_effect = [
             SimpleNamespace(content="qa"),
-            SimpleNamespace(content='{"answer": "The refund window is 30 days."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'),
         ]
 
         with (
@@ -163,7 +163,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"answer": "The refund window is 30 days."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'),
         ]
 
         with (
@@ -189,7 +189,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"answer": ""}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": ""}'),
         ]
 
         with (
@@ -214,7 +214,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 45 days and includes free returns."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
         )
 
         with (
@@ -238,7 +238,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund period is 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "The refund period is 30 days."}'
         )
 
         with (
@@ -261,7 +261,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "It lasts 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "It lasts 30 days."}'
         )
 
         with (
@@ -283,7 +283,6 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(policy.intent, "qa")
         self.assertEqual(policy.mode, "semantic")
         self.assertEqual(policy.limit, 4)
-        self.assertTrue(policy.enforce_quality_gate)
 
     def test_summary_questions_route_to_head_retrieval_policy(self):
         llm = Mock()
@@ -295,7 +294,6 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(policy.intent, "summary")
         self.assertEqual(policy.mode, "head")
         self.assertEqual(policy.limit, 8)
-        self.assertFalse(policy.enforce_quality_gate)
 
     def test_route_intent_treats_main_points_as_summary(self):
         llm = Mock()
@@ -312,11 +310,12 @@ class RagPipelineTestCase(unittest.TestCase):
             prompt,
         )
         self.assertIn("Do not invent facts", prompt)
+        self.assertIn('"found_in_excerpts": boolean', prompt)
         self.assertNotIn("I couldn't find enough information", prompt)
         self.assertNotIn("Avoid markdown formatting", prompt)
         self.assertNotIn("Use short paragraphs or simple bullets", prompt)
 
-    def test_answer_question_returns_deterministic_fallback_for_low_evidence_retrieval(self):
+    def test_answer_question_returns_deterministic_fallback_when_model_reports_not_found(self):
         vectordb = self._build_vector_store(
             docs=[
                 SimpleNamespace(
@@ -325,10 +324,14 @@ class RagPipelineTestCase(unittest.TestCase):
                 )
             ]
         )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content='{"found_in_excerpts": false, "answer": "The excerpts do not mention refunds."}'
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -385,7 +388,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'
         )
 
         with (
@@ -413,7 +416,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
-            SimpleNamespace(content='{"answer": "It explains benefits and time off."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "It explains benefits and time off."}'),
         ]
 
         with (
@@ -462,7 +465,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
-            SimpleNamespace(content='{"answer": "It explains benefits and time off."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "It explains benefits and time off."}'),
         ]
 
         with (
@@ -483,7 +486,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
-            SimpleNamespace(content='{"answer": "It explains benefits, time-off rules, and stock option grants."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "It explains benefits, time-off rules, and stock option grants."}'),
         ]
 
         with (
@@ -505,7 +508,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
-            SimpleNamespace(content='{"answer": "The handbook covers benefits policy and time-off rules."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The handbook covers benefits policy and time-off rules."}'),
         ]
 
         with (
@@ -529,7 +532,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
             content=(
-                '{"answer": "**Refund window:** 30 days\\n\\n```text\\n'
+                '{"found_in_excerpts": true, "answer": "**Refund window:** 30 days\\n\\n```text\\n'
                 'From the purchase date.\\n```"}'
             )
         )
@@ -557,7 +560,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "```bash\\npip install app\\n```"}'
+            content='{"found_in_excerpts": true, "answer": "```bash\\npip install app\\n```"}'
         )
 
         with (
@@ -605,7 +608,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'
         )
 
         with (
@@ -629,14 +632,10 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(event["citation_count"], 1)
         self.assertEqual(event["missing_citation_count"], 0)
         self.assertEqual(event["citation_completeness_ratio"], 1.0)
-        self.assertEqual(event["question_term_count"], 2)
-        self.assertEqual(event["overlap_term_count"], 2)
-        self.assertEqual(event["required_term_overlap"], 2)
-        self.assertTrue(event["has_sufficient_context"])
         self.assertEqual(event["structured_output_retry_count"], 0)
         self.assertTrue(event["answer_grounded"])
 
-    def test_answer_question_logs_explicit_reason_when_quality_gate_fails(self):
+    def test_answer_question_logs_model_reported_not_found_without_grounding(self):
         vectordb = self._build_vector_store(
             docs=[
                 SimpleNamespace(
@@ -645,24 +644,23 @@ class RagPipelineTestCase(unittest.TestCase):
                 )
             ]
         )
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
 
         event = self._logged_event(logger_mock)
         self.assertEqual(event["answer_status"], "insufficient_context")
-        self.assertEqual(event["fallback_reason_code"], "retrieval_quality_gate_failed")
-        self.assertFalse(event["answer_model_called"])
-        self.assertTrue(event["quality_gate_applied"])
-        self.assertFalse(event["has_sufficient_context"])
-        self.assertEqual(event["overlap_term_count"], 0)
+        self.assertEqual(event["fallback_reason_code"], "model_reported_not_found")
+        self.assertTrue(event["answer_model_called"])
         self.assertEqual(event["structured_output_retry_count"], 0)
         self.assertIsNone(event["answer_grounded"])
-        chat_openai_mock.assert_called_once()
+        self.assertIsNone(event["grounding_failure"])
 
     def test_answer_question_logs_citation_completeness_when_chunk_ids_are_missing(self):
         vectordb = self._build_vector_store(
@@ -704,7 +702,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"answer": ""}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": ""}'),
         ]
 
         with (
@@ -731,7 +729,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 45 days and includes free returns."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
         )
 
         with (
@@ -762,7 +760,7 @@ class RagPipelineTestCase(unittest.TestCase):
         vectordb._collection.count.side_effect = RuntimeError("count unavailable")
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
-            content='{"answer": "The refund window is 30 days."}'
+            content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'
         )
 
         with (
