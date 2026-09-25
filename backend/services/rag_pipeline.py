@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You answer questions using only the provided document excerpts. "
-    "Do not invent facts that are not supported by the excerpts."
+    "Do not invent facts that are not supported by the excerpts. "
+    "A figure may appear under a standard equivalent name, and you may calculate "
+    "a value from figures shown in the excerpts."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (

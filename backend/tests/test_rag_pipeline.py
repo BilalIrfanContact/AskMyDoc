@@ -310,6 +310,7 @@ class RagPipelineTestCase(unittest.TestCase):
             prompt,
         )
         self.assertIn("Do not invent facts", prompt)
+        self.assertIn("standard equivalent name", prompt)
         self.assertIn('"found_in_excerpts": boolean', prompt)
         self.assertNotIn("I couldn't find enough information", prompt)
         self.assertNotIn("Avoid markdown formatting", prompt)
