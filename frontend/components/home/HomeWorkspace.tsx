@@ -101,7 +101,7 @@ export default function HomeWorkspace({
                 {!loadingDocuments && documents.length === 0 ? (
                   <div className="document-empty">
                     <h3>Your library is empty</h3>
-                    <p>Add a PDF or Markdown file to start asking questions.</p>
+                    <p>Add a 10-K, 10-Q or annual report to start asking questions.</p>
                   </div>
                 ) : null}
                 {documents.slice(0, 5).map((document) => (
@@ -135,9 +135,9 @@ export default function HomeWorkspace({
 
               <section className="question-examples" aria-labelledby="question-examples-heading">
                 <h2 id="question-examples-heading">What you can ask</h2>
-                <div className="question-example"><FileIcon /><span>Summarize the key decisions</span></div>
-                <div className="question-example"><MagnifyIcon /><span>Find the termination clause</span></div>
-                <div className="question-example"><MessageIcon /><span>Explain this section in plain language</span></div>
+                <div className="question-example"><FileIcon /><span>What was total revenue last fiscal year?</span></div>
+                <div className="question-example"><MagnifyIcon /><span>What are the main risk factors?</span></div>
+                <div className="question-example"><MessageIcon /><span>How much long-term debt is outstanding?</span></div>
               </section>
             </section>
 
