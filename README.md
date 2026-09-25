@@ -16,7 +16,7 @@ cp -n backend/.env.example backend/.env
 cp -n frontend/.env.example frontend/.env
 ```
 
-Set the OpenAI, Supabase, and auth values in those files. The backend's `INTERNAL_API_SECRET` must match the secret the frontend uses to sign requests. Then start both servers:
+Set the OpenAI, Supabase, and auth values in those files. With the provided templates, set the backend's `INTERNAL_API_SECRET` to the same value as the frontend's `NEXTAUTH_SECRET`; otherwise protected API calls fail. Then start both servers:
 
 ```bash
 ./dev.sh

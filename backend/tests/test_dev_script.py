@@ -51,13 +51,35 @@ class DevScriptTestCase(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             start_new_session=True,
         )
-        self.addCleanup(self.stop, process)
+        self.addCleanup(self.stop, process, self.root)
         return process
 
     @staticmethod
-    def stop(process):
+    def stop(process, root):
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
+        # A broken launcher may leave its separately grouped servers alive.
+        for name in ("uvicorn", "npm"):
+            pid_file = root / (name + ".pid")
+            if not pid_file.exists():
+                continue
+            try:
+                os.killpg(os.getpgid(int(pid_file.read_text())), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            for name in ("uvicorn", "npm"):
+                pid_file = root / (name + ".pid")
+                if not pid_file.exists():
+                    continue
+                try:
+                    os.killpg(os.getpgid(int(pid_file.read_text())), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process.poll() is None:
+                process.kill()
             process.communicate(timeout=5)
 
     def wait_for_servers(self):
@@ -105,6 +127,14 @@ class DevScriptTestCase(unittest.TestCase):
         process.send_signal(signal.SIGINT)
         output, _ = process.communicate(timeout=8)
         self.assertEqual(process.returncode, 130, output)
+        self.assert_server_stopped("uvicorn")
+        self.assert_server_stopped("npm")
+
+    def test_cleanup_stops_servers_if_launcher_dies(self):
+        process = self.start()
+        self.wait_for_servers()
+        process.kill()
+        self.stop(process, self.root)
         self.assert_server_stopped("uvicorn")
         self.assert_server_stopped("npm")
 
