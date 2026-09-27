@@ -7,7 +7,9 @@ Decided before any AskMyDoc run on this corpus. Change a rule only for a reason 
 - A numeric answer passes when it rounds to the expected answer: tolerance is half of the last decimal place shown in the expected answer (93.86 accepts 93.855 to 93.865; 30.8% accepts 30.75% to 30.85%; 9,068 accepts 9,067.5 to 9,068.5).
 - Units are converted before comparing ("$8.74 billion" equals "8,740 million").
 - Commas, currency signs and trailing zeros are ignored when comparing ("$1,577", "1577.00" and "1,577 million" are the same).
+- Numbers that must appear are listed per case in `key_values` (the answer, not its workings); all must match.
 - When a case has `acceptable_answers`, the answer passes if it matches any one of them under the same rule.
+- Negatives written in brackets, like (0.6)%, read as negative. An unsigned number matches a negative expected value (the sign is often given in words); an explicitly signed one must match the sign.
 - This normalisation happens only inside the scorer. The app's answer is never changed, and results keep the original answer text.
 
 ## 2. Yes/no (decided 2026-09-27)
@@ -24,7 +26,8 @@ Decided before any AskMyDoc run on this corpus. Change a rule only for a reason 
 - It sees only the question, the expected answer and AskMyDoc's answer; not the evidence, since the expected answers were verified against the PDFs.
 - Pass requires all of: every key fact in the expected answer is present (strict: all listed facts, not just the main one; extra correct detail is fine), nothing contradicts the expected answer, and the company and period are right.
 - Numbers inside prose are checked by rule 1, never by the grader.
-- The grader's instructions and model are frozen before the first run; changes need a written reason.
+- The grader's instructions and model are frozen before the first run; changes need a written reason. The grader model is `gpt-5.4-nano`, set by `OPENAI_GRADER_MODEL` separately from the app's `OPENAI_CHAT_MODEL`, and recorded in every report.
+- A case may carry a `grader_note` that is shown to the grader (used once: Best Buy stores, where a clearly labelled US-only answer is also acceptable).
 - After the first run, about 10 grader decisions are hand-checked and any errors noted.
 
 ## 4. "Answer 0" case: AES restructuring costs (decided 2026-09-27)
@@ -33,3 +36,8 @@ Applies only to `financebench_id_01319`.
 
 - Passes: "0" or an equivalent statement that no restructuring costs are shown in the income statement, or AskMyDoc's standard insufficient-context fallback.
 - Fails: any restructuring figure, including amounts taken from other pages of the filing (restructuring is mentioned on pages 94, 108 and 193, outside the income statement).
+
+## 5. "Not in the document" cases
+
+- Pass only when AskMyDoc returns its insufficient-context fallback; any answer fails.
+- Reported separately from answerable cases.

@@ -29,6 +29,7 @@ from backend.services.pdf_extractor import extract_pdf_pages
 
 
 DEFAULT_MIN_COVERAGE = 0.9
+SCORING_FIELDS = ("acceptable_answers", "key_values", "scoring", "grader_note")
 _TOKEN_PATTERN = re.compile(r"[a-z]{3,}|\d[\d,]*(?:\.\d+)?")
 
 # (pages, [(chunk_id, text)] in chunk order) for one document.
@@ -115,15 +116,17 @@ def build_case(
 ) -> dict[str, Any]:
     """Return an evaluator case; answerable cases get `gold_chunk_ids` and a `gold_mapping`.
 
-    `acceptable_answers` is copied when present: it lists every value a grader should accept when a
-    question allows more than one standard calculation method.
+    Scoring fields are copied when present: `acceptable_answers` (any one value passes, for questions
+    with two standard methods), `key_values` (numbers the answer must contain), `scoring` (a special
+    rule) and `grader_note` (extra guidance for the prose grader).
     """
     case = {
         key: proposed.get(key)
         for key in ("case_id", "question", "expected", "expected_answer", "answer_format", "question_type", "split", "company", "filing", "source")
     }
-    if proposed.get("acceptable_answers"):
-        case["acceptable_answers"] = proposed["acceptable_answers"]
+    for key in SCORING_FIELDS:
+        if proposed.get(key):
+            case[key] = proposed[key]
     case["document_id"] = document_id
     if proposed.get("expected") == "abstain":
         return case

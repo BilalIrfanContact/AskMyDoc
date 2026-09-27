@@ -18,7 +18,10 @@
       129,
       131
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "-0.02"
+    ]
   },
   {
     "case_id": "financebench_id_00540",
@@ -65,7 +68,8 @@
       131
     ],
     "split": "working",
-    "answer_fix_note": "2026-09-26: confirmed from the PDF. The complete FY2022 Consolidated Statements of Operations is on page 131 and has no restructuring line; 'restructuring' appears only on pages 94, 108 and 193, outside the income statement. Expected answer 0 stands."
+    "answer_fix_note": "2026-09-26: confirmed from the PDF. The complete FY2022 Consolidated Statements of Operations is on page 131 and has no restructuring line; 'restructuring' appears only on pages 94, 108 and 193, outside the income statement. Expected answer 0 stands.",
+    "scoring": "zero_or_not_found"
   },
   {
     "case_id": "askmydoc_abs_adobe_2022_10k",
@@ -101,7 +105,12 @@
     ],
     "split": "working",
     "answer_fix_note": "2026-09-26: expected answer corrected from the PDF (page 53). The original said 'a drop by 2.2%'; the unrounded margins are 36.76% and 34.64%, a drop of 2.12 percentage points (2.2 only when subtracting rounded margins), and '%' would mean a relative drop (about 5.8%).",
-    "original_expected_answer": "No the operating margins of Adobe have recently declined from 36.8% in FY 2021 to 34.6% in FY2022. A drop by 2.2% in a year."
+    "original_expected_answer": "No the operating margins of Adobe have recently declined from 36.8% in FY 2021 to 34.6% in FY2022. A drop by 2.2% in a year.",
+    "key_values": [
+      "36.8%",
+      "34.6%",
+      "2.1 percentage points"
+    ]
   },
   {
     "case_id": "financebench_id_00591",
@@ -120,7 +129,12 @@
     "gold_page": [
       56
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "143%",
+      "156%",
+      "13 percentage points"
+    ]
   },
   {
     "case_id": "askmydoc_abs_amazon_2017_10k",
@@ -156,7 +170,10 @@
       37,
       39
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "93.86"
+    ]
   },
   {
     "case_id": "financebench_id_08135",
@@ -175,7 +192,10 @@
     "gold_page": [
       37
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "30.8%"
+    ]
   },
   {
     "case_id": "askmydoc_abs_amcor_2023_10k",
@@ -211,7 +231,12 @@
     ],
     "split": "working",
     "original_expected_answer": "No. For AMCOR there has been a slight decline in gross margins by 0.8%.",
-    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original said 'a slight decline in gross margins by 0.8%'; the drop is 0.84 percentage points (a relative drop of about 4.3%)."
+    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original said 'a slight decline in gross margins by 0.8%'; the drop is 0.84 percentage points (a relative drop of about 4.3%).",
+    "key_values": [
+      "19.4%",
+      "18.5%",
+      "0.8 percentage points"
+    ]
   },
   {
     "case_id": "financebench_id_00799",
@@ -232,7 +257,11 @@
     ],
     "split": "working",
     "original_expected_answer": "The quick ratio has slightly improved from 0.67 times to 0.69 times between FY 2023 and FY 2022.(3.4% jump)",
-    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original stated the right values but the years in reverse order ('from 0.67 to 0.69 between FY 2023 and FY 2022')."
+    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original stated the right values but the years in reverse order ('from 0.67 to 0.69 between FY 2023 and FY 2022').",
+    "key_values": [
+      "0.67",
+      "0.69"
+    ]
   },
   {
     "case_id": "financebench_id_01079",
@@ -342,7 +371,10 @@
     "gold_page": [
       43
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "-3.0 percentage points"
+    ]
   },
   {
     "case_id": "financebench_id_01964",
@@ -415,7 +447,10 @@
       85
     ],
     "split": "working",
-    "gold_review_note": "Accepted 2026-09-26: all 88 numbers in the quote are in the chosen chunk; the missing words are FinanceBench labels with spaces removed (e.g. 'Transaction-basedrevenue')."
+    "gold_review_note": "Accepted 2026-09-26: all 88 numbers in the quote are in the chosen chunk; the missing words are FinanceBench labels with spaces removed (e.g. 'Transaction-basedrevenue').",
+    "key_values": [
+      "101.5%"
+    ]
   },
   {
     "case_id": "financebench_id_07661",
@@ -437,7 +472,10 @@
     "split": "working",
     "gold_review_note": "Accepted 2026-09-26: all 120 numbers in the quote are in the chosen chunks; the missing words are FinanceBench labels with spaces removed (e.g. 'netcashprovidedbyoperatingactivities').",
     "original_expected_answer": "$382.00",
-    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original $382.00 implied two-decimal precision; the statement shows 381,603 thousand = $381.60 million."
+    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original $382.00 implied two-decimal precision; the statement shows 381,603 thousand = $381.60 million.",
+    "key_values": [
+      "$381.60 million"
+    ]
   },
   {
     "case_id": "askmydoc_abs_boeing_2022_10k",
@@ -509,7 +547,12 @@
     "gold_page": [
       61
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "39%",
+      "35%",
+      "26%"
+    ]
   },
   {
     "case_id": "financebench_id_00585",
@@ -530,7 +573,11 @@
     ],
     "split": "working",
     "original_expected_answer": "Effective tax rate in FY2022 was 0.62%, compared to  -14.76% in FY2021.",
-    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Signs were flipped in the original (0.62% vs -14.76%). Tax expense / pre-tax income gives -0.62% (FY2022) and +14.76% (FY2021), matching Boeing's own reported 'Effective income tax rate (0.6)% 14.8%'."
+    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Signs were flipped in the original (0.62% vs -14.76%). Tax expense / pre-tax income gives -0.62% (FY2022) and +14.76% (FY2021), matching Boeing's own reported 'Effective income tax rate (0.6)% 14.8%'.",
+    "key_values": [
+      "-0.6%",
+      "14.8%"
+    ]
   },
   {
     "case_id": "financebench_id_00678",
@@ -549,7 +596,11 @@
     "gold_page": [
       54
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "4.8%",
+      "5.3%"
+    ]
   },
   {
     "case_id": "financebench_id_01091",
@@ -591,7 +642,10 @@
       9,
       13
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "40%"
+    ]
   },
   {
     "case_id": "askmydoc_abs_cvshealth_2022_10k",
@@ -627,7 +681,10 @@
       107,
       109
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "5.64%"
+    ]
   },
   {
     "case_id": "financebench_id_01107",
@@ -650,7 +707,11 @@
       172,
       173
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "$4.3 billion",
+      "$625 million"
+    ]
   },
   {
     "case_id": "financebench_id_01244",
@@ -669,7 +730,10 @@
     "gold_page": [
       67
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "$0.55"
+    ]
   },
   {
     "case_id": "askmydoc_abs_gis_2018",
@@ -704,7 +768,10 @@
       82
     ],
     "split": "working",
-    "gold_review_note": "Accepted 2026-09-26: all 8 numbers in the quote are in the chosen chunks; only a table row label ('net mark-to-market valuation of certain commodity positions...') is missing."
+    "gold_review_note": "Accepted 2026-09-26: all 8 numbers in the quote are in the chosen chunks; only a table row label ('net mark-to-market valuation of certain commodity positions...') is missing.",
+    "key_values": [
+      "61.9%"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_GIS_2018_02",
@@ -723,7 +790,10 @@
     "gold_page": [
       42
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "22.88%"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_GIS_2018_03",
@@ -743,7 +813,10 @@
       38
     ],
     "split": "working",
-    "gold_fix_note": "2026-09-26: replaced the pdfQA source text, a non-GAAP reconciliation table that does not contain net cash provided by operating activities, with the 'Cash Flows from Operations' table on the same page (zero-indexed PDF page 38), which shows FY2018 net earnings $2,163.0M and net cash provided by operating activities $2,841.0M. 2,163.0 / 2,841.0 = 0.761, matching the expected answer."
+    "gold_fix_note": "2026-09-26: replaced the pdfQA source text, a non-GAAP reconciliation table that does not contain net cash provided by operating activities, with the 'Cash Flows from Operations' table on the same page (zero-indexed PDF page 38), which shows FY2018 net earnings $2,163.0M and net cash provided by operating activities $2,841.0M. 2,163.0 / 2,841.0 = 0.761, matching the expected answer.",
+    "key_values": [
+      "0.761"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_GIS_2018_05",
@@ -762,7 +835,10 @@
     "gold_page": [
       42
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "11.1%"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_GIS_2018_06",
@@ -782,7 +858,10 @@
       58
     ],
     "split": "working",
-    "gold_review_note": "Accepted 2026-09-26: all 15 numbers in the quote are in the chosen chunks; only table header words ('Fair Value Impact', 'In Millions', 'Average during fiscal') are missing."
+    "gold_review_note": "Accepted 2026-09-26: all 15 numbers in the quote are in the chosen chunks; only table header words ('Fair Value Impact', 'In Millions', 'Average during fiscal') are missing.",
+    "key_values": [
+      "58.4"
+    ]
   },
   {
     "case_id": "askmydoc_abs_microsoft_2023_10k",
@@ -816,7 +895,10 @@
     "gold_page": [
       59
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "$2.5 billion"
+    ]
   },
   {
     "case_id": "askmydoc_abs_pepsico_2022_10k",
@@ -890,7 +972,10 @@
     "gold_page": [
       77
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "$411 million"
+    ]
   },
   {
     "case_id": "financebench_id_03620",
@@ -911,7 +996,10 @@
       61,
       63
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "$9,068 million"
+    ]
   },
   {
     "case_id": "financebench_id_04481",
@@ -932,7 +1020,10 @@
       61,
       63
     ],
-    "split": "working"
+    "split": "working",
+    "key_values": [
+      "16.5%"
+    ]
   },
   {
     "case_id": "askmydoc_reworded_financebench_id_00521",
@@ -1004,7 +1095,10 @@
     "gold_page": [
       59
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "$1,577 million"
+    ]
   },
   {
     "case_id": "financebench_id_04672",
@@ -1025,7 +1119,10 @@
     ],
     "split": "test",
     "original_expected_answer": "$8.70",
-    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original $8.70 rounded 8,738 million to one decimal; to two decimals it is $8.74 billion."
+    "answer_fix_note": "2026-09-26: recomputed from the PDF evidence. Original $8.70 rounded 8,738 million to one decimal; to two decimals it is $8.74 billion.",
+    "key_values": [
+      "$8.74 billion"
+    ]
   },
   {
     "case_id": "askmydoc_abs_amd_2022_10k",
@@ -1059,7 +1156,10 @@
     "gold_page": [
       55
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "1.57"
+    ]
   },
   {
     "case_id": "financebench_id_00563",
@@ -1097,7 +1197,10 @@
     "gold_page": [
       11
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "16%"
+    ]
   },
   {
     "case_id": "financebench_id_00917",
@@ -1209,7 +1312,10 @@
       68,
       69
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "24.26"
+    ]
   },
   {
     "case_id": "financebench_id_07966",
@@ -1230,7 +1336,10 @@
       69,
       72
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "1.9%"
+    ]
   },
   {
     "case_id": "askmydoc_abs_bestbuy_2024q2_10q",
@@ -1268,7 +1377,8 @@
     ],
     "split": "test",
     "original_expected_answer": "Yes; 969 versus 982, down 1.32%.",
-    "answer_fix_note": "2026-09-27: the original answer (969 vs 982, down 1.32%) counted only the Domestic (US) store table, while the question asks about all stores. The International (Canada) table on zero-indexed page 18 shows 160 stores in both quarters, so the total is 1,129 vs 1,142. The question stays general; an answer that gives the US-only comparison while saying it covers US stores is also reasonable."
+    "answer_fix_note": "2026-09-27: the original answer (969 vs 982, down 1.32%) counted only the Domestic (US) store table, while the question asks about all stores. The International (Canada) table on zero-indexed page 18 shows 160 stores in both quarters, so the total is 1,129 vs 1,142. The question stays general; an answer that gives the US-only comparison while saying it covers US stores is also reasonable.",
+    "grader_note": "An answer that gives only the US store counts (969 vs 982) is also acceptable if it clearly says those are US stores only."
   },
   {
     "case_id": "askmydoc_reworded_financebench_id_01902",
@@ -1287,7 +1397,10 @@
     "gold_page": [
       17
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "9.0%"
+    ]
   },
   {
     "case_id": "financebench_id_00288",
@@ -1306,7 +1419,10 @@
     "gold_page": [
       19
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "42%"
+    ]
   },
   {
     "case_id": "askmydoc_abs_etr_2009",
@@ -1340,7 +1456,10 @@
     "gold_page": [
       106
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "34.7%"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_ETR_2009_01",
@@ -1359,7 +1478,10 @@
     "gold_page": [
       140
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "71.3%"
+    ]
   },
   {
     "case_id": "pdfqa_finqa_ETR_2009_02",
@@ -1378,7 +1500,10 @@
     "gold_page": [
       20
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "19.8%"
+    ]
   },
   {
     "case_id": "askmydoc_abs_johnson_johnson_2022_10k",
@@ -1412,7 +1537,10 @@
     "gold_page": [
       27
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "1.3%"
+    ]
   },
   {
     "case_id": "financebench_id_00669",
@@ -1568,7 +1696,10 @@
       55,
       22
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "2.77"
+    ]
   },
   {
     "case_id": "askmydoc_reworded_financebench_id_00216",
@@ -1587,7 +1718,10 @@
     "gold_page": [
       55
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "0.54"
+    ]
   },
   {
     "case_id": "financebench_id_00566",
@@ -1606,6 +1740,9 @@
     "gold_page": [
       76
     ],
-    "split": "test"
+    "split": "test",
+    "key_values": [
+      "$229 million"
+    ]
   }
 ]
