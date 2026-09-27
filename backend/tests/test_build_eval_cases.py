@@ -148,6 +148,24 @@ class BuildEvalCasesTestCase(unittest.TestCase):
 
         self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
 
+    def test_a_quote_sharing_nothing_with_the_answer_is_not_gold(self):
+        case = build_case(
+            {
+                "case_id": "ppe-share",
+                "question": "What share of assets was PP&E?",
+                "expected": "answer",
+                "expected_answer": "25,309 of 34,616",
+                "gold_evidence_text": ["Cover page. Annual report pursuant to section 13.", "Accounts payable 25,309 34,616"],
+                "gold_page": [0, 2],
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
+        self.assertTrue(case["gold_mapping"]["evidence"][0]["unused_by_answer"])
+
     def test_abstain_cases_only_get_a_document_id(self):
         case = build_case(
             {"case_id": "absent", "question": "How many Prime members?", "expected": "abstain"},

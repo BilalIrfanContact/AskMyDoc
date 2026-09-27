@@ -186,15 +186,24 @@ def build_case(
     for evidence, page in zip(proposed.get("gold_evidence_text", []), proposed.get("gold_page", [])):
         candidates = [(chunk_id, text) for chunk_id, text in chunks if page in located.get(chunk_id, set())]
         chosen, coverage = select_chunks(evidence, candidates, min_coverage)
-        kept, dropped = keep_answer_chunks(chosen, texts, answer_anchors(proposed, evidence, formula))
+        anchors = answer_anchors(proposed, evidence, formula)
+        kept, dropped = keep_answer_chunks(chosen, texts, anchors)
         result: dict[str, Any] = {"page": page, "chunk_ids": kept, "coverage": coverage}
         if dropped:
             result["dropped_chunk_ids"] = dropped
-        chosen = kept
         if coverage < min_coverage:
             result["best_chunk_anywhere"], result["best_coverage_anywhere"] = _best_anywhere(evidence, chunks)
-        evidence_results.append(result)
-        gold.extend(chunk_id for chunk_id in chosen if chunk_id not in gold)
+        evidence_results.append((result, bool(anchors[0] or anchors[1])))
+
+    # A quote that shares nothing with the answer, in a case whose other quotes do, is a page the
+    # source listed but the answer doesn't use. It stays in the mapping record but isn't gold.
+    any_anchored = any(anchored for _, anchored in evidence_results)
+    for result, anchored in evidence_results:
+        if any_anchored and not anchored:
+            result["unused_by_answer"] = True
+            continue
+        gold.extend(chunk_id for chunk_id in result["chunk_ids"] if chunk_id not in gold)
+    evidence_results = [result for result, _ in evidence_results]
 
     matched = bool(evidence_results) and all(result["coverage"] >= min_coverage for result in evidence_results)
     case["gold_chunk_ids"] = gold
