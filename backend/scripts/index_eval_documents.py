@@ -9,8 +9,8 @@ whose SHA-256 is already in the manifest are skipped, so reruns only index what'
 `--reuse PATH=DOCUMENT_ID` records an already-indexed collection without re-embedding it.
 
     .venv/bin/python -m backend.scripts.index_eval_documents \
-        --corpus evals/financial-filings-corpus/manifest.json \
-        --output evals/financial-filings-corpus/indexed-documents.local.json
+        --corpus evals/financial-filings/manifest.json \
+        --output evals/financial-filings/indexed-documents.local.json
 """
 
 from __future__ import annotations

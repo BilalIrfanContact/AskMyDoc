@@ -1,0 +1,305 @@
+{
+  "description": "The 20 filings in the financial filings eval, pinned by URL and SHA-256. PDFs are downloaded locally, not committed.",
+  "pdf_count": 20,
+  "total_bytes": 40945192,
+  "documents": [
+    {
+      "source": "financebench",
+      "company": "3M",
+      "filing": "10-K FY2018",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/3M_2018_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/3M_2018_10K.pdf",
+      "bytes": 1252586,
+      "sha256": "faf10c53fc6f1a8aa346ec3db79145e3ae6fbb3753c8064924e174d0a973934d",
+      "pages": 160,
+      "cases": {
+        "abstain": 1,
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Activision Blizzard",
+      "filing": "10-K FY2019",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/ACTIVISIONBLIZZARD_2019_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/ACTIVISIONBLIZZARD_2019_10K.pdf",
+      "bytes": 1274941,
+      "sha256": "017f1bbc1e37f2945a41fa2b5cf39d822e1e9d435a2c2b9c6b1cc76cd114a2df",
+      "pages": 198,
+      "cases": {
+        "abstain": 1,
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Adobe",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/ADOBE_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/ADOBE_2022_10K.pdf",
+      "bytes": 620288,
+      "sha256": "ce8c716abac26bfa38ae6b71d703112852c8591a4bb19f7c1177beb1dfc87ad2",
+      "pages": 99,
+      "cases": {
+        "abstain": 1,
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "AES Corporation",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/AES_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/AES_2022_10K.pdf",
+      "bytes": 4479324,
+      "sha256": "9c5de2227534c4d6bf3d805f635bad5d82eddf8e4183a85a3d1311b48b50291d",
+      "pages": 257,
+      "cases": {
+        "answer": 3
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Amazon",
+      "filing": "10-K FY2017",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/AMAZON_2017_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/AMAZON_2017_10K.pdf",
+      "bytes": 627047,
+      "sha256": "f8af08ff6c4147351ec3a6e5e2c74e104678ce68fb0d6d476b1e43f685c09a3f",
+      "pages": 85,
+      "cases": {
+        "abstain": 1,
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Amcor",
+      "filing": "10-K FY2023",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/AMCOR_2023_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/AMCOR_2023_10K.pdf",
+      "bytes": 1108309,
+      "sha256": "84d7a0291a12f4e68352750dccda3754c78eefdf06e0b5462046357a1ed53332",
+      "pages": 156,
+      "cases": {
+        "abstain": 1,
+        "answer": 4
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "AMD",
+      "filing": "10-K FY2022",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/AMD_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/AMD_2022_10K.pdf",
+      "bytes": 5122473,
+      "sha256": "a3bd74088fae0ad4aa03d04998a1f4c64fd0b3c693841601b0ac49b46cf5c1f4",
+      "pages": 121,
+      "cases": {
+        "abstain": 1,
+        "answer": 7
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "American Express",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/AMERICANEXPRESS_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/AMERICANEXPRESS_2022_10K.pdf",
+      "bytes": 2436166,
+      "sha256": "d3bbc7ab23d6160e07eab50a359e4d68c40efff9fde3baa168e7c40e06f568e6",
+      "pages": 260,
+      "cases": {
+        "abstain": 1,
+        "answer": 5
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Best Buy",
+      "filing": "10-Q Q2 FY2024",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/BESTBUY_2024Q2_10Q.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/BESTBUY_2024Q2_10Q.pdf",
+      "bytes": 442386,
+      "sha256": "cf9efb922bdd28d726d7e1605c5fa1f263dda72e033989e3bc9ee3a3bb356c03",
+      "pages": 30,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Block",
+      "filing": "10-K FY2020",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/BLOCK_2020_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/BLOCK_2020_10K.pdf",
+      "bytes": 1159158,
+      "sha256": "c19a9fb25db3270e3a908c202855f4a54f000a06bf19a8b284331810228646fe",
+      "pages": 158,
+      "cases": {
+        "abstain": 1,
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Boeing",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/BOEING_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/BOEING_2022_10K.pdf",
+      "bytes": 1366995,
+      "sha256": "09285ff7ee737d3302977104aa05cc53c9dfb0161f3461a89b583dc38b9f2ab6",
+      "pages": 190,
+      "cases": {
+        "abstain": 1,
+        "answer": 7
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "CVS Health",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/CVSHEALTH_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/CVSHEALTH_2022_10K.pdf",
+      "bytes": 1898137,
+      "sha256": "183c196a41793cd50002ff6b88f8c6d32e4fcb1117ab490a732414e1208cda8f",
+      "pages": 213,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Johnson & Johnson",
+      "filing": "10-K FY2022",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/JOHNSON_JOHNSON_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/JOHNSON_JOHNSON_2022_10K.pdf",
+      "bytes": 1941368,
+      "sha256": "dba7d6cc97734abd6dcbc1a6a34f82b5d228e60d0a1a32425a90404fd4d3e290",
+      "pages": 151,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Microsoft",
+      "filing": "10-K FY2023",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/MICROSOFT_2023_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/MICROSOFT_2023_10K.pdf",
+      "bytes": 726155,
+      "sha256": "e534af371c824aab19b8d01f8bc0e9d1e0a3fb418a33119c5224a53d20a0d37b",
+      "pages": 116,
+      "cases": {
+        "abstain": 1,
+        "answer": 1
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "PepsiCo",
+      "filing": "10-K FY2022",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/PEPSICO_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/PEPSICO_2022_10K.pdf",
+      "bytes": 2993516,
+      "sha256": "7d8a9f3374e429c58f101319e2da8a0e601a89859e1e4f6854163dd5f8ce6b47",
+      "pages": 503,
+      "cases": {
+        "abstain": 1,
+        "answer": 5
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Pfizer",
+      "filing": "10-K FY2021",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/PFIZER_2021_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/PFIZER_2021_10K.pdf",
+      "bytes": 1171782,
+      "sha256": "ff3307d5f633c5dbe59a976f5ff5e086af04ba5a5135f2b6411c89538a22a665",
+      "pages": 143,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Ulta Beauty",
+      "filing": "10-K FY2023",
+      "split": "working",
+      "path": "evals/financial-filings/documents/financebench/ULTABEAUTY_2023_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/ULTABEAUTY_2023_10K.pdf",
+      "bytes": 4954215,
+      "sha256": "cdf2ebcfbc2eb9ecf880126d38b186cac1f683dae5bcb50cad15176bfc449ff4",
+      "pages": 105,
+      "cases": {
+        "answer": 2
+      }
+    },
+    {
+      "source": "financebench",
+      "company": "Verizon",
+      "filing": "10-K FY2022",
+      "split": "test",
+      "path": "evals/financial-filings/documents/financebench/VERIZON_2022_10K.pdf",
+      "url": "https://raw.githubusercontent.com/patronus-ai/financebench/cc39aeb4afdf33909ee1412188bf89035950c2eb/pdfs/VERIZON_2022_10K.pdf",
+      "bytes": 2315268,
+      "sha256": "403d7346e8a059472863d1789527f16e5127a61c2f6c4429012e6227f27576d7",
+      "pages": 124,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "finqa",
+      "company": "Entergy",
+      "filing": "Annual report FY2009",
+      "split": "test",
+      "path": "evals/financial-filings/documents/finqa/ETR_2009.pdf",
+      "url": "https://huggingface.co/datasets/pdfqa/pdfQA-Benchmark/resolve/90f787ebee0ba278bd6b8b750a69ed90386bfdf5/real-pdfQA/01.2_Input_Files_PDF/FinQA/ETR_2009.pdf",
+      "bytes": 1373907,
+      "sha256": "81c04f7f3d3edf5375e910d32ff6116114347733870bed9865587f817c5559b9",
+      "pages": 154,
+      "cases": {
+        "abstain": 1,
+        "answer": 3
+      }
+    },
+    {
+      "source": "finqa",
+      "company": "General Mills",
+      "filing": "Annual report FY2018",
+      "split": "working",
+      "path": "evals/financial-filings/documents/finqa/GIS_2018.pdf",
+      "url": "https://huggingface.co/datasets/pdfqa/pdfQA-Benchmark/resolve/90f787ebee0ba278bd6b8b750a69ed90386bfdf5/real-pdfQA/01.2_Input_Files_PDF/FinQA/GIS_2018.pdf",
+      "bytes": 3681171,
+      "sha256": "d816e9ddf80c1e108ffa424175b55c0cd9d9cf13ab82218cc2e6509c0fbd421c",
+      "pages": 130,
+      "cases": {
+        "abstain": 1,
+        "answer": 5
+      }
+    }
+  ]
+}

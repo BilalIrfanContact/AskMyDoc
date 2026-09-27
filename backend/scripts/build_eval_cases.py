@@ -11,9 +11,9 @@ so a person can check it. After checking, add a `gold_review_note` to the propos
 it `accepted` on every rerun. Rerun after re-indexing: chunk IDs are recomputed, never hand-kept.
 
     .venv/bin/python -m backend.scripts.build_eval_cases \
-        --proposed evals/financial-filings-corpus/proposed-cases.json \
-        --indexed evals/financial-filings-corpus/indexed-documents.local.json \
-        --output evals/financial-filings-corpus/cases.local.json
+        --proposed evals/financial-filings/cases.json \
+        --indexed evals/financial-filings/indexed-documents.local.json \
+        --output evals/financial-filings/cases.local.json
 """
 
 from __future__ import annotations

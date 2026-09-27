@@ -1,0 +1,216 @@
+{
+  "date": "2026-09-26",
+  "method": "Every answerable case whose expected numbers do not appear verbatim in its evidence was recomputed from the evidence figures. Cases whose numbers appear verbatim in the evidence were accepted by an automatic check.",
+  "cases": [
+    {
+      "case_id": "ed_financebench_id_00216",
+      "formula": "(37,857 - 2,388 - 8,358) / 50,171",
+      "result": "0.540",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "ed_financebench_id_00222",
+      "formula": "(4,835 + 1,020 + 4,126 + 2) / 6,369",
+      "result": "1.567",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "ed_financebench_id_00460",
+      "formula": "(982 - 969) / 982 domestic stores",
+      "result": "1.32%",
+      "verdict": "fixed 2026-09-27: answer now counts all stores (1,129 vs 1,142); Canada table added as evidence"
+    },
+    {
+      "case_id": "ed_financebench_id_00790",
+      "formula": "12,873 / 228,275",
+      "result": "5.64%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00288",
+      "formula": "(1,874 - 1,093) / 1,874",
+      "result": "41.7%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00517",
+      "formula": "25,867 | 23,162 | 17,611 / 66,608",
+      "result": "38.8% | 34.8% | 26.4%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00552",
+      "formula": "(5,247 + 41,990) - (2,749 + 47,032)",
+      "result": "-2,544",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00566",
+      "formula": "150,639 - 150,868",
+      "result": "-229",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00585",
+      "formula": "31 / -5,022 ; -743 / -5,033",
+      "result": "-0.62% ; 14.76%",
+      "verdict": "fixed: signs flipped"
+    },
+    {
+      "case_id": "financebench_id_00591",
+      "formula": "(7,838 - 442) / 4,756 ; (7,230 - 348) / 4,822",
+      "result": "155.5% ; 142.7%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00438",
+      "formula": "6,098 / 17,606 ; 5,802 / 15,785",
+      "result": "34.64% ; 36.76%",
+      "verdict": "fixed earlier: 2.1 percentage points"
+    },
+    {
+      "case_id": "financebench_id_00678",
+      "formula": "3,502 / 66,608 ; 3,017 / 62,286",
+      "result": "5.26% ; 4.84%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00684",
+      "formula": "2,725 / 14,694 ; 2,820 / 14,544",
+      "result": "18.55% ; 19.39%",
+      "verdict": "fixed: percentage points"
+    },
+    {
+      "case_id": "financebench_id_00799",
+      "formula": "(5,308 - 992 - 1,221) / 4,476 ; (5,853 - 1,114 - 1,325) / 5,103",
+      "result": "0.691 ; 0.669",
+      "verdict": "fixed: year order"
+    },
+    {
+      "case_id": "financebench_id_03838",
+      "formula": "9,497,578 / 4,713,500 - 1",
+      "result": "101.50%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_08135",
+      "formula": "177,866 / 135,987 - 1",
+      "result": "30.80%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_04672",
+      "formula": "8,738 million",
+      "result": "$8.74B",
+      "verdict": "fixed: was $8.70"
+    },
+    {
+      "case_id": "financebench_id_07661",
+      "formula": "381,603 thousand",
+      "result": "$381.60M",
+      "verdict": "fixed: was $382.00"
+    },
+    {
+      "case_id": "pdfqa_finqa_ETR_2009_00",
+      "formula": "114,400 / 329,500",
+      "result": "34.72%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_ETR_2009_01",
+      "formula": "727 / 1,020",
+      "result": "71.27%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_ETR_2009_02",
+      "formula": "98 / (2,334 - 1,839)",
+      "result": "19.80%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_GIS_2018_00",
+      "formula": "147.9 / 238.8",
+      "result": "61.93%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_GIS_2018_02",
+      "formula": "4,492.1 / 19,637.5",
+      "result": "22.88%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_GIS_2018_03",
+      "formula": "2,163.0 / 2,841.0",
+      "result": "0.761",
+      "verdict": "ok (evidence replaced earlier)"
+    },
+    {
+      "case_id": "pdfqa_finqa_GIS_2018_05",
+      "formula": "1,599.8 / 14,354.0",
+      "result": "11.15%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "pdfqa_finqa_GIS_2018_06",
+      "formula": "33.2 + 21.3 + 1.9 + 2.0",
+      "result": "58.4",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "ed_financebench_id_00215",
+      "formula": "379,680 / 136,835",
+      "result": "2.775",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "ed_financebench_id_10420",
+      "formula": "-546 / ((38,363 + 32,963) / 2)",
+      "result": "-0.015",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_00540",
+      "formula": "10,069 / 1,055 (year-end inventory)",
+      "result": "9.54",
+      "verdict": "decided 2026-09-27: question kept as asked; either 9.5 (year-end) or 12.1 (average) accepted"
+    },
+    {
+      "case_id": "financebench_id_00711",
+      "formula": "31,089 / ((12,483 + 10,387) / 2) (average inventory)",
+      "result": "2.72",
+      "verdict": "decided 2026-09-27: question kept as asked; either 2.7 (average) or 2.5 (year-end) accepted"
+    },
+    {
+      "case_id": "financebench_id_02987",
+      "formula": "6,489 / ((253 + 282) / 2)",
+      "result": "24.26",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_03620",
+      "formula": "11,512 + 2,763 - 5,207",
+      "result": "9,068",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_04481",
+      "formula": "(11,512 + 2,763) / 86,392",
+      "result": "16.52%",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_06655",
+      "formula": "365 * ((25,309 + 34,616) / 2) / (111,934 + (16,047 - 11,461))",
+      "result": "93.857",
+      "verdict": "ok"
+    },
+    {
+      "case_id": "financebench_id_07966",
+      "formula": "mean(116 / 6,489, 131 / 7,500, 155 / 7,017)",
+      "result": "1.92%",
+      "verdict": "ok"
+    }
+  ]
+}
