@@ -113,11 +113,17 @@ def build_case(
     chunks: list[tuple[str, str]],
     min_coverage: float = DEFAULT_MIN_COVERAGE,
 ) -> dict[str, Any]:
-    """Return an evaluator case; answerable cases get `gold_chunk_ids` and a `gold_mapping`."""
+    """Return an evaluator case; answerable cases get `gold_chunk_ids` and a `gold_mapping`.
+
+    `acceptable_answers` is copied when present: it lists every value a grader should accept when a
+    question allows more than one standard calculation method.
+    """
     case = {
         key: proposed.get(key)
         for key in ("case_id", "question", "expected", "expected_answer", "answer_format", "question_type", "split", "company", "filing", "source")
     }
+    if proposed.get("acceptable_answers"):
+        case["acceptable_answers"] = proposed["acceptable_answers"]
     case["document_id"] = document_id
     if proposed.get("expected") == "abstain":
         return case

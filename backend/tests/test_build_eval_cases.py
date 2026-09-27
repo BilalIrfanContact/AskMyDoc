@@ -45,6 +45,7 @@ class BuildEvalCasesTestCase(unittest.TestCase):
                 "expected": "answer",
                 "gold_evidence_text": ["Accounts payable $ 25,309 $ 34,616"],
                 "gold_page": [2],
+                "acceptable_answers": ["93.86", "94.10"],
             },
             "doc",
             PAGES,
@@ -54,6 +55,7 @@ class BuildEvalCasesTestCase(unittest.TestCase):
         self.assertEqual(case["document_id"], "doc")
         self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
         self.assertEqual(case["gold_mapping"]["status"], "matched")
+        self.assertEqual(case["acceptable_answers"], ["93.86", "94.10"])
 
     def test_build_case_flags_review_and_points_elsewhere_when_the_page_lacks_the_evidence(self):
         case = build_case(
