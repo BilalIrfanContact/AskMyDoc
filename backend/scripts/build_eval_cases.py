@@ -13,7 +13,8 @@ it `accepted` on every rerun. Rerun after re-indexing: chunk IDs are recomputed,
     .venv/bin/python -m backend.scripts.build_eval_cases \
         --proposed evals/financial-filings/cases.json \
         --indexed evals/financial-filings/indexed-documents.local.json \
-        --output evals/financial-filings/cases.local.json
+        --output evals/financial-filings/cases.local.json \
+        --recomputes evals/financial-filings/verification/answer-recomputes.json
 """
 
 from __future__ import annotations
@@ -99,6 +100,52 @@ def select_chunks(
     return chosen, round(len(covered) / len(wanted), 3)
 
 
+_STOPWORDS = {
+    "the", "and", "for", "from", "with", "that", "this", "was", "were", "are", "its", "their", "has", "have",
+    "had", "about", "which", "than", "into", "over", "per", "all", "not", "but", "any", "our", "also",
+    "yes", "fiscal", "year", "years", "company", "total", "million", "billion", "percent", "percentage", "points",
+}
+
+
+def answer_anchors(proposed: dict[str, Any], evidence: str, formula: str = "") -> tuple[set[str], set[str]]:
+    """Numbers and distinctive words from the expected answer that also appear in this evidence.
+
+    These mark which part of a long evidence quote actually answers the question. `formula` is the
+    recomputation of a calculated answer; its input figures are anchors too.
+    """
+    answer_tokens = tokens(" ".join([str(proposed.get("expected_answer") or ""), *proposed.get("key_values", []), formula]))
+    shared = answer_tokens & tokens(evidence)
+    numbers = {token for token in shared if token[0].isdigit() and not (len(token) == 4 and token.startswith(("19", "20")))}
+    words = {token for token in shared if token[0].isalpha()} - tokens(proposed.get("question") or "") - _STOPWORDS
+    return numbers, words
+
+
+def keep_answer_chunks(
+    chosen: list[str],
+    texts: dict[str, str],
+    anchors: tuple[set[str], set[str]],
+) -> tuple[list[str], list[str]]:
+    """Keep only chunks that hold an anchor: one number, or (with no number anchors) two words.
+
+    Evidence quotes are sometimes a whole page, and covering every word pulls in chunks that don't
+    hold the answer. With no anchors, or if nothing would be kept, the selection is left unchanged.
+    """
+    numbers, words = anchors
+    if not numbers and len(words) < 2:
+        return chosen, []
+
+    def holds_answer(chunk_id: str) -> bool:
+        chunk_tokens = tokens(texts[chunk_id])
+        if numbers:
+            return bool(numbers & chunk_tokens)
+        return len(words & chunk_tokens) >= 2
+
+    kept = [chunk_id for chunk_id in chosen if holds_answer(chunk_id)]
+    if not kept:
+        return chosen, []
+    return kept, [chunk_id for chunk_id in chosen if chunk_id not in kept]
+
+
 def _best_anywhere(evidence: str, chunks: list[tuple[str, str]]) -> tuple[str | None, float]:
     wanted = tokens(evidence)
     if not wanted or not chunks:
@@ -113,6 +160,7 @@ def build_case(
     pages: list[str],
     chunks: list[tuple[str, str]],
     min_coverage: float = DEFAULT_MIN_COVERAGE,
+    formula: str = "",
 ) -> dict[str, Any]:
     """Return an evaluator case; answerable cases get `gold_chunk_ids` and a `gold_mapping`.
 
@@ -132,12 +180,17 @@ def build_case(
         return case
 
     located = chunk_pages(pages, chunks)
+    texts = dict(chunks)
     gold: list[str] = []
     evidence_results = []
     for evidence, page in zip(proposed.get("gold_evidence_text", []), proposed.get("gold_page", [])):
         candidates = [(chunk_id, text) for chunk_id, text in chunks if page in located.get(chunk_id, set())]
         chosen, coverage = select_chunks(evidence, candidates, min_coverage)
-        result: dict[str, Any] = {"page": page, "chunk_ids": chosen, "coverage": coverage}
+        kept, dropped = keep_answer_chunks(chosen, texts, answer_anchors(proposed, evidence, formula))
+        result: dict[str, Any] = {"page": page, "chunk_ids": kept, "coverage": coverage}
+        if dropped:
+            result["dropped_chunk_ids"] = dropped
+        chosen = kept
         if coverage < min_coverage:
             result["best_chunk_anywhere"], result["best_coverage_anywhere"] = _best_anywhere(evidence, chunks)
         evidence_results.append(result)
@@ -170,6 +223,7 @@ def build_cases(
     *,
     load_document: DocumentLoader = _load_document,
     min_coverage: float = DEFAULT_MIN_COVERAGE,
+    formulas: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     by_filename = {Path(entry["path"]).name: entry for entry in indexed_documents}
     cache: dict[str, tuple[list[str], list[tuple[str, str]]]] = {}
@@ -190,7 +244,8 @@ def build_cases(
             print(f"loading {filename}", file=sys.stderr)
             cache[document_id] = load_document(entry["path"], document_id)
         pages, chunks = cache[document_id]
-        cases.append(build_case(proposed, document_id, pages, chunks, min_coverage))
+        formula = (formulas or {}).get(proposed["case_id"], "")
+        cases.append(build_case(proposed, document_id, pages, chunks, min_coverage, formula))
 
     review = [case["case_id"] for case in cases if case.get("gold_mapping", {}).get("status") == "review"]
     return {
@@ -208,16 +263,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--indexed", required=True, help="Manifest written by index_eval_documents.")
     parser.add_argument("--output", required=True, help="Where to write the evaluator case file.")
     parser.add_argument("--min-coverage", type=float, default=DEFAULT_MIN_COVERAGE)
+    parser.add_argument("--recomputes", help="Answer recompute record; formula inputs mark which chunks hold the answer.")
     args = parser.parse_args(argv)
 
     try:
         proposed = json.loads(Path(args.proposed).read_text(encoding="utf-8"))
         indexed = json.loads(Path(args.indexed).read_text(encoding="utf-8"))["documents"]
+        formulas = {}
+        if args.recomputes:
+            record = json.loads(Path(args.recomputes).read_text(encoding="utf-8"))
+            formulas = {row["case_id"]: row["formula"] for row in record["cases"]}
     except (OSError, KeyError, ValueError) as exc:
         print(f"Building cases failed: {exc}", file=sys.stderr)
         return 1
 
-    report = build_cases(proposed, indexed, min_coverage=args.min_coverage)
+    report = build_cases(proposed, indexed, min_coverage=args.min_coverage, formulas=formulas)
     Path(args.output).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
         f"Wrote {report['case_count']} cases to {args.output}; "

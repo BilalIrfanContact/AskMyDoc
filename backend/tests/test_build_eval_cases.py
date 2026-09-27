@@ -95,6 +95,59 @@ class BuildEvalCasesTestCase(unittest.TestCase):
         self.assertEqual(case["gold_mapping"]["status"], "accepted")
         self.assertEqual(case["gold_mapping"]["review_note"], "Numbers all match; the quote glues words together.")
 
+    def test_chunks_without_the_answer_are_dropped_from_a_whole_page_quote(self):
+        case = build_case(
+            {
+                "case_id": "payables",
+                "question": "What were accounts payable?",
+                "expected": "answer",
+                "expected_answer": "$25,309 million",
+                "gold_evidence_text": ["Accounts payable 25,309 34,616 Inventories 11,461 16,047"],
+                "gold_page": [2],
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
+        self.assertEqual(case["gold_mapping"]["evidence"][0]["dropped_chunk_ids"], ["doc:chunk:2"])
+
+    def test_calculated_answers_without_anchors_keep_every_selected_chunk(self):
+        case = build_case(
+            {
+                "case_id": "dpo",
+                "question": "What is DPO?",
+                "expected": "answer",
+                "expected_answer": "93.86",
+                "gold_evidence_text": ["Accounts payable 25,309 34,616 Inventories 11,461 16,047"],
+                "gold_page": [2],
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1", "doc:chunk:2"])
+
+    def test_recompute_inputs_anchor_a_calculated_answer(self):
+        case = build_case(
+            {
+                "case_id": "dpo",
+                "question": "What is DPO?",
+                "expected": "answer",
+                "expected_answer": "93.86",
+                "gold_evidence_text": ["Accounts payable 25,309 34,616 Inventories 11,461 16,047"],
+                "gold_page": [2],
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+            formula="365 * ((25,309 + 34,616) / 2)",
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
+
     def test_abstain_cases_only_get_a_document_id(self):
         case = build_case(
             {"case_id": "absent", "question": "How many Prime members?", "expected": "abstain"},

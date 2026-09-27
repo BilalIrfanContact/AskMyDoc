@@ -3,25 +3,25 @@
   "method": "Every answerable case whose expected numbers do not appear verbatim in its evidence was recomputed from the evidence figures. Cases whose numbers appear verbatim in the evidence were accepted by an automatic check.",
   "cases": [
     {
-      "case_id": "ed_financebench_id_00216",
+      "case_id": "askmydoc_reworded_financebench_id_00216",
       "formula": "(37,857 - 2,388 - 8,358) / 50,171",
       "result": "0.540",
       "verdict": "ok"
     },
     {
-      "case_id": "ed_financebench_id_00222",
+      "case_id": "askmydoc_reworded_financebench_id_00222",
       "formula": "(4,835 + 1,020 + 4,126 + 2) / 6,369",
       "result": "1.567",
       "verdict": "ok"
     },
     {
-      "case_id": "ed_financebench_id_00460",
+      "case_id": "askmydoc_reworded_financebench_id_00460",
       "formula": "(982 - 969) / 982 domestic stores",
       "result": "1.32%",
       "verdict": "fixed 2026-09-27: answer now counts all stores (1,129 vs 1,142); Canada table added as evidence"
     },
     {
-      "case_id": "ed_financebench_id_00790",
+      "case_id": "askmydoc_reworded_financebench_id_00790",
       "formula": "12,873 / 228,275",
       "result": "5.64%",
       "verdict": "ok"
@@ -159,13 +159,13 @@
       "verdict": "ok"
     },
     {
-      "case_id": "ed_financebench_id_00215",
+      "case_id": "askmydoc_reworded_financebench_id_00215",
       "formula": "379,680 / 136,835",
       "result": "2.775",
       "verdict": "ok"
     },
     {
-      "case_id": "ed_financebench_id_10420",
+      "case_id": "askmydoc_reworded_financebench_id_10420",
       "formula": "-546 / ((38,363 + 32,963) / 2)",
       "result": "-0.015",
       "verdict": "ok"
