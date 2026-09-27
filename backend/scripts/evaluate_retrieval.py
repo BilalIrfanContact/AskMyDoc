@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 
 from backend.bootstrap import initialize_backend_environment
-from backend.services.rag_adapters import ChromaRetrievalAdapter
+from backend.services.evidence_planner import plan_evidence
+from backend.services.rag_adapters import ChromaRetrievalAdapter, OpenAIChatAdapter
 from backend.services.vector_store import get_vector_store
 
 
@@ -98,11 +101,12 @@ def evaluate_cases(
         status = "completed" if successful_count == len(normalized_limits) else (
             "partial" if successful_count else "failed"
         )
-        case_results.append(
-            {"case_id": case_id, "status": status, "document_id": document_id,
-             "question": question, "retrieved_document_count": retrieved_document_count,
-             "results": results}
-        )
+        case_result = {"case_id": case_id, "status": status, "document_id": document_id,
+                       "question": question, "retrieved_document_count": retrieved_document_count,
+                       "results": results}
+        if getattr(retriever, "last_plan", None) is not None:
+            case_result["planned_needs"] = retriever.last_plan
+        case_results.append(case_result)
 
     summary = {}
     completed = [case for case in case_results if case["status"] == "completed"]
@@ -164,16 +168,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Top-k limits to measure (default: 4 8).",
     )
     parser.add_argument("--output", help="Write the JSON report to this path instead of stdout.")
+    parser.add_argument("--hybrid", action="store_true", help="Merge keyword (BM25) and embedding rankings.")
+    parser.add_argument("--planner", action="store_true", help="Also search for each evidence need a model lists.")
     args = parser.parse_args(argv)
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     initialize_backend_environment()
 
+    planner = None
+    if args.planner:
+        generator = OpenAIChatAdapter(ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano"), temperature=0))
+        planner = lambda question: plan_evidence(question, generator)
+
     try:
         report = evaluate_cases(
             _load_cases(args.cases),
             retriever_factory=lambda document_id: ChromaRetrievalAdapter(
-                get_vector_store(document_id)
+                get_vector_store(document_id), hybrid=args.hybrid, planner=planner
             ),
             limits=args.limits,
         )
