@@ -25,7 +25,8 @@ INSUFFICIENT_CONTEXT_ANSWER = (
     "I couldn't find enough information in the document to answer that question."
 )
 _STRUCTURED_OUTPUT_RETRY_LIMIT = 2
-DEFAULT_QA_CONTEXT_LIMIT = 4
+# The most chunks a QA question may send to the answer model; the evidence reranker picks how many.
+DEFAULT_QA_CONTEXT_LIMIT = 10
 _ANSWER_JSON_SHAPE = '{"found_in_excerpts": boolean, "answer": string}'
 _STRUCTURED_OUTPUT_INSTRUCTION = (
     f"Return only valid JSON with this exact shape: {_ANSWER_JSON_SHAPE}. "
@@ -431,11 +432,13 @@ def _default_generation_adapter() -> GenerationAdapter:
 def _default_dependencies() -> RagDependencies:
     from .rag_adapters import ChromaRetrievalAdapter
 
+    generation = _default_generation_adapter()
     return RagDependencies(
         retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
             get_vector_store(document_id=document_id),
+            reranker=generation,
         ),
-        generation=_default_generation_adapter(),
+        generation=generation,
     )
 
 
@@ -560,7 +563,7 @@ def answer_question(
 ) -> AnswerDecision:
     """Answer a question about one document.
 
-    `qa_limit` is how many semantic chunks QA questions send to the answer model.
+    `qa_limit` is the most semantic chunks a QA question may send to the answer model.
     The app uses the default; evaluation scripts override it to compare context sizes.
     """
     active_dependencies = dependencies or _default_dependencies()
