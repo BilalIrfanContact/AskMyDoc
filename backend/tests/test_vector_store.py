@@ -43,8 +43,8 @@ class VectorStoreTestCase(unittest.TestCase):
         self.assertEqual(
             added["metadatas"],
             [
-                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0, "label": "Balance sheet"},
-                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1, "label": ""},
+                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0, "label": "Balance sheet", "document_title": "Acme 10-K"},
+                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1, "label": "", "document_title": "Acme 10-K"},
             ],
         )
 

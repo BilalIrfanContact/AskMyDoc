@@ -8,11 +8,12 @@ from langchain_chroma import Chroma
 
 from ..bootstrap import apply_runtime_defaults
 from .chunk_labels import DocumentLabels, embedding_text, label_document
+from .ai_providers import embedding_model_name
 from .embedder import get_embedding_model
 
 
 PERSIST_DIRECTORY = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
-# Labelled chunks run ~800 tokens, so 100 per request stays well under the 300k-token cap.
+# Labelled chunks run ~800 tokens, so 100 per request stays far below per-request token caps.
 EMBED_BATCH_SIZE = 100
 
 
@@ -46,7 +47,8 @@ def prepare_index_payload(
     """Label and embed chunks without touching the store.
 
     Chroma keeps each chunk's original text; the embedding is of the chunk with its document title
-    and label (see `chunk_labels`). The label is kept in metadata for the evidence reranker.
+    and label (see `chunk_labels`). The label is kept in metadata for the evidence reranker, and the
+    title too, so the document can be re-embedded later without generating either again.
     """
     labels = label_fn(chunks)
     ids = [f"{document_id}:chunk:{index}" for index, _ in enumerate(chunks)]
@@ -55,7 +57,7 @@ def prepare_index_payload(
         for label, chunk in zip(labels.labels, chunks)
     ]
     metadatas = [
-        {"chunk_id": chunk_id, "chunk_index": index, "label": label}
+        {"chunk_id": chunk_id, "chunk_index": index, "label": label, "document_title": labels.title}
         for index, (chunk_id, label) in enumerate(zip(ids, labels.labels))
     ]
     return IndexPayload(
@@ -67,7 +69,7 @@ def prepare_index_payload(
 
 
 def _embed_in_batches(texts: List[str]) -> list[list[float]]:
-    """Embed in batches small enough to stay under OpenAI's per-request token cap."""
+    """Embed in batches of `EMBED_BATCH_SIZE`, keeping each request well under provider token caps."""
     model = get_embedding_model()
     vectors: list[list[float]] = []
     for start in range(0, len(texts), EMBED_BATCH_SIZE):
@@ -79,7 +81,7 @@ def write_index_payload(document_id: str, payload: IndexPayload) -> int:
     """Create the document's collection from a prepared payload and return its stored count."""
     _disable_chroma_telemetry()
     client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())
-    collection = client.create_collection(name=document_id)
+    collection = client.create_collection(name=document_id, metadata={"embedding_model": embedding_model_name()})
     collection.add(
         ids=payload.ids,
         documents=payload.documents,
@@ -143,8 +145,24 @@ def build_vector_store(
     return write_index_payload(document_id, prepare_index_payload(document_id, chunks, label_fn))
 
 
+class StaleEmbeddings(RuntimeError):
+    """The document was embedded with a different model than the one questions are embedded with."""
+
+
 def get_vector_store(document_id: str) -> Chroma:
+    """Open a document's collection for search, refusing one embedded with another model.
+
+    Vectors from different embedding models can't be compared, so such a document must be re-embedded
+    first (`backend/scripts/reindex_documents.py --reembed`). Collections created before the model was
+    recorded were embedded with OpenAI's `text-embedding-3-large`.
+    """
     _disable_chroma_telemetry()
+    stored_model = (get_persisted_collection(document_id).metadata or {}).get("embedding_model", "text-embedding-3-large")
+    if stored_model != embedding_model_name():
+        raise StaleEmbeddings(
+            f"This document was indexed with {stored_model}, but search now uses {embedding_model_name()}. "
+            f"Re-embed it: python -m backend.scripts.reindex_documents --reembed {document_id}"
+        )
     embeddings = get_embedding_model()
     return Chroma(
         collection_name=document_id,

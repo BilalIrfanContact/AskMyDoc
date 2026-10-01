@@ -51,17 +51,26 @@ def embedding_text(title: str, label: str, chunk: str) -> str:
     return f"{header}\n\n{chunk}" if header else chunk
 
 
+def _safe(generate: Generate, prompt: str) -> str:
+    try:
+        return " ".join((generate(prompt) or "").split())
+    except Exception:
+        return ""
+
+
+def title_document(chunks: Sequence[str], generate: Generate | None = None) -> str:
+    """One line naming the document, from its opening chunks (one model call)."""
+    if not chunks:
+        return ""
+    return _safe(generate or _default_generate(), TITLE_PROMPT.format(text="\n\n".join(chunks[:2])[:6000]))
+
+
 def label_document(chunks: Sequence[str], generate: Generate | None = None) -> DocumentLabels:
     """Title the document from its opening chunks and label every chunk (in parallel)."""
     generate = generate or _default_generate()
+    safe = lambda prompt: _safe(generate, prompt)
 
-    def safe(prompt: str) -> str:
-        try:
-            return " ".join((generate(prompt) or "").split())
-        except Exception:
-            return ""
-
-    title = safe(TITLE_PROMPT.format(text="\n\n".join(chunks[:2])[:6000])) if chunks else ""
+    title = title_document(chunks, generate)
     prompts = [
         LABEL_PROMPT.format(previous=chunks[index - 1][-400:] if index else "", text=chunk)
         for index, chunk in enumerate(chunks)
