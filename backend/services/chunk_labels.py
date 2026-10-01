@@ -11,7 +11,6 @@ Labelling never fails indexing: a chunk whose label can't be generated gets an e
 
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Sequence
@@ -73,9 +72,8 @@ def label_document(chunks: Sequence[str], generate: Generate | None = None) -> D
 
 
 def _default_generate() -> Generate:
-    from langchain_openai import ChatOpenAI
-
+    from .ai_providers import chat_adapter
     from .rag_pipeline import _coerce_response_text
 
-    llm = ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano"), temperature=0, max_retries=8)
-    return lambda prompt: _coerce_response_text(llm.invoke(prompt))
+    labeller = chat_adapter("label")
+    return lambda prompt: _coerce_response_text(labeller.invoke(prompt))

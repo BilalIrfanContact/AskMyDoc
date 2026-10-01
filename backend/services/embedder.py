@@ -1,8 +1,6 @@
-import os
-
-from langchain_openai import OpenAIEmbeddings
+from .ai_providers import VoyageEmbeddings, embedding_model
 
 
-def get_embedding_model() -> OpenAIEmbeddings:
-    model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-    return OpenAIEmbeddings(model=model)
+def get_embedding_model() -> VoyageEmbeddings:
+    """The metered embedding model used for both documents and questions (see `ai_providers`)."""
+    return embedding_model()

@@ -253,13 +253,3 @@ class ChromaRetrievalAdapter:
         if not chunk_id:
             return None
         return AnswerCitation(chunk_id=chunk_id, excerpt=document_text)
-
-
-class OpenAIChatAdapter:
-    """Expose only text generation while keeping the OpenAI client behind the seam."""
-
-    def __init__(self, llm):
-        self._llm = llm
-
-    def invoke(self, prompt: str) -> object:
-        return self._llm.invoke(prompt)

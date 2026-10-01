@@ -16,7 +16,6 @@ The rules are written down in `evals/financial-filings/scoring-rules.md`:
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -45,7 +44,6 @@ Return only JSON:
 {{"facts_complete": true|false, "no_contradiction": true|false, "right_subject": true|false,
  "verdict": "yes"|"no"|"none"|"not_applicable", "reason": "<one sentence>"}}"""
 
-DEFAULT_GRADER_MODEL = "gpt-5.4-nano"
 GradeFn = Callable[[str], dict[str, Any]]
 
 _SCALES = {"thousand": 1e3, "million": 1e6, "mn": 1e6, "m": 1e6, "billion": 1e9, "bn": 1e9, "b": 1e9}
@@ -241,14 +239,16 @@ def grade_answer(case: dict[str, Any], answer: str, grade_fn: GradeFn) -> dict[s
 
 
 def grader_model() -> str:
-    return os.getenv("OPENAI_GRADER_MODEL", DEFAULT_GRADER_MODEL)
+    from backend.services.ai_providers import chat_model_for
+
+    return chat_model_for("grade")
 
 
-def openai_grade_fn() -> GradeFn:
-    """Grade with an OpenAI chat model, set by `OPENAI_GRADER_MODEL` (default gpt-5.4-nano)."""
-    from langchain_openai import ChatOpenAI
+def model_grade_fn() -> GradeFn:
+    """Grade with the metered grader model, set by `AI_GRADER_MODEL` (default openai/gpt-oss-120b)."""
+    from backend.services.ai_providers import chat_adapter
 
-    model = ChatOpenAI(model=grader_model(), temperature=0)
+    model = chat_adapter("grade")
 
     def grade(prompt: str) -> dict[str, Any]:
         content = model.invoke(prompt).content

@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -13,6 +15,21 @@ from backend.services.rag_pipeline import (
     _select_retrieval_policy,
     answer_question,
 )
+
+
+_usage_dir = None
+
+
+def setUpModule():
+    """Keep metered test calls out of the real AI spending log."""
+    global _usage_dir
+    _usage_dir = tempfile.TemporaryDirectory()
+    os.environ["AI_USAGE_DIR"] = _usage_dir.name
+
+
+def tearDownModule():
+    os.environ.pop("AI_USAGE_DIR", None)
+    _usage_dir.cleanup()
 
 
 class RagPipelineTestCase(unittest.TestCase):
@@ -72,7 +89,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -118,7 +135,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store") as get_vector_store_mock,
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
         ):
             answer = answer_question(
                 "doc-1",
@@ -168,7 +185,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -194,7 +211,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -219,7 +236,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -243,7 +260,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -266,7 +283,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -277,7 +294,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(content="qa")
 
-        with patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm):
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
             policy = _select_retrieval_policy("What is the refund window?", total_chunks=12)
 
         self.assertEqual(policy.intent, "qa")
@@ -288,7 +305,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(content="summary")
 
-        with patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm):
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
             policy = _select_retrieval_policy("What is this document about?", total_chunks=12)
 
         self.assertEqual(policy.intent, "summary")
@@ -299,7 +316,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(content="summary")
 
-        with patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm):
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
             self.assertEqual(_route_intent("What are the main points of this PDF?"), "summary")
 
     def test_generation_prompt_is_thin_and_harness_owned(self):
@@ -332,7 +349,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -348,7 +365,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -371,7 +388,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -394,7 +411,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -422,7 +439,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
@@ -445,7 +462,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
@@ -471,7 +488,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
@@ -492,7 +509,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
@@ -514,7 +531,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "Summarize this document.")
 
@@ -540,7 +557,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -566,7 +583,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             answer = answer_question("doc-1", "What install command?")
 
@@ -581,7 +598,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
         ):
             answer = answer_question("doc-1", "What is the refund window?")
 
@@ -614,7 +631,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -650,7 +667,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -675,7 +692,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -708,7 +725,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -735,7 +752,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -766,7 +783,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")
@@ -780,7 +797,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI") as chat_openai_mock,
             patch("backend.services.rag_pipeline.logger") as logger_mock,
         ):
             answer_question("doc-1", "What is the refund window?")

@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -104,6 +106,21 @@ async def _request_asgi(
 
     await app(scope, receive, send)
     return response_status, response_headers, bytes(response_body)
+
+
+_usage_dir = None
+
+
+def setUpModule():
+    """Keep metered test calls out of the real AI spending log."""
+    global _usage_dir
+    _usage_dir = tempfile.TemporaryDirectory()
+    os.environ["AI_USAGE_DIR"] = _usage_dir.name
+
+
+def tearDownModule():
+    os.environ.pop("AI_USAGE_DIR", None)
+    _usage_dir.cleanup()
 
 
 class FakeResponse:
@@ -797,7 +814,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -864,7 +881,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "Summarize this document.")
 
@@ -926,7 +943,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -979,7 +996,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -1032,7 +1049,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
