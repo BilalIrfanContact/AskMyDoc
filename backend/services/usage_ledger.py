@@ -5,8 +5,9 @@ request and `record()` after it with the token counts the provider reported. Eac
 line in `backend/usage/ledger.jsonl` (gitignored; `AI_USAGE_DIR` moves it), priced from `PRICES`, and the local dashboard
 (`usage_dashboard.py`) is rebuilt from the ledger.
 
-Costs are our own estimate (reported tokens × list price), not the provider's invoice. Voyage's free
-token allowance is ignored, so embedding costs are counted as if paid; that errs on the safe side.
+Costs are our own estimate (reported tokens × list price), not the provider's invoice. Each call keeps its
+list-price cost; `with_billing` works out how much of it a free token allowance covered, and only the billed
+remainder counts against the monthly budget.
 """
 
 from __future__ import annotations
@@ -17,10 +18,14 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_USAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "usage"
 DEFAULT_MONTHLY_BUDGET_USD = 5.0
+
+# The ledger stores UTC timestamps; months, days and displayed times use Pakistan time.
+LOCAL_TIMEZONE = ZoneInfo("Asia/Karachi")
 
 # USD per 1M tokens: (input, output). List prices from the providers' pricing pages, checked 2026-09-27
 # (see docs/research/cheaper-ai-provider.md). A model missing here can't be called, so no spend goes
@@ -32,11 +37,19 @@ PRICES: dict[tuple[str, str], tuple[float, float]] = {
     ("voyage", "voyage-finance-2"): (0.12, 0.0),
 }
 
+# Free tokens granted once per account (not monthly), as shown on the Voyage dashboard on 2026-09-29.
+# Calls inside the allowance cost nothing; only tokens past it are billed and count against the budget.
+# Assumes every call goes through AskMyDoc, so usage from the Voyage playground isn't seen here.
+FREE_TOKENS: dict[tuple[str, str], int] = {
+    ("voyage", "voyage-4-lite"): 200_000_000,
+    ("voyage", "voyage-finance-2"): 50_000_000,
+}
+
 _lock = threading.Lock()
 
 
 class BudgetExceeded(RuntimeError):
-    """Raised instead of making a paid AI call once this month's recorded spend reaches the budget."""
+    """Raised instead of making a paid AI call once this month's billed spend reaches the budget."""
 
 
 class UnpricedModel(ValueError):
@@ -70,15 +83,58 @@ def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def local_now() -> datetime:
+    return datetime.now(LOCAL_TIMEZONE)
+
+
+def local_time(entry: dict[str, Any]) -> datetime:
+    """An entry's timestamp in Pakistan time."""
+    return datetime.fromisoformat(entry["time"]).astimezone(LOCAL_TIMEZONE)
+
+
+def in_month(entries: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    """The entries from `now`'s calendar month, in Pakistan time."""
+    month = now.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m")
+    return [entry for entry in entries if local_time(entry).strftime("%Y-%m") == month]
+
+
+def with_billing(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copies of `entries` with `billed_usd`: the part of `cost_usd` (list price) not covered by free tokens.
+
+    Free allowances are used up in call order across the ledger's whole history.
+    """
+    used: dict[tuple[str, str], int] = {}
+    billed = []
+    for entry in sorted(entries, key=lambda e: datetime.fromisoformat(e["time"])):
+        key = (entry["provider"], entry["model"])
+        tokens = entry["input_tokens"] + entry["output_tokens"]
+        free_left = max(FREE_TOKENS.get(key, 0) - used.get(key, 0), 0)
+        used[key] = used.get(key, 0) + tokens
+        billable = tokens - min(tokens, free_left)
+        billed.append({**entry, "billed_usd": entry["cost_usd"] * billable / tokens if tokens else 0.0})
+    return billed
+
+
+def free_allowances(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each free allowance that has been drawn on: tokens granted, tokens used so far, and their list-price value."""
+    rows = []
+    for (provider, model), granted in FREE_TOKENS.items():
+        calls = [e for e in entries if (e["provider"], e["model"]) == (provider, model)]
+        if calls:
+            used = sum(e["input_tokens"] + e["output_tokens"] for e in calls)
+            rows.append({"provider": provider, "model": model, "granted": granted, "used": used,
+                         "price_per_million": PRICES[(provider, model)][0]})
+    return rows
+
+
 def month_spend(entries: list[dict[str, Any]] | None = None, now: datetime | None = None) -> float:
-    """Recorded spend for the current calendar month (UTC)."""
-    month = (now or datetime.now(timezone.utc)).strftime("%Y-%m")
+    """Billed spend (after free allowances) for the current calendar month, in Pakistan time."""
     entries = read_entries() if entries is None else entries
-    return sum(entry["cost_usd"] for entry in entries if entry["time"].startswith(month))
+    return sum(entry["billed_usd"] for entry in in_month(with_billing(entries), now or local_now()))
 
 
 def ensure_budget(provider: str, model: str) -> None:
-    """Check the model is priced and this month's budget isn't used up, before a paid call."""
+    """Check the model is priced and this month's billed spend hasn't reached the budget, before a call."""
     price_of(provider, model)
     spent = month_spend()
     budget = monthly_budget()
