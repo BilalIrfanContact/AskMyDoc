@@ -35,6 +35,11 @@ DEFAULT_GRADER_MODEL = "openai/gpt-oss-120b"
 DEFAULT_EMBEDDING_MODEL = "voyage-4-lite"
 _RETRIES = 6
 
+# gpt-oss models think before answering, and that hidden thinking is billed as output. Labels don't need it:
+# at the default effort a label averaged ~490 output tokens and some spent the whole cap thinking and came
+# back empty; at "low" they take ~100-150 tokens.
+REASONING_EFFORT = {"label": "low"}
+
 
 def chat_model_for(task: str) -> str:
     if task == "answer":
@@ -70,6 +75,7 @@ class MeteredChat:
                 base_url=GROQ_BASE_URL,
                 api_key=os.getenv("GROQ_API_KEY"),
                 max_retries=_RETRIES,
+                model_kwargs={"reasoning_effort": REASONING_EFFORT[self.task]} if self.task in REASONING_EFFORT else {},
             )
         response = self._llm.invoke(prompt)
         input_tokens, output_tokens = _reported_tokens(response, prompt)
