@@ -7,6 +7,7 @@ from typing import Callable, Iterable, Literal, Protocol, Sequence
 
 from pydantic import BaseModel, ValidationError
 
+from .answer_grounding import find_grounding_failure
 from .vector_store import get_vector_store
 
 
@@ -34,71 +35,6 @@ _STRUCTURED_OUTPUT_INSTRUCTION = (
     "Do not include markdown, code fences, or any extra keys."
 )
 
-_QUESTION_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "this",
-    "to",
-    "was",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
-}
-_GROUNDING_STOPWORDS = _QUESTION_STOPWORDS | {
-    "about",
-    "all",
-    "also",
-    "answer",
-    "based",
-    "can",
-    "document",
-    "enough",
-    "enrollment",
-    "exception",
-    "final",
-    "found",
-    "helpful",
-    "here",
-    "information",
-    "into",
-    "its",
-    "more",
-    "not",
-    "only",
-    "should",
-    "than",
-    "their",
-    "them",
-    "there",
-    "these",
-    "they",
-    "through",
-    "under",
-    "using",
-    "user",
-    "your",
-}
 Intent = Literal["summary", "qa"]
 RouteIntent = Literal["summary", "qa", "off_topic"]
 RetrievalMode = Literal["head", "semantic"]
@@ -333,94 +269,6 @@ def _generate_structured_answer(
     )
 
 
-def _format_texts(texts: Iterable[str]) -> str:
-    return "\n\n".join(text for text in texts if text).strip()
-
-
-def _extract_grounding_terms(text: str) -> set[str]:
-    return {
-        term
-        for term in re.findall(r"[a-z0-9]+", text.lower())
-        if len(term) > 2 and term not in _GROUNDING_STOPWORDS
-    }
-
-
-def _extract_numeric_tokens(text: str) -> set[str]:
-    return set(re.findall(r"\d+(?:\.\d+)?", text.lower()))
-
-
-def _split_answer_segments(answer: str) -> list[str]:
-    normalized = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", answer)
-    normalized = normalized.replace("```", "")
-    normalized = re.sub(r"`([^`]+)`", r"\1", normalized)
-    lines = [line.strip(" -") for line in normalized.splitlines()]
-    segments = []
-    for line in lines:
-        if not line:
-            continue
-        parts = re.split(r"(?<=[.!?])\s+", line)
-        for part in parts:
-            segment = part.strip()
-            if segment:
-                segments.append(segment)
-    return segments or [answer.strip()]
-
-
-def _segment_grounding_failure(
-    segment: str, evidence_terms: set[str], evidence_numbers: set[str]
-) -> str | None:
-    """Return why a segment is not grounded in the evidence, or None if it is."""
-    segment_terms = _extract_grounding_terms(segment)
-    segment_numbers = _extract_numeric_tokens(segment)
-
-    if segment_numbers and not segment_numbers.issubset(evidence_numbers):
-        return "unsupported_numbers"
-
-    if not segment_terms:
-        return None if segment_numbers or not segment.strip() else "no_terms"
-
-    overlap = segment_terms & evidence_terms
-    unsupported_terms = segment_terms - evidence_terms
-    if not overlap:
-        return "no_term_overlap"
-
-    if segment_numbers:
-        return None if len(unsupported_terms) <= len(overlap) else "too_many_unsupported_terms"
-
-    required_overlap = 1 if len(segment_terms) <= 3 else 2
-    overlap_ratio = len(overlap) / len(segment_terms)
-    if len(overlap) >= required_overlap and overlap_ratio >= 0.7:
-        return None
-    return "low_term_overlap"
-
-
-def _find_grounding_failure(
-    answer: str, citations: Sequence[AnswerCitation]
-) -> dict[str, object] | None:
-    """Return the first answer segment the evidence does not support, or None if all are.
-
-    The failure names the reason plus the numbers and terms missing from the evidence,
-    so logs show why an answer was rejected without recording the full answer text.
-    """
-    evidence_text = _format_texts(citation.excerpt for citation in citations)
-    if not evidence_text:
-        return {"reason": "no_evidence", "segment_index": None,
-                "unsupported_numbers": [], "unsupported_terms": []}
-
-    evidence_terms = _extract_grounding_terms(evidence_text)
-    evidence_numbers = _extract_numeric_tokens(evidence_text)
-    for index, segment in enumerate(_split_answer_segments(answer)):
-        reason = _segment_grounding_failure(segment, evidence_terms, evidence_numbers)
-        if reason:
-            return {
-                "reason": reason,
-                "segment_index": index,
-                "unsupported_numbers": sorted(_extract_numeric_tokens(segment) - evidence_numbers),
-                "unsupported_terms": sorted(_extract_grounding_terms(segment) - evidence_terms),
-            }
-    return None
-
-
 def _default_generation_adapter() -> GenerationAdapter:
     from .ai_providers import chat_adapter
 
@@ -627,7 +475,9 @@ def answer_question(
             answer_model_called=True,
         )
         return decision
-    grounding_failure = _find_grounding_failure(structured_answer.answer, context.citations)
+    grounding_failure = find_grounding_failure(
+        structured_answer.answer, (citation.excerpt for citation in context.citations), question
+    )
     answer_grounded = grounding_failure is None
     if not answer_grounded:
         decision = _insufficient_context_decision(policy)

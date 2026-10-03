@@ -505,7 +505,7 @@ class RagPipelineTestCase(unittest.TestCase):
         llm = Mock()
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
-            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "It explains benefits, time-off rules, and stock option grants."}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": "It explains benefits, time-off rules, and 25 days of paid leave."}'),
         ]
 
         with (
