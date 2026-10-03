@@ -8,6 +8,7 @@ from typing import Callable, Iterable, Literal, Protocol, Sequence
 from pydantic import BaseModel, ValidationError
 
 from .answer_grounding import find_grounding_failure
+from .calculator import Calculation, answer_with_calculator
 from .vector_store import get_vector_store
 
 
@@ -18,9 +19,10 @@ SYSTEM_PROMPT = (
     "You answer questions using only the provided document excerpts. "
     "Do not invent facts that are not supported by the excerpts. "
     "A figure may appear under a standard equivalent name, and you may calculate "
-    "a value from figures shown in the excerpts. When you calculate a number, show the "
-    "arithmetic with the excerpt figures in the answer, for example: "
-    "(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%."
+    "a value from figures shown in the excerpts. When a calculate tool is available, use it for "
+    "every arithmetic step instead of working it out yourself: pass the excerpt figures unrounded "
+    "and reuse earlier results as returned. When you calculate a number, show the arithmetic with "
+    "the excerpt figures in the answer, for example: (177,866 − 135,987) ÷ 135,987 × 100 = 30.8%."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (
@@ -86,6 +88,7 @@ class StructuredAnswerResult:
     answer: str | None
     found_in_excerpts: bool
     invalid_attempt_count: int
+    calculations: tuple[Calculation, ...] = ()
 
 
 class RetrievalAdapter(Protocol):
@@ -248,7 +251,7 @@ def _generate_structured_answer(
     invalid_attempt_count = 0
 
     for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
-        response = generator.invoke(prompt)
+        response, calculations = answer_with_calculator(generator, prompt)
         response_text = _coerce_response_text(response)
 
         try:
@@ -257,6 +260,7 @@ def _generate_structured_answer(
                 answer=payload.answer,
                 found_in_excerpts=payload.found_in_excerpts,
                 invalid_attempt_count=invalid_attempt_count,
+                calculations=tuple(calculations),
             )
         except (ValidationError, ValueError) as exc:
             invalid_attempt_count += 1
@@ -362,6 +366,7 @@ def _emit_answer_policy_telemetry(
     answer_grounded: bool | None,
     answer_model_called: bool,
     grounding_failure: dict[str, object] | None = None,
+    calculation_count: int = 0,
 ) -> None:
     citation_count = len(context.citations)
     citation_completeness_ratio = _citation_completeness_ratio(context)
@@ -384,6 +389,7 @@ def _emit_answer_policy_telemetry(
         "structured_output_retry_count": structured_output_retry_count,
         "answer_grounded": answer_grounded,
         "grounding_failure": grounding_failure,
+        "calculation_count": calculation_count,
     }
     logger.info(
         json.dumps(event, sort_keys=True),
@@ -475,7 +481,10 @@ def answer_question(
         )
         return decision
     grounding_failure = find_grounding_failure(
-        structured_answer.answer, (citation.excerpt for citation in context.citations), question
+        structured_answer.answer,
+        (citation.excerpt for citation in context.citations),
+        question,
+        structured_answer.calculations,
     )
     answer_grounded = grounding_failure is None
     if not answer_grounded:
@@ -491,6 +500,7 @@ def answer_question(
             answer_grounded=answer_grounded,
             answer_model_called=True,
             grounding_failure=grounding_failure,
+            calculation_count=len(structured_answer.calculations),
         )
         return decision
 
@@ -511,5 +521,6 @@ def answer_question(
         structured_output_retry_count=structured_answer.invalid_attempt_count,
         answer_grounded=answer_grounded,
         answer_model_called=True,
+        calculation_count=len(structured_answer.calculations),
     )
     return decision

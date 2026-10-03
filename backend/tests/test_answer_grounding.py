@@ -1,6 +1,7 @@
 import unittest
 
 from backend.services.answer_grounding import find_grounding_failure
+from backend.services.calculator import Calculation
 
 
 BALANCE_SHEET = "Year Ended December 31, 2017 2016. Total net sales 177,866 135,987 (in millions). Accounts payable 34,616 25,309. Tax rate (0.6)%"
@@ -66,6 +67,23 @@ class AnswerGroundingTestCase(unittest.TestCase):
 
     def test_no_evidence_is_a_failure(self):
         self.assertEqual(find_grounding_failure("Anything.", [], "")["reason"], "no_evidence")
+
+    def test_calculator_results_back_bare_and_rounded_numbers(self):
+        margins = "Operating income 6,098 5,802. Total revenue 17,606 15,785."
+        calculations = [
+            Calculation("6098 / 17606 * 100", 34.6359),
+            Calculation("5802 / 15785 * 100", 36.7564),
+            Calculation("36.7564 - 34.6359", 2.1205),
+        ]
+        self.assertIsNone(find_grounding_failure("The margin fell to 34.6%.", [margins], "", calculations))
+        # Subtracting the rounded margins gives 2.2, but the calculator worked from the exact ones.
+        answer = "Margins were 36.8% and 34.6%: 36.8% − 34.6% = 2.1 percentage points."
+        self.assertIsNone(find_grounding_failure(answer, [margins], "", calculations))
+
+    def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
+        calculations = [Calculation("190000 / 135987 * 100", 139.72)]
+        failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
+        self.assertEqual(failure["reason"], "unsupported_numbers")
 
 
 if __name__ == "__main__":

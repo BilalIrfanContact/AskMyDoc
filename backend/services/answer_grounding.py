@@ -10,6 +10,10 @@ The failure that matters in a filings app is an invented figure, so grounding ch
    standard constant (× 100, ÷ 2 for an average, 365 days...), and the arithmetic must come out to the
    result as shown. Wrong arithmetic rejects the answer. Label words inside the working are ignored
    ("Operating profit 11,512 + D&A 2,763 = 14,275"), and a checked result may feed the next step.
+3. A result from the app's calculator (see `calculator`) counts as a source when every input of its
+   expression passes rule 1, is a constant or is an earlier calculator result. Shown working that ends
+   in such a result isn't re-checked, so "36.8% − 34.6% = 2.1" passes when the calculator worked out 2.12
+   from the unrounded figures.
 
 Words aren't checked. The model's `found_in_excerpts` flag handles "not in the document", and word
 overlap rejected honest paraphrases ("Yes, it retained card members") while passing wrong answers
@@ -18,11 +22,11 @@ built from the document's own words. The cost: an invented claim with no number 
 
 from __future__ import annotations
 
-import ast
-import operator
 import re
 from dataclasses import dataclass
 from typing import Iterable
+
+from .calculator import Calculation, evaluate
 
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 _SCALE = re.compile(r"\s*(?:(?:thousand|million|billion|trillion)s?\b|(?:k|m|mm|bn|b)\b)", re.IGNORECASE)
@@ -34,10 +38,8 @@ _WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:
 _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
 _EMPTY_BRACKETS = re.compile(r"\(\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
-_OPERATORS = {"−": "-", "–": "-", "×": "*", "÷": "/"}
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
 _CONSTANTS = {2.0, 4.0, 12.0, 100.0, 360.0, 365.0, 1000.0}
-_BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
 
 
 @dataclass(frozen=True)
@@ -77,33 +79,6 @@ def is_supported(number: Number, sources: Iterable[Number]) -> bool:
     return False
 
 
-def _evaluate(expression: str) -> float | None:
-    """Evaluate plain arithmetic (numbers, + - * /, brackets) without `eval`; None if it isn't that."""
-    for symbol, replacement in _OPERATORS.items():
-        expression = expression.replace(symbol, replacement)
-    expression = re.sub(r"(?<=\d),(?=\d{3})", "", expression).replace("$", "").replace("%", "")
-    try:
-        tree = ast.parse(expression.strip(), mode="eval")
-    except SyntaxError:
-        return None
-
-    def walk(node: ast.AST) -> float:
-        if isinstance(node, ast.Expression):
-            return walk(node.body)
-        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-            return float(node.value)
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-            return -walk(node.operand) if isinstance(node.op, ast.USub) else walk(node.operand)
-        if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
-            return _BINARY[type(node.op)](walk(node.left), walk(node.right))
-        raise ValueError("not plain arithmetic")
-
-    try:
-        return walk(tree)
-    except (ValueError, ZeroDivisionError):
-        return None
-
-
 def _shown_arithmetic(text: str) -> tuple[str, float] | None:
     """The longest tail of `text` that is a calculation (two or more numbers and an operator), with its value.
 
@@ -118,7 +93,7 @@ def _shown_arithmetic(text: str) -> tuple[str, float] | None:
         expression = text[start:]
         if len(numbers_in(expression)) < 2 or not _OPERATOR_SIGN.search(expression):
             continue
-        value = _evaluate(expression)
+        value = evaluate(expression)
         if value is not None:
             return expression, value
     return None
@@ -128,15 +103,34 @@ def _failure(reason: str, numbers: list[str]) -> dict[str, object]:
     return {"reason": reason, "segment_index": None, "unsupported_numbers": numbers, "unsupported_terms": []}
 
 
-def find_grounding_failure(answer: str, excerpts: Iterable[str], question: str = "") -> dict[str, object] | None:
+def _calculated_numbers(calculations: Iterable[Calculation], sources: list[Number]) -> list[Number]:
+    """Results of the calculations whose inputs are all supported, in full precision and as a percentage.
+
+    A calculation with an unsupported input is skipped rather than failed: if the answer uses its result,
+    that number is reported as unsupported like any other.
+    """
+    calculated: list[Number] = []
+    for calculation in calculations:
+        inputs = numbers_in(calculation.expression)
+        if all(n.value in _CONSTANTS or is_supported(n, [*sources, *calculated]) for n in inputs):
+            for value in (abs(calculation.result), abs(calculation.result) * 100):
+                calculated.append(Number(f"{value:.10g}", value, 10, False))
+    return calculated
+
+
+def find_grounding_failure(
+    answer: str, excerpts: Iterable[str], question: str = "", calculations: Iterable[Calculation] = ()
+) -> dict[str, object] | None:
     """Return why `answer` isn't backed by the excerpts (or the question), or None if it is.
 
-    The failure lists the offending numbers, so logs show why without recording the answer text.
+    `calculations` are the ones the app's calculator ran for this answer. The failure lists the offending
+    numbers, so logs show why without recording the answer text.
     """
     excerpts = [excerpt for excerpt in excerpts if excerpt]
     if not excerpts:
         return _failure("no_evidence", [])
     sources = [number for text in [*excerpts, question] for number in numbers_in(text)]
+    calculated = _calculated_numbers(calculations, sources)
 
     derived: list[Number] = []
     for match in _WORKING.finditer(answer):
@@ -146,6 +140,8 @@ def find_grounding_failure(answer: str, excerpts: Iterable[str], question: str =
         expression, computed = shown
         operands = numbers_in(expression)
         result = numbers_in(match.group(2))[0]
+        if is_supported(result, calculated):
+            continue  # The calculator produced this result; every number shown is still checked below.
         as_percent = re.match(r"\s*(?:%|percent)", answer[match.end(2):]) is not None
         if not (_rounds_to(abs(computed), result) or (as_percent and _rounds_to(abs(computed) * 100, result))):
             return _failure("calculation_incorrect", [result.text])
@@ -154,5 +150,7 @@ def find_grounding_failure(answer: str, excerpts: Iterable[str], question: str =
             return _failure("unsupported_numbers", missing)
         derived += [result, *operands]  # The checked sum vouches for its own constants and result.
 
-    unsupported = {number.text for number in numbers_in(answer) if not is_supported(number, [*sources, *derived])}
+    unsupported = {
+        number.text for number in numbers_in(answer) if not is_supported(number, [*sources, *derived, *calculated])
+    }
     return _failure("unsupported_numbers", sorted(unsupported)) if unsupported else None

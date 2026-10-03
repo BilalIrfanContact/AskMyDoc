@@ -810,7 +810,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
         )
 
         with (
@@ -939,7 +939,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
         )
 
         with (
@@ -990,7 +990,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(
                 content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
             )
         )

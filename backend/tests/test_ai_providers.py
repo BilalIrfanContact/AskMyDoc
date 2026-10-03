@@ -42,6 +42,18 @@ class MeteredChatTestCase(UsageTestCase):
         self.assertEqual(label_call.kwargs["model_kwargs"], {"reasoning_effort": "low"})
         self.assertEqual(answer_call.kwargs["model_kwargs"], {})
 
+    def test_tool_calls_pass_the_tools_and_are_metered(self):
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(content="ok", usage_metadata={"input_tokens": 900, "output_tokens": 40})
+        tools = [{"type": "function", "function": {"name": "calculate"}}]
+
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
+            MeteredChat("answer").invoke_with_tools(["question"], tools)
+
+        self.assertEqual(llm.invoke.call_args.kwargs["tools"], tools)
+        [entry] = usage_ledger.read_entries()
+        self.assertEqual((entry["task"], entry["input_tokens"]), ("answer", 900))
+
     def test_does_not_call_the_model_once_the_budget_is_spent(self):
         usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 40_000_000)
 

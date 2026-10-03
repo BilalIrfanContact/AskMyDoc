@@ -60,6 +60,7 @@ class MeteredChat:
     """
 
     provider = "groq"
+    supports_tools = True
 
     def __init__(self, task: str, model: str | None = None):
         self.task = task
@@ -67,6 +68,13 @@ class MeteredChat:
         self._llm = None
 
     def invoke(self, prompt: str) -> Any:
+        return self._call(prompt)
+
+    def invoke_with_tools(self, messages: list[Any], tools: list[dict]) -> Any:
+        """One call in a tool-using conversation (see `calculator.answer_with_calculator`), metered the same way."""
+        return self._call(messages, tools=tools)
+
+    def _call(self, model_input: Any, **kwargs: Any) -> Any:
         ensure_budget(self.provider, self.model)
         if self._llm is None:
             self._llm = ChatOpenAI(
@@ -77,8 +85,8 @@ class MeteredChat:
                 max_retries=_RETRIES,
                 model_kwargs={"reasoning_effort": REASONING_EFFORT[self.task]} if self.task in REASONING_EFFORT else {},
             )
-        response = self._llm.invoke(prompt)
-        input_tokens, output_tokens = _reported_tokens(response, prompt)
+        response = self._llm.invoke(model_input, **kwargs)
+        input_tokens, output_tokens = _reported_tokens(response, str(model_input))
         record(self.provider, self.model, self.task, input_tokens, output_tokens)
         return response
 
