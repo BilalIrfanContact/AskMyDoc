@@ -1,10 +1,12 @@
-"""Label chunks at indexing time so embedding search can tell what each chunk is.
+"""Label chunks at indexing time so the evidence reranker can tell what each chunk is.
 
 A chunk holding a financial table is mostly numbers, so its embedding says little about what the table
 is ("Consolidated Balance Sheets … 38,363 32,963 …" sits far from "What was AES's return on assets?").
 Before embedding, a small model writes a one-line title for the whole document and a short label for
 each chunk naming its kind of content, periods and main line items or topics. The label and title are
-embedded with the chunk (see `embedding_text`); the stored chunk text is unchanged.
+kept as metadata for the evidence reranker. Voyage embeds only the original chunk text because adding
+labels reduced retrieval coverage in the working-set experiment. `embedding_text` preserves the old
+labelled format for comparisons; the stored chunk text is unchanged.
 
 Labelling never fails indexing: a chunk whose label can't be generated gets an empty label.
 """

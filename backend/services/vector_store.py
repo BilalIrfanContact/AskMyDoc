@@ -7,14 +7,15 @@ from chromadb.config import Settings
 from langchain_chroma import Chroma
 
 from ..bootstrap import apply_runtime_defaults
-from .chunk_labels import DocumentLabels, embedding_text, label_document
+from .chunk_labels import DocumentLabels, label_document
 from .ai_providers import embedding_model_name
 from .embedder import get_embedding_model
 
 
 PERSIST_DIRECTORY = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
-# Labelled chunks run ~800 tokens, so 100 per request stays far below per-request token caps.
+# 100 chunks per request stays below the embedding provider's token caps.
 EMBED_BATCH_SIZE = 100
+EMBEDDING_INPUT = "plain"
 
 
 def _disable_chroma_telemetry() -> None:
@@ -46,16 +47,11 @@ def prepare_index_payload(
 ) -> IndexPayload:
     """Label and embed chunks without touching the store.
 
-    Chroma keeps each chunk's original text; the embedding is of the chunk with its document title
-    and label (see `chunk_labels`). The label is kept in metadata for the evidence reranker, and the
-    title too, so the document can be re-embedded later without generating either again.
+    Embed only the original text: adding titles and labels reduced Voyage retrieval coverage in the
+    working-set experiment. Keep labels and titles as metadata for reranking and later re-embedding.
     """
     labels = label_fn(chunks)
     ids = [f"{document_id}:chunk:{index}" for index, _ in enumerate(chunks)]
-    texts = [
-        embedding_text(labels.title, label, chunk)
-        for label, chunk in zip(labels.labels, chunks)
-    ]
     metadatas = [
         {"chunk_id": chunk_id, "chunk_index": index, "label": label, "document_title": labels.title}
         for index, (chunk_id, label) in enumerate(zip(ids, labels.labels))
@@ -63,7 +59,7 @@ def prepare_index_payload(
     return IndexPayload(
         ids=ids,
         documents=list(chunks),
-        embeddings=_embed_in_batches(texts),
+        embeddings=_embed_in_batches(list(chunks)),
         metadatas=metadatas,
     )
 
@@ -81,7 +77,10 @@ def write_index_payload(document_id: str, payload: IndexPayload) -> int:
     """Create the document's collection from a prepared payload and return its stored count."""
     _disable_chroma_telemetry()
     client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())
-    collection = client.create_collection(name=document_id, metadata={"embedding_model": embedding_model_name()})
+    collection = client.create_collection(
+        name=document_id,
+        metadata={"embedding_model": embedding_model_name(), "embedding_input": EMBEDDING_INPUT},
+    )
     collection.add(
         ids=payload.ids,
         documents=payload.documents,
@@ -146,21 +145,24 @@ def build_vector_store(
 
 
 class StaleEmbeddings(RuntimeError):
-    """The document was embedded with a different model than the one questions are embedded with."""
+    """The document was embedded with a different model or an older input format."""
 
 
 def get_vector_store(document_id: str) -> Chroma:
-    """Open a document's collection for search, refusing one embedded with another model.
+    """Open a document's collection for search, requiring the current model and plain input format.
 
     Vectors from different embedding models can't be compared, so such a document must be re-embedded
-    first (`backend/scripts/reindex_documents.py --reembed`). Collections created before the model was
-    recorded were embedded with OpenAI's `text-embedding-3-large`.
+    first (`backend/scripts/reindex_documents.py --reembed`). Older labelled-input collections must also
+    be re-embedded. Collections created before the model was recorded used OpenAI's `text-embedding-3-large`.
     """
     _disable_chroma_telemetry()
-    stored_model = (get_persisted_collection(document_id).metadata or {}).get("embedding_model", "text-embedding-3-large")
-    if stored_model != embedding_model_name():
+    metadata = get_persisted_collection(document_id).metadata or {}
+    stored_model = metadata.get("embedding_model", "text-embedding-3-large")
+    stored_input = metadata.get("embedding_input", "labelled")
+    if stored_model != embedding_model_name() or stored_input != EMBEDDING_INPUT:
         raise StaleEmbeddings(
-            f"This document was indexed with {stored_model}, but search now uses {embedding_model_name()}. "
+            f"This document was indexed with {stored_model} ({stored_input} chunks), "
+            f"but search now uses {embedding_model_name()} ({EMBEDDING_INPUT} chunks). "
             f"Re-embed it: python -m backend.scripts.reindex_documents --reembed {document_id}"
         )
     embeddings = get_embedding_model()
