@@ -20,9 +20,12 @@ SYSTEM_PROMPT = (
     "Do not invent facts that are not supported by the excerpts. "
     "A figure may appear under a standard equivalent name, and you may calculate "
     "a value from figures shown in the excerpts. When a calculate tool is available, use it for "
-    "every arithmetic step instead of working it out yourself: pass the excerpt figures unrounded "
-    "and reuse earlier results as returned. When you calculate a number, show the arithmetic with "
-    "the excerpt figures in the answer, for example: (177,866 − 135,987) ÷ 135,987 × 100 = 30.8%."
+    "every arithmetic step instead of working it out yourself. Write each calculation from the "
+    "excerpt figures themselves, unrounded, never from a number you worked out in your head: send "
+    "(1,240 − 980) ÷ 980 × 100, not 260 ÷ 980 × 100. Reuse the tool's earlier results as returned. "
+    "When you compare two periods, state both values and the change between them. When you calculate "
+    "a number, show the arithmetic with the excerpt figures in the answer, for example: "
+    "(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (
