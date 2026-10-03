@@ -31,7 +31,7 @@ CALCULATE_TOOL = {
             "properties": {
                 "expression": {
                     "type": "string",
-                    "description": "Numbers, + - * / and brackets only, e.g. (177866 - 135987) / 135987 * 100",
+                    "description": "Numbers, + - * / and brackets only, e.g. (1240 - 980) / 980 * 100",
                 }
             },
             "required": ["expression"],
