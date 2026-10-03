@@ -154,8 +154,11 @@ def score_answer(case: dict[str, Any], run: dict[str, Any], grade_fn: GradeFn | 
 
     number_checks = {}
     if case.get("acceptable_answers"):
-        options = case["acceptable_answers"]
-        number_checks = {"any_of": {value: number_matches(value, answer) for value in options}}
+        # Each option is one value, or a list of values one method produces that must all appear.
+        options = [option if isinstance(option, list) else [option] for option in case["acceptable_answers"]]
+        number_checks = {
+            "any_of": {" + ".join(option): all(number_matches(value, answer) for value in option) for option in options}
+        }
         numbers_pass = any(number_checks["any_of"].values())
     else:
         number_checks = {value: number_matches(value, answer) for value in case.get("key_values", [])}

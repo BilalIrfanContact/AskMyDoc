@@ -261,7 +261,18 @@
     "key_values": [
       "0.67",
       "0.69"
-    ]
+    ],
+    "acceptable_answers": [
+      [
+        "0.67",
+        "0.69"
+      ],
+      [
+        "0.53",
+        "0.57"
+      ]
+    ],
+    "grader_note": "Also acceptable: the conservative quick ratio, (cash + trade receivables) / current liabilities, when the answer says it uses that formula: about 0.53 in FY2022 ((775 + 1,935) / 5,103) and about 0.57 in FY2023 ((689 + 1,875) / 4,476), also an improvement."
   },
   {
     "case_id": "financebench_id_01079",
@@ -848,7 +859,7 @@
     "document_url_or_path": "https://huggingface.co/datasets/pdfqa/pdfQA-Benchmark/resolve/90f787ebee0ba278bd6b8b750a69ed90386bfdf5/real-pdfQA/01.2_Input_Files_PDF/FinQA/GIS_2018.pdf",
     "question": "what is the total fair value impact for all instruments as of may 27 , 2018?",
     "expected": "answer",
-    "expected_answer": "58.4",
+    "expected_answer": "$58.4 million",
     "answer_format": "numeric",
     "question_type": "calculation",
     "gold_evidence_text": [
@@ -860,8 +871,10 @@
     "split": "working",
     "gold_review_note": "Accepted 2026-09-26: all 15 numbers in the quote are in the chosen chunks; only table header words ('Fair Value Impact', 'In Millions', 'Average during fiscal') are missing.",
     "key_values": [
-      "58.4"
-    ]
+      "58.4 million"
+    ],
+    "original_expected_answer": "58.4",
+    "answer_fix_note": "2026-10-03: added the unit. The table is headed 'In Millions' and its four May 27, 2018 rows (33.2 + 21.3 + 1.9 + 2.0) sum to 58.4, so the total is $58.4 million. Without the unit the scorer read a correct '58.4 million' as 58,400,000 against a bare 58.4."
   },
   {
     "case_id": "askmydoc_abs_microsoft_2023_10k",
@@ -953,7 +966,8 @@
       3,
       4
     ],
-    "split": "working"
+    "split": "working",
+    "grader_note": "Also acceptable: the filing's own list of PepsiCo's largest operations, the United States, Mexico, Russia, Canada, China, the United Kingdom and South Africa (segment note: 'serving customers and consumers in more than 200 countries and territories with our largest operations in ...')."
   },
   {
     "case_id": "financebench_id_01328",
