@@ -48,6 +48,10 @@ class AnswerGroundingTestCase(unittest.TestCase):
         self.assert_grounded("Sales plus payables = Net sales 177,866 + Accounts payable 34,616 = 212,482. "
                              "Share = 177,866 ÷ 212,482 × 100 = 83.7%.")
 
+    def test_working_with_notes_and_narrow_spaces_is_read(self):
+        self.assert_grounded("Sum = Net sales $177,866\u202fmillion (from the income statement) + Accounts payable & other "
+                             "$34,616\u202fmillion = $212,482\u202fmillion.")
+
     def test_wrong_arithmetic_is_rejected(self):
         self.assert_rejected("Growth: (177,866 − 135,987) ÷ 135,987 × 100 = 31.5%.", "calculation_incorrect")
 

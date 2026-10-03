@@ -29,8 +29,10 @@ _SCALE = re.compile(r"\s*(?:(?:thousand|million|billion|trillion)s?\b|(?:k|m|mm|
 # A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may be negative. The result
 # is matched by lookahead so it can start the next step's working.
 _WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:\.\d+)?))")
-# Label words such as "Operating profit" or "D&A"; dropped before the arithmetic is read.
-_LABEL = re.compile(r"[A-Za-z][A-Za-z&'’]*")
+# Label words such as "Operating profit", "D&A" or a bare "&"; dropped before the arithmetic is read, along with
+# brackets left empty by notes like "(from the cash flow statement)".
+_LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
+_EMPTY_BRACKETS = re.compile(r"\(\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
 _OPERATORS = {"−": "-", "–": "-", "×": "*", "÷": "/"}
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
@@ -107,7 +109,7 @@ def _shown_arithmetic(text: str) -> tuple[str, float] | None:
 
     Trying each starting point drops a leading year or label, as in "In 2017 (177,866 − 135,987) ÷ …".
     """
-    text = _LABEL.sub(" ", text)
+    text = _EMPTY_BRACKETS.sub(" ", _LABEL.sub(" ", re.sub(r"\s", " ", text)))  # Also flattens narrow no-break spaces.
     starts = [
         i for i, char in enumerate(text)
         if char == "(" or ((char.isdigit() or char in "-−–") and (i == 0 or text[i - 1] in " ($"))
