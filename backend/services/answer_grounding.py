@@ -40,8 +40,9 @@ _WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:
 _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
 _EMPTY_BRACKETS = re.compile(r"\(\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
-# After a shown result: an operator means the right side is itself a calculation ("= 365 × 29,962.5 ÷ …").
-_CONTINUES = re.compile(r"\s*%?\s*[+\-−–*/×÷]")
+# After a shown result: an operator, possibly after a unit, means the right side is itself a calculation
+# ("= 365 × 29,962.5 ÷ …", "= $2,564 million ÷ $4,476 million = 0.57").
+_CONTINUES = re.compile(rf"(?:{_SCALE.pattern})?\s*%?\s*[+\-−–*/×÷]", re.IGNORECASE)
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
 _CONSTANTS = {2.0, 4.0, 12.0, 100.0, 360.0, 365.0, 1000.0}
 

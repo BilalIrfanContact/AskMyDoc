@@ -93,6 +93,11 @@ class AnswerGroundingTestCase(unittest.TestCase):
         wrong = answer.replace("= 93.86", "= 95.10")
         self.assertEqual(find_grounding_failure(wrong, [excerpt], "DPO is 365 times average payables.")["reason"], "calculation_incorrect")
 
+    def test_a_chain_may_carry_units_between_its_steps(self):
+        excerpt = "Cash and cash equivalents 689. Trade receivables 1,875. Total current liabilities 4,476."
+        answer = "( $689 million + $1,875 million ) ÷ $4,476 million = $2,564 million ÷ $4,476 million = 0.5728 (≈0.57)."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt]))
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
