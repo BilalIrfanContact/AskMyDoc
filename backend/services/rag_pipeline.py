@@ -18,7 +18,9 @@ SYSTEM_PROMPT = (
     "You answer questions using only the provided document excerpts. "
     "Do not invent facts that are not supported by the excerpts. "
     "A figure may appear under a standard equivalent name, and you may calculate "
-    "a value from figures shown in the excerpts."
+    "a value from figures shown in the excerpts. When you calculate a number, show the "
+    "arithmetic with the excerpt figures in the answer, for example: "
+    "(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%."
 )
 
 INSUFFICIENT_CONTEXT_ANSWER = (
@@ -31,7 +33,8 @@ _ANSWER_JSON_SHAPE = '{"found_in_excerpts": boolean, "answer": string}'
 _STRUCTURED_OUTPUT_INSTRUCTION = (
     f"Return only valid JSON with this exact shape: {_ANSWER_JSON_SHAPE}. "
     "Set found_in_excerpts to false when the excerpts do not contain what is needed "
-    "to answer; the answer may then be empty. "
+    "to answer; the answer may then be empty. Never answer No just because the excerpts "
+    "don't mention something; set found_in_excerpts to false instead. "
     "Do not include markdown, code fences, or any extra keys."
 )
 
