@@ -41,6 +41,13 @@ class AnswerGroundingTestCase(unittest.TestCase):
         self.assert_grounded("Payables fell: 25,309 − 34,616 = −9,307 million.")
         self.assert_rejected("Payables fell: 25,309 − 34,616 = −9,400 million.", "calculation_incorrect")
 
+    def test_working_may_start_with_a_negative_number(self):
+        self.assert_grounded("Return: -546 ÷ ((38,363 + 32,963) ÷ 2) = -0.02", excerpt="Net loss (546). Assets 38,363 32,963")
+
+    def test_a_checked_result_can_feed_the_next_step_with_labels_in_between(self):
+        self.assert_grounded("Sales plus payables = Net sales 177,866 + Accounts payable 34,616 = 212,482. "
+                             "Share = 177,866 ÷ 212,482 × 100 = 83.7%.")
+
     def test_wrong_arithmetic_is_rejected(self):
         self.assert_rejected("Growth: (177,866 − 135,987) ÷ 135,987 × 100 = 31.5%.", "calculation_incorrect")
 

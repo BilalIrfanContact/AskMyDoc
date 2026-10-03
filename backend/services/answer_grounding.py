@@ -8,7 +8,8 @@ The failure that matters in a filings app is an invented figure, so grounding ch
 2. A number found in neither is accepted only when the answer shows the arithmetic that produced it,
    for example "(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%": every operand must pass rule 1 or be a
    standard constant (× 100, ÷ 2 for an average, 365 days...), and the arithmetic must come out to the
-   result as shown. Wrong arithmetic rejects the answer.
+   result as shown. Wrong arithmetic rejects the answer. Label words inside the working are ignored
+   ("Operating profit 11,512 + D&A 2,763 = 14,275"), and a checked result may feed the next step.
 
 Words aren't checked. The model's `found_in_excerpts` flag handles "not in the document", and word
 overlap rejected honest paraphrases ("Yes, it retained card members") while passing wrong answers
@@ -25,8 +26,11 @@ from typing import Iterable
 
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 _SCALE = re.compile(r"\s*(?:(?:thousand|million|billion|trillion)s?\b|(?:k|m|mm|bn|b)\b)", re.IGNORECASE)
-# A shown calculation: numbers, operators and brackets, then "=" (or "≈") and the result, which may be negative.
-_WORKING = re.compile(r"((?:[\d.,$%()\s]|[+\-−–*/×÷])+?)\s*[=≈]\s*[-−–]?\$?\(?(\d[\d,]*(?:\.\d+)?)")
+# A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may be negative. The result
+# is matched by lookahead so it can start the next step's working.
+_WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:\.\d+)?))")
+# Label words such as "Operating profit" or "D&A"; dropped before the arithmetic is read.
+_LABEL = re.compile(r"[A-Za-z][A-Za-z&'’]*")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
 _OPERATORS = {"−": "-", "–": "-", "×": "*", "÷": "/"}
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
@@ -103,7 +107,11 @@ def _shown_arithmetic(text: str) -> tuple[str, float] | None:
 
     Trying each starting point drops a leading year or label, as in "In 2017 (177,866 − 135,987) ÷ …".
     """
-    starts = [i for i, char in enumerate(text) if char == "(" or (char.isdigit() and (i == 0 or text[i - 1] in " ($"))]
+    text = _LABEL.sub(" ", text)
+    starts = [
+        i for i, char in enumerate(text)
+        if char == "(" or ((char.isdigit() or char in "-−–") and (i == 0 or text[i - 1] in " ($"))
+    ]
     for start in starts:
         expression = text[start:]
         if len(numbers_in(expression)) < 2 or not _OPERATOR_SIGN.search(expression):
@@ -139,7 +147,7 @@ def find_grounding_failure(answer: str, excerpts: Iterable[str], question: str =
         as_percent = re.match(r"\s*(?:%|percent)", answer[match.end(2):]) is not None
         if not (_rounds_to(abs(computed), result) or (as_percent and _rounds_to(abs(computed) * 100, result))):
             return _failure("calculation_incorrect", [result.text])
-        missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, sources)]
+        missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived])]
         if missing:
             return _failure("unsupported_numbers", missing)
         derived += [result, *operands]  # The checked sum vouches for its own constants and result.
