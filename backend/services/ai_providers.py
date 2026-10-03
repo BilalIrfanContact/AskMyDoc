@@ -7,7 +7,7 @@ the provider reported afterwards (see `usage_ledger`). Code that needs a model a
     embedding_model().embed_documents(texts)
 
 Models are chosen per job with environment variables (defaults in brackets):
-- `AI_CHAT_MODEL` [openai/gpt-oss-20b]: chunk labels, evidence picking, suggested questions
+- `AI_CHAT_MODEL` [openai/gpt-oss-20b]: chunk labels, suggested questions, evidence picking (eval scripts only)
 - `AI_ANSWER_MODEL` [openai/gpt-oss-20b]: question routing, summaries and the cited answer
 - `AI_GRADER_MODEL` [openai/gpt-oss-120b]: the eval grader
 - `AI_EMBEDDING_MODEL` [voyage-4-lite]: document and question embeddings

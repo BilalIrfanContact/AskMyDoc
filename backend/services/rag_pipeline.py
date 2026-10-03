@@ -27,8 +27,9 @@ INSUFFICIENT_CONTEXT_ANSWER = (
     "I couldn't find enough information in the document to answer that question."
 )
 _STRUCTURED_OUTPUT_RETRY_LIMIT = 2
-# The most chunks a QA question may send to the answer model; the evidence reranker picks how many.
-DEFAULT_QA_CONTEXT_LIMIT = 10
+# How many chunks a QA question sends to the answer model, in embedding order. Plain Voyage top-15
+# holds the evidence for 35/41 benchmark questions; the evidence picker kept it for only 26.
+DEFAULT_QA_CONTEXT_LIMIT = 15
 _ANSWER_JSON_SHAPE = '{"found_in_excerpts": boolean, "answer": string}'
 _STRUCTURED_OUTPUT_INSTRUCTION = (
     f"Return only valid JSON with this exact shape: {_ANSWER_JSON_SHAPE}. "
@@ -281,13 +282,8 @@ def _default_generation_adapter() -> GenerationAdapter:
 def _default_dependencies() -> RagDependencies:
     from .rag_adapters import ChromaRetrievalAdapter
 
-    from .ai_providers import chat_adapter
-
     return RagDependencies(
-        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
-            get_vector_store(document_id=document_id),
-            reranker=chat_adapter("rerank"),
-        ),
+        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(get_vector_store(document_id=document_id)),
         generation=_default_generation_adapter(),
     )
 
