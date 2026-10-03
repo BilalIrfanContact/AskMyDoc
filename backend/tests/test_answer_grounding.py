@@ -80,6 +80,19 @@ class AnswerGroundingTestCase(unittest.TestCase):
         answer = "Margins were 36.8% and 34.6%: 36.8% − 34.6% = 2.1 percentage points."
         self.assertIsNone(find_grounding_failure(answer, [margins], "", calculations))
 
+    def test_working_that_ends_in_a_calculator_result_may_use_constants(self):
+        # The model asked for 6098/17606 and wrote the × 100 itself (seen in the first calculator run).
+        answer = "Giving (6,098 ÷ 17,606) × 100 = 34.6%."
+        calculations = [Calculation("6098/17606", 0.346359)]
+        self.assertIsNone(find_grounding_failure(answer, ["Operating income 6,098. Revenue 17,606."], "", calculations))
+
+    def test_a_chain_that_restates_the_same_value_vouches_for_its_figures(self):
+        excerpt = "Accounts payable 25,309 34,616. Cost of sales 111,934. Inventories 16,047 11,461."
+        answer = "DPO = 365 × ((25,309 + 34,616) / 2) / (111,934 + (16,047 − 11,461)) = 365 × 29,962.5 / 116,520 = 93.86 days."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt], "DPO is 365 times average payables."))
+        wrong = answer.replace("= 93.86", "= 95.10")
+        self.assertEqual(find_grounding_failure(wrong, [excerpt], "DPO is 365 times average payables.")["reason"], "calculation_incorrect")
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)

@@ -4,6 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import openai
+
 from backend.services import usage_ledger
 from backend.services.ai_providers import MeteredChat, VoyageEmbeddings
 
@@ -53,6 +55,17 @@ class MeteredChatTestCase(UsageTestCase):
         self.assertEqual(llm.invoke.call_args.kwargs["tools"], tools)
         [entry] = usage_ledger.read_entries()
         self.assertEqual((entry["task"], entry["input_tokens"]), ("answer", 900))
+
+    def test_a_rejected_tool_call_is_sent_again(self):
+        rejected = openai.BadRequestError("tool_use_failed", response=Mock(status_code=400, request=Mock()), body=None)
+        llm = Mock()
+        llm.invoke.side_effect = [rejected, SimpleNamespace(content="ok", usage_metadata={"input_tokens": 9, "output_tokens": 1})]
+
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
+            reply = MeteredChat("answer").invoke_with_tools(["question"], [])
+
+        self.assertEqual(reply.content, "ok")
+        self.assertEqual(llm.invoke.call_count, 2)
 
     def test_does_not_call_the_model_once_the_budget_is_spent(self):
         usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 40_000_000)

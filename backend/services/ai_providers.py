@@ -21,6 +21,7 @@ import time
 from typing import Any
 
 import httpx
+import openai
 from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI
 
@@ -34,6 +35,7 @@ DEFAULT_CHAT_MODEL = "openai/gpt-oss-20b"
 DEFAULT_GRADER_MODEL = "openai/gpt-oss-120b"
 DEFAULT_EMBEDDING_MODEL = "voyage-4-lite"
 _RETRIES = 6
+_TOOL_CALL_ATTEMPTS = 3
 
 # gpt-oss models think before answering, and that hidden thinking is billed as output. Labels don't need it:
 # at the default effort a label averaged ~490 output tokens and some spent the whole cap thinking and came
@@ -71,8 +73,17 @@ class MeteredChat:
         return self._call(prompt)
 
     def invoke_with_tools(self, messages: list[Any], tools: list[dict]) -> Any:
-        """One call in a tool-using conversation (see `calculator.answer_with_calculator`), metered the same way."""
-        return self._call(messages, tools=tools)
+        """One call in a tool-using conversation (see `calculator.answer_with_calculator`), metered the same way.
+
+        Groq answers 400 when the model writes a malformed tool call, and the same request usually succeeds
+        when sent again (the one failing benchmark question did), so a rejected request is retried twice.
+        """
+        for attempt in range(_TOOL_CALL_ATTEMPTS):
+            try:
+                return self._call(messages, tools=tools)
+            except openai.BadRequestError:
+                if attempt == _TOOL_CALL_ATTEMPTS - 1:
+                    raise
 
     def _call(self, model_input: Any, **kwargs: Any) -> Any:
         ensure_budget(self.provider, self.model)

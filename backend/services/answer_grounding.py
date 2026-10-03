@@ -9,7 +9,9 @@ The failure that matters in a filings app is an invented figure, so grounding ch
    for example "(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%": every operand must pass rule 1 or be a
    standard constant (× 100, ÷ 2 for an average, 365 days...), and the arithmetic must come out to the
    result as shown. Wrong arithmetic rejects the answer. Label words inside the working are ignored
-   ("Operating profit 11,512 + D&A 2,763 = 14,275"), and a checked result may feed the next step.
+   ("Operating profit 11,512 + D&A 2,763 = 14,275"), and a checked result may feed the next step. In a
+   chain like "365 × ((25,309 + 34,616) ÷ 2) ÷ 116,520 = 365 × 29,962.5 ÷ 116,520 = 93.86", a step whose
+   right side is another calculation of the same value vouches for that side's figures.
 3. A result from the app's calculator (see `calculator`) counts as a source when every input of its
    expression passes rule 1, is a constant or is an earlier calculator result. Shown working that ends
    in such a result isn't re-checked, so "36.8% − 34.6% = 2.1" passes when the calculator worked out 2.12
@@ -38,6 +40,8 @@ _WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:
 _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
 _EMPTY_BRACKETS = re.compile(r"\(\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
+# After a shown result: an operator means the right side is itself a calculation ("= 365 × 29,962.5 ÷ …").
+_CONTINUES = re.compile(r"\s*%?\s*[+\-−–*/×÷]")
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
 _CONSTANTS = {2.0, 4.0, 12.0, 100.0, 360.0, 365.0, 1000.0}
 
@@ -99,6 +103,15 @@ def _shown_arithmetic(text: str) -> tuple[str, float] | None:
     return None
 
 
+def _chained_side(answer: str, match: re.Match) -> tuple[list[Number], float] | None:
+    """The figures and value of the calculation right after this step's "=", when there is one."""
+    if not _CONTINUES.match(answer, match.end(2)):
+        return None
+    side = re.split(r"[=≈\n]", answer[match.end():], maxsplit=1)[0]
+    shown = _shown_arithmetic(side)
+    return (numbers_in(shown[0]), shown[1]) if shown else None
+
+
 def _failure(reason: str, numbers: list[str]) -> dict[str, object]:
     return {"reason": reason, "segment_index": None, "unsupported_numbers": numbers, "unsupported_terms": []}
 
@@ -140,8 +153,18 @@ def find_grounding_failure(
         expression, computed = shown
         operands = numbers_in(expression)
         result = numbers_in(match.group(2))[0]
+        chained = _chained_side(answer, match)
+        if chained and abs(chained[1] - computed) <= 0.005 * abs(computed) + 1e-9:
+            missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived])]
+            if missing:
+                return _failure("unsupported_numbers", missing)
+            derived += [*operands, *chained[0]]  # Same value restated; the next "=" checks the result.
+            continue
         if is_supported(result, calculated):
-            continue  # The calculator produced this result; every number shown is still checked below.
+            # The calculator produced this result. Its constants (× 100) are vouched for; every other number
+            # shown is still checked below.
+            derived += [operand for operand in operands if operand.value in _CONSTANTS]
+            continue
         as_percent = re.match(r"\s*(?:%|percent)", answer[match.end(2):]) is not None
         if not (_rounds_to(abs(computed), result) or (as_percent and _rounds_to(abs(computed) * 100, result))):
             return _failure("calculation_incorrect", [result.text])
@@ -150,6 +173,9 @@ def find_grounding_failure(
             return _failure("unsupported_numbers", missing)
         derived += [result, *operands]  # The checked sum vouches for its own constants and result.
 
+    # A calculator call may build on a step the answer showed instead of asking for ("7,230 − 348 = 6,882",
+    # then calculate("6882 / 4822")), so its inputs are checked again with the verified working included.
+    calculated = _calculated_numbers(calculations, [*sources, *derived])
     unsupported = {
         number.text for number in numbers_in(answer) if not is_supported(number, [*sources, *derived, *calculated])
     }
