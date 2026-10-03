@@ -67,6 +67,25 @@ class MeteredChatTestCase(UsageTestCase):
         self.assertEqual(reply.content, "ok")
         self.assertEqual(llm.invoke.call_count, 2)
 
+    def test_a_reply_sent_as_a_call_to_an_unknown_json_tool_is_recovered(self):
+        # The error Groq returned in the first calculator run, trimmed.
+        error = {
+            "message": "attempted to call tool 'json' which was not in request.tools",
+            "code": "tool_use_failed",
+            "failed_generation": '{"name": "json", "arguments": {"found_in_excerpts": true, "answer": "It fell 3.0 points."}}',
+        }
+        rejected = openai.BadRequestError("tool_use_failed", response=Mock(status_code=400, request=Mock()), body=error)
+        llm = Mock()
+        llm.invoke.side_effect = rejected
+        tools = [{"type": "function", "function": {"name": "calculate"}}]
+
+        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm):
+            reply = MeteredChat("answer").invoke_with_tools(["question"], tools)
+
+        self.assertEqual(reply.content, '{"found_in_excerpts": true, "answer": "It fell 3.0 points."}')
+        self.assertEqual(llm.invoke.call_count, 1)
+        self.assertEqual(len(usage_ledger.read_entries()), 1)
+
     def test_does_not_call_the_model_once_the_budget_is_spent(self):
         usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 40_000_000)
 

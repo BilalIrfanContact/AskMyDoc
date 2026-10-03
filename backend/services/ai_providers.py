@@ -16,6 +16,7 @@ Keys come from `GROQ_API_KEY` and `VOYAGE_API_KEY`.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
@@ -23,6 +24,7 @@ from typing import Any
 import httpx
 import openai
 from langchain_core.embeddings import Embeddings
+from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
 from .usage_ledger import ensure_budget, record
@@ -75,13 +77,19 @@ class MeteredChat:
     def invoke_with_tools(self, messages: list[Any], tools: list[dict]) -> Any:
         """One call in a tool-using conversation (see `calculator.answer_with_calculator`), metered the same way.
 
-        Groq answers 400 when the model writes a malformed tool call, and the same request usually succeeds
-        when sent again (the one failing benchmark question did), so a rejected request is retried twice.
+        gpt-oss sometimes sends its final JSON reply as a call to a tool named "json" that it wasn't offered.
+        Groq rejects that with `tool_use_failed` but returns the generation, so the reply is taken from it
+        instead of asking again (asking again repeated the same mistake). Other rejected tool calls are
+        retried, twice.
         """
         for attempt in range(_TOOL_CALL_ATTEMPTS):
             try:
                 return self._call(messages, tools=tools)
-            except openai.BadRequestError:
+            except openai.BadRequestError as exc:
+                reply = _reply_sent_as_unknown_tool(exc, tools)
+                if reply is not None:
+                    record(self.provider, self.model, self.task, len(str(messages)) // 4 + 1, len(reply.content) // 4 + 1)
+                    return reply
                 if attempt == _TOOL_CALL_ATTEMPTS - 1:
                     raise
 
@@ -100,6 +108,25 @@ class MeteredChat:
         input_tokens, output_tokens = _reported_tokens(response, str(model_input))
         record(self.provider, self.model, self.task, input_tokens, output_tokens)
         return response
+
+
+def _reply_sent_as_unknown_tool(exc: openai.BadRequestError, tools: list[dict]) -> AIMessage | None:
+    """The arguments of a rejected call to a tool that wasn't offered, as a plain reply; None otherwise.
+
+    The tokens of a rejected call aren't reported, so the caller records an estimate.
+    """
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body["error"] if isinstance(body.get("error"), dict) else body
+    if error.get("code") != "tool_use_failed":
+        return None
+    try:
+        call = json.loads(error.get("failed_generation") or "")
+    except ValueError:
+        return None
+    offered = {tool.get("function", {}).get("name") for tool in tools}
+    if not isinstance(call, dict) or call.get("name") in offered or not isinstance(call.get("arguments"), dict):
+        return None
+    return AIMessage(content=json.dumps(call["arguments"], ensure_ascii=False))
 
 
 def chat_adapter(task: str, model: str | None = None) -> MeteredChat:
