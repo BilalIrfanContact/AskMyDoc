@@ -50,3 +50,7 @@ These three were found because the app failed them, so they are not result-blind
 - `pdfqa_finqa_GIS_2018_06`: the key is now "$58.4 million". The table is headed "In Millions"; without the unit a correct "58.4 million" was read as 58,400,000. The original is kept in `original_expected_answer`.
 - `financebench_id_01009` (PepsiCo geographies): a `grader_note` also accepts the filing's own list of PepsiCo's largest operations (United States, Mexico, Russia, Canada, China, United Kingdom, South Africa). The regions in the key stay acceptable.
 - `financebench_id_00799` (Amcor quick ratio): `acceptable_answers` and a `grader_note` also accept the conservative quick ratio, (cash + trade receivables) / current liabilities, about 0.53 → 0.57, when the answer names that formula. The original `key_values` are unchanged.
+
+## 7. Key correction (2026-10-04)
+
+- `financebench_id_01328` (PepsiCo restructuring): `acceptable_answers` now also accepts 0. The question asks for restructuring costs "directly outlined" in the income statement and says to state 0 if they aren't; PepsiCo's Consolidated Statement of Income has no restructuring line, and the $411 million appears only in Note 3 and the cash flow statement. Both readings pass. Like the corrections in section 6, it was found because the app's answer failed, so reports keep the original-key score beside the corrected one.

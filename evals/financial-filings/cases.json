@@ -989,7 +989,12 @@
     "split": "working",
     "key_values": [
       "$411 million"
-    ]
+    ],
+    "acceptable_answers": [
+      "$411 million",
+      "0.0"
+    ],
+    "answer_fix_note": "2026-10-04: also accepts 0. The question asks for restructuring costs 'directly outlined' in the income statement and says to state 0 if they aren't. PepsiCo's Consolidated Statement of Income (page 60) has no restructuring line; the $411 million appears only in Note 3 and as an add-back in the cash flow statement. Both readings are accepted; '0.0' keeps the tolerance at ±0.05 so only a plain 0 matches."
   },
   {
     "case_id": "financebench_id_03620",
