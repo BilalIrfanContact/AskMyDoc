@@ -321,7 +321,7 @@ tbody tr:hover td {{ background:var(--shell); }}
 }}
 </style></head><body><main>
 <header class="top reveal" style="--i:0">
-  <div><span class="eyebrow">AI spend</span><h1>{now.strftime("%B %Y")}</h1></div>
+  <div><h1>{now.strftime("%B %Y")}</h1></div>
   <div class="updated">Updated {now.strftime("%d %b, %H:%M")} PKT<br>Billed after free allowances · estimated from reported tokens and list prices</div>
 </header>
 <div class="bento">
