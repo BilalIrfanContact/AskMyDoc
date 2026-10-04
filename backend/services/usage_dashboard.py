@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import calendar
 import html
+import json
+import math
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,9 @@ from .usage_ledger import LOCAL_TIMEZONE, free_allowances, in_month, local_now, 
 
 # (name, calls, tokens, billed cost, list-price cost)
 Row = tuple[str, int, int, float, float]
+
+# SVG user units for the daily chart; the svg stretches to fill its box, so only the proportions matter.
+CHART_WIDTH, CHART_HEIGHT = 1000, 200
 
 # Plain names for the `task` recorded with each call.
 JOB_NAMES = {
@@ -94,27 +99,79 @@ def _breakdown(title: str, rows: Iterable[Row]) -> str:
     return f'<h2>{title}</h2><ul class="breakdown">{items}</ul>'
 
 
+def _nice_ticks(peak: float) -> list[float]:
+    """Round y-axis values (0, 0.2, 0.4, ...) from zero to at or just above the peak."""
+    if peak <= 0:
+        return [0.0, 0.01]
+    raw = peak / 4
+    magnitude = 10 ** math.floor(math.log10(raw))
+    step = next(m * magnitude for m in (1, 2, 2.5, 5, 10) if m * magnitude >= raw)
+    return [step * i for i in range(math.ceil(peak / step - 1e-9) + 1)]
+
+
+def _curve(points: list[tuple[float, float]]) -> str:
+    """SVG path through the points as a monotone cubic: smooth, but never dipping below zero or overshooting a peak."""
+    if len(points) < 2:
+        return ""
+    slopes = [(y1 - y0) / (x1 - x0) for (x0, y0), (x1, y1) in zip(points, points[1:])]
+    # Harmonic mean of neighbouring slopes, flat at turning points; this is what keeps the curve monotone.
+    tangents = [slopes[0], *(2 * a * b / (a + b) if a * b > 0 else 0.0 for a, b in zip(slopes, slopes[1:])), slopes[-1]]
+    path = f"M{points[0][0]:.1f},{points[0][1]:.1f}"
+    for (x0, y0), (x1, y1), m0, m1 in zip(points, points[1:], tangents, tangents[1:]):
+        third = (x1 - x0) / 3
+        path += f" C{x0 + third:.1f},{y0 + m0 * third:.1f} {x1 - third:.1f},{y1 - m1 * third:.1f} {x1:.1f},{y1:.1f}"
+    return path
+
+
 def _daily_chart(entries: list[dict[str, Any]], now: datetime) -> str:
+    """Billed and free-covered spend per day as two smooth lines, with a crosshair tooltip for each day so far."""
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     billed = [0.0] * days_in_month
     listed = [0.0] * days_in_month
     for entry in entries:
         billed[local_time(entry).day - 1] += entry["billed_usd"]
         listed[local_time(entry).day - 1] += entry["cost_usd"]
-    peak = max(listed) or 1.0
-    bars = "".join(
-        f'<div class="day {"today" if day == now.day else "future" if day > now.day else ""}" '
-        f'title="{now.strftime("%b")} {day}: {_money(b)} billed{f", {_money(l - b)} covered free" if l - b > 0 else ""}" '
-        f'style="--h:{max(l / peak, 0.02) if day <= now.day else 0.02:.4f};--d:{day};{_split(b, l)}">'
-        f'<i></i>{f"<span>{day}</span>" if day == 1 or day % 5 == 0 else ""}</div>'
-        for day, (b, l) in enumerate(zip(billed, listed), start=1)
-    )
+    free = [max(l - b, 0.0) for b, l in zip(billed, listed)]
+    ticks = _nice_ticks(max(billed + free))
+    x = lambda day: (day - 1) / (days_in_month - 1)
+    y = lambda value: 1 - value / ticks[-1]
+
+    grid = "".join(f'<line class="grid" x1="0" x2="{CHART_WIDTH}" y1="{y(t) * CHART_HEIGHT:.1f}" '
+                   f'y2="{y(t) * CHART_HEIGHT:.1f}"/>' for t in ticks)
+    marks, dots = "", ""
+    # Free first, so the billed line draws on top where they cross.
+    for name, values in (("free", free), ("billed", billed)):
+        points = [(x(day) * CHART_WIDTH, y(value) * CHART_HEIGHT) for day, value in enumerate(values[:now.day], start=1)]
+        line = _curve(points)
+        if line:
+            marks += (f'<path class="area {name}" d="{line} L{points[-1][0]:.1f},{CHART_HEIGHT} '
+                      f'L{points[0][0]:.1f},{CHART_HEIGHT} Z" fill="url(#fade-{name})"/><path class="stroke {name}" d="{line}"/>')
+        dots += f'<i class="dot {name}" style="--x:{x(now.day):.4f};--y:{y(values[now.day - 1]):.4f}"></i>'
+    gradients = "".join(
+        f'<linearGradient id="fade-{name}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="{name}" stop-opacity=".22"/>'
+        f'<stop offset="1" class="{name}" stop-opacity="0"/></linearGradient>' for name in ("free", "billed"))
+    readouts = [[f"{now.strftime('%b')} {day}", _money(b), _money(f), round(y(b), 4), round(y(f), 4)]
+                for day, (b, f) in enumerate(zip(billed[:now.day], free[:now.day]), start=1)]
+
+    y_labels = "".join(f'<span style="--y:{y(t):.4f}">{_money(t)}</span>' for t in ticks)
+    x_labels = "".join(f'<span style="--x:{x(day):.4f}">{day}</span>'
+                       for day in range(1, days_in_month + 1) if day == 1 or day % 5 == 0)
     busiest = max(range(days_in_month), key=lambda index: billed[index])
     note = (f"Busiest day: {now.strftime('%b')} {busiest + 1}, {_money(billed[busiest])} billed" if any(billed)
             else f"Nothing billed yet, {_money(sum(listed))} covered free" if any(listed) else "No calls yet")
     legend = '<span class="legend"><i class="k-billed"></i>Billed <i class="k-free"></i>Covered free</span>'
-    return (f'<div class="chart-head"><h2>Spend by day</h2><span class="dim">{note}</span></div>'
-            f'<div class="chart">{bars}</div>{legend}')
+    return f"""<div class="chart-head"><h2>Spend by day</h2><span class="dim">{note}</span></div>
+<div class="graph">
+  <div class="y-axis num">{y_labels}</div>
+  <div class="plot" tabindex="0" aria-label="Spend by day. Hover, or use the arrow keys, to read each day."
+       data-days="{html.escape(json.dumps(readouts))}" data-span="{days_in_month - 1}">
+    <svg viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" preserveAspectRatio="none" aria-hidden="true">
+      <defs>{gradients}</defs>{grid}{marks}
+    </svg>
+    {dots}<div class="cross"><i class="dot free"></i><i class="dot billed"></i></div><div class="tip"></div>
+    <div class="x-axis num">{x_labels}</div>
+  </div>
+</div>{legend}"""
 
 
 def _allowance_card(allowances: list[dict[str, Any]], month_tokens: dict[str, int], elapsed_days: float) -> str:
@@ -225,13 +282,13 @@ def render_dashboard(entries: list[dict[str, Any]], budget: float, now: datetime
 :root {{
   --bg:#f3f3f1; --shell:rgba(20,20,24,.035); --shell-line:rgba(20,20,24,.07); --core:#ffffff;
   --highlight:rgba(255,255,255,.9); --ink:#17171a; --dim:#6c6c74; --line:rgba(20,20,24,.08);
-  --accent:#0e8a5c; --free:rgba(14,138,92,.22); --warn:#b7791f; --stop:#c2410c; --glow:rgba(14,138,92,.10); --ease:cubic-bezier(.16,1,.3,1);
+  --accent:#0e8a5c; --free:rgba(14,138,92,.22); --free-line:#5fb894; --warn:#b7791f; --stop:#c2410c; --glow:rgba(14,138,92,.10); --ease:cubic-bezier(.16,1,.3,1);
   --sans:"Geist","Satoshi",ui-sans-serif,system-ui,sans-serif; --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }}
 @media (prefers-color-scheme: dark) {{
   :root {{ --bg:#070808; --shell:rgba(255,255,255,.028); --shell-line:rgba(255,255,255,.07); --core:#0d0f11;
           --highlight:rgba(255,255,255,.06); --ink:#ececee; --dim:#8a8d96; --line:rgba(255,255,255,.07);
-          --accent:#3ecf8e; --free:rgba(62,207,142,.2); --warn:#e8b04b; --stop:#f0714a; --glow:rgba(62,207,142,.09); }}
+          --accent:#3ecf8e; --free:rgba(62,207,142,.2); --free-line:#1f8a5f; --warn:#e8b04b; --stop:#f0714a; --glow:rgba(62,207,142,.09); }}
 }}
 * {{ box-sizing:border-box; }}
 html {{ background:var(--bg); }}
@@ -279,19 +336,38 @@ h2 {{ margin:0 0 20px; font-size:14px; font-weight:500; color:var(--dim); letter
 .pill {{ display:inline-block; padding:1px 9px; border-radius:999px; font-size:11.5px; color:var(--accent);
   background:var(--free); cursor:help; }}
 .legend {{ display:flex; gap:8px; align-items:center; font-size:12px; color:var(--dim); margin-top:4px; }}
-.legend i {{ width:10px; height:10px; border-radius:3px; display:inline-block; }}
+.legend i {{ width:14px; height:2px; border-radius:2px; display:inline-block; }}
 .legend i + i, .legend .k-free {{ margin-left:10px; }}
-.k-billed {{ background:var(--accent); }} .k-free {{ background:var(--free); }}
+.k-billed {{ background:var(--accent); }} .k-free {{ background:var(--free-line); }}
 .meta {{ font-size:12px; color:var(--dim); }} .meta span {{ margin-left:10px; }}
 .chart-head {{ display:flex; justify-content:space-between; align-items:baseline; gap:16px; }}
 .chart-head span {{ font-size:13px; }}
-.chart {{ display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:5px; height:190px; align-items:end; padding-bottom:22px; }}
-.day {{ position:relative; height:100%; display:flex; align-items:flex-end; }}
-.day i {{ display:block; width:100%; height:100%; border-radius:5px; opacity:.75;
-  background:linear-gradient(to top, var(--accent) 0 calc(var(--b) * 100%), var(--free) 0);
-  transform-origin:bottom; transform:scaleY(var(--h)); transition:opacity .5s var(--ease); }}
-.day:hover i {{ opacity:.9; }} .day.today i {{ opacity:1; }} .day.future i {{ background:var(--line); opacity:1; }}
-.day span {{ position:absolute; bottom:-22px; left:50%; translate:-50% 0; font:11px var(--mono); color:var(--dim); }}
+.graph {{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; padding:8px 0 30px; }}
+.y-axis, .plot {{ position:relative; height:190px; }}
+.y-axis {{ min-width:4ch; }}
+.y-axis span, .x-axis span {{ position:absolute; font-size:11px; color:var(--dim); white-space:nowrap; }}
+.y-axis span {{ right:0; top:calc(var(--y) * 100%); translate:0 -50%; }}
+.x-axis span {{ top:calc(100% + 10px); left:calc(var(--x) * 100%); translate:-50% 0; }}
+.plot {{ outline:none; touch-action:pan-y; }}
+.plot:focus-visible {{ outline:2px solid var(--accent); outline-offset:6px; border-radius:4px; }}
+.plot svg {{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }}
+.grid {{ stroke:var(--line); stroke-width:1; vector-effect:non-scaling-stroke; }}
+.stroke {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; vector-effect:non-scaling-stroke; }}
+.stroke.billed {{ stroke:var(--accent); }} .stroke.free {{ stroke:var(--free-line); }}
+stop.billed {{ stop-color:var(--accent); }} stop.free {{ stop-color:var(--free-line); }}
+.dot {{ position:absolute; left:calc(var(--x) * 100%); top:calc(var(--y) * 100%); width:8px; height:8px; border-radius:50%;
+  translate:-50% -50%; box-shadow:0 0 0 2px var(--core); }}
+.dot.billed {{ background:var(--accent); }} .dot.free {{ background:var(--free-line); }}
+.cross {{ position:absolute; inset:0 auto 0 calc(var(--x) * 100%); width:1px; background:var(--line); display:none; }}
+.cross .dot {{ left:0; }}
+.tip {{ position:absolute; top:0; left:calc(var(--x) * 100%); translate:14px 0; display:none; min-width:150px; padding:10px 12px;
+  border-radius:12px; background:var(--core); border:1px solid var(--shell-line); font-size:12px; pointer-events:none;
+  box-shadow:0 12px 32px -16px rgba(0,0,0,.45); }}
+.tip.flip {{ translate:calc(-100% - 14px) 0; }}
+.tip b {{ display:block; font-weight:500; color:var(--dim); margin-bottom:6px; }}
+.tip div {{ display:flex; align-items:center; gap:8px; }} .tip div + div {{ margin-top:3px; }}
+.tip i {{ width:10px; height:2px; border-radius:2px; }} .tip strong {{ font-weight:500; }} .tip span {{ color:var(--dim); }}
+.plot.active .cross, .plot.active .tip {{ display:block; }}
 .scroll {{ overflow-x:auto; margin:0 -8px; }}
 table {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
 th {{ text-align:left; font-weight:500; font-size:12.5px; color:var(--dim); padding:0 8px 10px; }}
@@ -304,11 +380,13 @@ tbody tr:hover td {{ background:var(--shell); }}
     animation:rise .9s var(--ease) forwards; animation-delay:calc(var(--i) * 80ms + 60ms); }}
   html:not(.still) .meter i {{ animation:fill 1.4s var(--ease) .35s both; }}
   html:not(.still) .share i {{ animation:fill 1.1s var(--ease) .5s both; }}
-  html:not(.still) .day i {{ animation:grow 1s var(--ease) both; animation-delay:calc(var(--d) * 18ms + 300ms); }}
+  html:not(.still) .plot svg {{ animation:draw 1.3s var(--ease) .3s both; }}
+  html:not(.still) .plot > .dot {{ animation:pop .5s var(--ease) 1.3s both; }}
 }}
 @keyframes rise {{ to {{ opacity:1; transform:none; filter:none; }} }}
 @keyframes fill {{ from {{ transform:scaleX(0); }} }}
-@keyframes grow {{ from {{ transform:scaleY(0); }} }}
+@keyframes draw {{ from {{ clip-path:inset(0 100% 0 0); }} }}
+@keyframes pop {{ from {{ opacity:0; }} }}
 @media (max-width:1023px) {{
   .a-summary, .a-provider, .a-daily, .a-free, .a-model, .a-jobs, .a-calls {{ grid-column:span 12; }}
 }}
@@ -317,7 +395,7 @@ tbody tr:hover td {{ background:var(--shell); }}
   .top {{ flex-direction:column; align-items:flex-start; }} .updated {{ text-align:left; }}
   .bento {{ gap:14px; }} .core {{ padding:22px; }}
   .stats {{ grid-template-columns:1fr; gap:14px; }}
-  .chart {{ gap:3px; height:150px; }}
+  .y-axis, .plot {{ height:150px; }}
 }}
 </style></head><body><main>
 <header class="top reveal" style="--i:0">
@@ -327,7 +405,46 @@ tbody tr:hover td {{ background:var(--shell); }}
 <div class="bento">
 {"".join(cards)}
 </div>
-</main></body></html>
+</main>
+<script>
+  // Daily chart crosshair: hover, or focus and use the arrow keys, to read both lines for one day.
+  for (const plot of document.querySelectorAll(".plot")) {{
+    const days = JSON.parse(plot.dataset.days), span = +plot.dataset.span;
+    const cross = plot.querySelector(".cross"), tip = plot.querySelector(".tip");
+    let current = days.length - 1;
+    const show = index => {{
+      current = Math.max(0, Math.min(index, days.length - 1));
+      const [label, billed, free, yBilled, yFree] = days[current], x = current / span;
+      plot.style.setProperty("--x", x);
+      cross.querySelector(".billed").style.setProperty("--y", yBilled);
+      cross.querySelector(".free").style.setProperty("--y", yFree);
+      const row = (key, value, name) => {{
+        const div = document.createElement("div"), swatch = document.createElement("i");
+        swatch.className = key;
+        div.append(swatch, Object.assign(document.createElement("strong"), {{textContent: value}}),
+                   Object.assign(document.createElement("span"), {{textContent: name}}));
+        return div;
+      }};
+      tip.replaceChildren(Object.assign(document.createElement("b"), {{textContent: label}}),
+                          row("k-billed", billed, "billed"), row("k-free", free, "covered free"));
+      tip.classList.toggle("flip", x > 0.6);
+      plot.classList.add("active");
+    }};
+    const hide = () => plot.classList.remove("active");
+    plot.addEventListener("pointermove", event => {{
+      const box = plot.getBoundingClientRect(), index = Math.round((event.clientX - box.left) / box.width * span);
+      index < days.length ? show(index) : hide();
+    }});
+    plot.addEventListener("pointerleave", hide);
+    plot.addEventListener("focus", () => show(current));
+    plot.addEventListener("blur", hide);
+    plot.addEventListener("keydown", event => {{
+      const step = {{ArrowLeft: -1, ArrowRight: 1}}[event.key];
+      if (step) {{ event.preventDefault(); show(current + step); }}
+    }});
+  }}
+</script>
+</body></html>
 """
 
 
