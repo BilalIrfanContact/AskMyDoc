@@ -1,6 +1,7 @@
 from typing import Callable, Literal, Sequence
 
 from .evidence_reranker import RERANK_POOL, Candidate, pick_evidence
+from .financial_statements import statement_chunk_positions
 from .keyword_search import bm25_rank, reciprocal_rank_fusion
 from .rag_pipeline import AnswerCitation, GenerationAdapter, RetrievedContext
 
@@ -48,6 +49,9 @@ class ChromaRetrievalAdapter:
     With a `planner`, semantic retrieval also searches for each piece of evidence the planner says the
     question needs, and reserves a result slot per need (see `select_with_reserved_slots`). The plan is
     cached per question and the last one is kept in `last_plan`.
+
+    With `statements=True`, semantic retrieval also returns the filing's income statement, balance sheet
+    and cash flow statement chunks (see `financial_statements`), after the search results.
     """
 
     def __init__(
@@ -56,10 +60,12 @@ class ChromaRetrievalAdapter:
         hybrid: bool = False,
         planner: Planner | None = None,
         reranker: GenerationAdapter | None = None,
+        statements: bool = False,
     ):
         if sum([hybrid, planner is not None, reranker is not None]) > 1:
             raise ValueError("use one of hybrid, planner or reranker; they don't combine")
         self._vectordb = vectordb
+        self._statements = statements
         self._reranker = reranker
         self._hybrid = hybrid
         self._planner = planner
@@ -76,12 +82,35 @@ class ChromaRetrievalAdapter:
         if mode == "head":
             return self._head_context(limit)
         if self._planner is not None:
-            return self._planned_context(question, limit)
-        if self._hybrid:
-            return self._hybrid_context(question, limit)
-        if self._reranker is not None:
-            return self._reranked_context(question, limit)
-        return self._semantic_context(question, limit)
+            context = self._planned_context(question, limit)
+        elif self._hybrid:
+            context = self._hybrid_context(question, limit)
+        elif self._reranker is not None:
+            context = self._reranked_context(question, limit)
+        else:
+            context = self._semantic_context(question, limit)
+        return self._with_statements(context) if self._statements else context
+
+    def _with_statements(self, context: RetrievedContext) -> RetrievedContext:
+        """`context` followed by the primary statement chunks it doesn't already hold."""
+        stored = self._vectordb._collection.get(include=["documents", "metadatas"])
+        rows = sorted(
+            zip(stored.get("ids") or [], stored.get("documents") or [], stored.get("metadatas") or []),
+            key=lambda row: (row[2] or {}).get("chunk_index", 0),
+        )
+        held = {citation.chunk_id for citation in context.citations}
+        added = []
+        for position in statement_chunk_positions([document or "" for _, document, _ in rows]):
+            chunk_id, document, metadata = rows[position]
+            citation = self._citation_from_metadata([metadata], [chunk_id], 0, document)
+            if citation is not None and citation.chunk_id not in held:
+                added.append(citation)
+        citations = [*context.citations, *added]
+        return RetrievedContext(
+            text="\n\n".join(citation.excerpt for citation in citations).strip(),
+            citations=citations,
+            retrieved_document_count=context.retrieved_document_count + len(added),
+        )
 
     def _head_context(self, limit: int) -> RetrievedContext:
         result = self._vectordb.get(limit=limit, include=["documents", "metadatas"])

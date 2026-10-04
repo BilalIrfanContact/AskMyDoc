@@ -289,7 +289,9 @@ def _default_dependencies() -> RagDependencies:
     from .rag_adapters import ChromaRetrievalAdapter
 
     return RagDependencies(
-        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(get_vector_store(document_id=document_id)),
+        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
+            get_vector_store(document_id=document_id), statements=True
+        ),
         generation=_default_generation_adapter(),
     )
 

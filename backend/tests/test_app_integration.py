@@ -356,6 +356,10 @@ class FakeVectorCollection:
         self.query_call_count += 1
         return self._query_result
 
+    def get(self, *, include: list[str]) -> dict:
+        # The whole document, read when the answer step adds the primary statements; none here.
+        return {"ids": [], "documents": [], "metadatas": []}
+
 
 class FakeVectorStore:
     def __init__(

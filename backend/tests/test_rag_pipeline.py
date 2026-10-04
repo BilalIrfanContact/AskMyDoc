@@ -48,6 +48,7 @@ class RagPipelineTestCase(unittest.TestCase):
     ):
         vectordb = Mock()
         vectordb._collection.count.return_value = count
+        vectordb._collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
         vectordb.similarity_search.return_value = docs or []
         vectordb.get.return_value = {
             "documents": head_documents or [],
