@@ -41,6 +41,8 @@ _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
 _EMPTY_BRACKETS = re.compile(r"\(\s*\)")
 # Dates such as "12/31/2021" aren't figures, and would read as a division.
 _DATE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
+# A "(000)" after an amount means "in thousands", copied from a table header; it isn't a figure.
+_THOUSANDS_MARKER = re.compile(r"\(\s*'?000'?s?\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
 # After a shown result: an operator, possibly after a unit, means the right side is itself a calculation
 # ("= 365 × 29,962.5 ÷ …", "= $2,564 million ÷ $4,476 million = 0.57").
@@ -152,8 +154,8 @@ def find_grounding_failure(
     excerpts = [excerpt for excerpt in excerpts if excerpt]
     if not excerpts:
         return _failure("no_evidence", [])
-    # A non-breaking hyphen is used as a minus sign ("(‑546) ÷ 35,663 = ‑0.0153"); dates aren't figures.
-    answer = _DATE.sub(" ", answer.replace("\u2011", "-"))
+    # A non-breaking hyphen is used as a minus sign ("(‑546) ÷ 35,663 = ‑0.0153"); dates and "(000)" aren't figures.
+    answer = _THOUSANDS_MARKER.sub(" ", _DATE.sub(" ", answer.replace("\u2011", "-")))
     sources = [number for text in [*excerpts, question] for number in numbers_in(text)]
     calculated = _calculated_numbers(calculations, sources)
 

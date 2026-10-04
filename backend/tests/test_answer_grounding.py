@@ -128,6 +128,12 @@ class AnswerGroundingTestCase(unittest.TestCase):
         answer = "A decrease of $2,544 million, or about 5.11%."
         self.assertIsNone(find_grounding_failure(answer, [excerpt], "", calculations))
 
+    def test_an_in_thousands_marker_is_not_a_figure(self):
+        # Entergy, held-out run: "(000)" copied from the table header was read as the number 000.
+        excerpt = "Tranche A-3 114,400. Total 329,500. (In Thousands)"
+        answer = "The tranche is $114,400 (000) of the total $329,500 (000), so its share is (114,400 ÷ 329,500) × 100 = 34.72%."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt], "", [Calculation("114400 / 329500 * 100", 34.7193)]))
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
