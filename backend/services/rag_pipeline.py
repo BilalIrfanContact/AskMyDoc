@@ -22,8 +22,9 @@ SYSTEM_PROMPT = (
     "a value from figures shown in the excerpts. When a calculate tool is available, use it for "
     "every arithmetic step instead of working it out yourself: pass the excerpt figures unrounded "
     "and reuse earlier results as returned. When you compare two periods, state both values and the "
-    "change between them. Round the figures in your answer to at most two decimal places unless the "
-    "question asks for another precision. When you calculate a number, show the arithmetic with the "
+    "change between them. Round the figures in your answer to two decimal places but keep at least "
+    "three significant digits (0.04237 becomes 0.0424, not 0.04), unless the question asks for another "
+    "precision. When you calculate a number, show the arithmetic with the "
     "excerpt figures in the answer, for example: (1,240 − 980) ÷ 980 × 100 = 26.53%."
 )
 
