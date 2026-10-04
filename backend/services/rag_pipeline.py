@@ -39,7 +39,10 @@ _STRUCTURED_OUTPUT_INSTRUCTION = (
     f"Return only valid JSON with this exact shape: {_ANSWER_JSON_SHAPE}. "
     "Set found_in_excerpts to false when the excerpts do not contain what is needed "
     "to answer; the answer may then be empty. Never answer No just because the excerpts "
-    "don't mention something; set found_in_excerpts to false instead. "
+    "don't mention something; set found_in_excerpts to false instead. The exception is an excerpt "
+    "that is the complete list or table the question asks about: if it shows there are none (the "
+    "item is absent from the list, or its line is empty or a dash), set found_in_excerpts to true "
+    "and answer that there are none, naming that list or table. "
     "Do not include markdown, code fences, or any extra keys."
 )
 
