@@ -39,7 +39,7 @@ CALCULATE_TOOL = {
     },
 }
 
-_OPERATORS = {"−": "-", "–": "-", "×": "*", "÷": "/"}
+_OPERATORS = {"−": "-", "–": "-", "\u2011": "-", "×": "*", "÷": "/"}
 _BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
 
 

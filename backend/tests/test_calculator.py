@@ -32,6 +32,7 @@ class EvaluateTestCase(unittest.TestCase):
     def test_reads_the_arithmetic_models_write(self):
         self.assertAlmostEqual(evaluate("(177,866 − 135,987) ÷ 135,987 × 100"), 30.7963, places=4)
         self.assertEqual(evaluate("-546 / ((38363 + 32963) / 2)"), -546 / 35663)
+        self.assertEqual(evaluate("\u2011546 / 2"), -273.0)
 
     def test_refuses_anything_that_is_not_plain_arithmetic(self):
         self.assertIsNone(evaluate("__import__('os').system('ls')"))

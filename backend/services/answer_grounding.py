@@ -32,9 +32,9 @@ from .calculator import Calculation, evaluate
 
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 _SCALE = re.compile(r"\s*(?:(?:thousand|million|billion|trillion)s?\b|(?:k|m|mm|bn|b)\b)", re.IGNORECASE)
-# A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may carry a sign ("−3.0",
-# "+3.83"). The result is matched by lookahead so it can start the next step's working.
-_WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–+]?\$?\(?(\d[\d,]*(?:\.\d+)?))")
+# A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may carry a sign or a bracket
+# ("−3.0", "+3.83", "(-546) ÷ …"). The result is matched by lookahead so it can start the next step's working.
+_WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–+(]*\$?\(?(\d[\d,]*(?:\.\d+)?))")
 # Label words such as "Operating profit", "D&A" or a bare "&"; dropped before the arithmetic is read, along with
 # brackets left empty by notes like "(from the cash flow statement)".
 _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
@@ -44,7 +44,7 @@ _DATE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
 # After a shown result: an operator, possibly after a unit, means the right side is itself a calculation
 # ("= 365 × 29,962.5 ÷ …", "= $2,564 million ÷ $4,476 million = 0.57").
-_CONTINUES = re.compile(rf"(?:{_SCALE.pattern})?\s*%?\s*[+\-−–*/×÷]", re.IGNORECASE)
+_CONTINUES = re.compile(rf"(?:{_SCALE.pattern})?\s*%?\s*\)?\s*[+\-−–*/×÷]", re.IGNORECASE)
 # Constants a calculation may use without the filing printing them: percentages, averages, periods, units.
 _CONSTANTS = {2.0, 4.0, 12.0, 100.0, 360.0, 365.0, 1000.0}
 
@@ -126,12 +126,19 @@ def _calculated_numbers(calculations: Iterable[Calculation], sources: list[Numbe
     that number is reported as unsupported like any other.
     """
     calculated: list[Number] = []
-    for calculation in calculations:
-        inputs = numbers_in(calculation.expression)
-        if all(n.value in _CONSTANTS or is_supported(n, [*sources, *calculated]) for n in inputs):
+    pending = list(calculations)
+    # Repeat until nothing new is accepted: the model may ask for a step before the one it builds on.
+    while True:
+        accepted = [
+            c for c in pending
+            if all(n.value in _CONSTANTS or is_supported(n, [*sources, *calculated]) for n in numbers_in(c.expression))
+        ]
+        if not accepted:
+            return calculated
+        for calculation in accepted:
+            pending.remove(calculation)
             for value in (abs(calculation.result), abs(calculation.result) * 100):
                 calculated.append(Number(f"{value:.10g}", value, 10, False))
-    return calculated
 
 
 def find_grounding_failure(
@@ -145,7 +152,8 @@ def find_grounding_failure(
     excerpts = [excerpt for excerpt in excerpts if excerpt]
     if not excerpts:
         return _failure("no_evidence", [])
-    answer = _DATE.sub(" ", answer)
+    # A non-breaking hyphen is used as a minus sign ("(‑546) ÷ 35,663 = ‑0.0153"); dates aren't figures.
+    answer = _DATE.sub(" ", answer.replace("\u2011", "-"))
     sources = [number for text in [*excerpts, question] for number in numbers_in(text)]
     calculated = _calculated_numbers(calculations, sources)
 

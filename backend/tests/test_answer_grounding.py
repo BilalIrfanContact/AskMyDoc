@@ -114,6 +114,20 @@ class AnswerGroundingTestCase(unittest.TestCase):
         answer = "Inventory at 12/31/2021 = $604 million. Average = (604 + 1,055) ÷ 2 = 829.5. Turnover = 10,069 ÷ 829.5 = 12.14 times."
         self.assertIsNone(find_grounding_failure(answer, [excerpt]))
 
+    def test_a_non_breaking_hyphen_reads_as_a_minus_sign(self):
+        # AES, entry 018 rounding run: the model wrote "‑" (U+2011) for minus.
+        excerpt = "Net loss attributable (546). Total assets 38,363 32,963."
+        answer = "ROA = (\u2011546) ÷ ((38,363 + 32,963) ÷ 2) = (\u2011546) ÷ 35,663 = \u20110.0153, which rounds to \u20110.02"
+        calculations = [Calculation("(38363 + 32963) / 2", 35663.0)]
+        self.assertIsNone(find_grounding_failure(answer, [excerpt], "", calculations))
+
+    def test_a_calculation_may_build_on_one_the_model_asked_for_later(self):
+        # Microsoft, same run: the percentage was asked for before the subtraction it uses.
+        excerpt = "Total debt 47,237 49,781."
+        calculations = [Calculation("(-2544/49781)*100", -5.1104), Calculation("47237-49781", -2544.0)]
+        answer = "A decrease of $2,544 million, or about 5.11%."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt], "", calculations))
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
