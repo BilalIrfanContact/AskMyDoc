@@ -32,18 +32,6 @@ class MeteredChatTestCase(UsageTestCase):
         [entry] = usage_ledger.read_entries()
         self.assertEqual((entry["task"], entry["input_tokens"], entry["output_tokens"]), ("rerank", 1200, 30))
 
-    def test_labels_use_low_reasoning_effort_and_other_jobs_keep_the_default(self):
-        llm = Mock()
-        llm.invoke.return_value = SimpleNamespace(content="ok", usage_metadata={"input_tokens": 10, "output_tokens": 5})
-
-        with patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai:
-            MeteredChat("label").invoke("label this chunk")
-            MeteredChat("answer").invoke("answer this")
-
-        label_call, answer_call = chat_openai.call_args_list
-        self.assertEqual(label_call.kwargs["model_kwargs"], {"reasoning_effort": "low"})
-        self.assertEqual(answer_call.kwargs["model_kwargs"], {})
-
     def test_tool_calls_pass_the_tools_and_are_metered(self):
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(content="ok", usage_metadata={"input_tokens": 900, "output_tokens": 40})

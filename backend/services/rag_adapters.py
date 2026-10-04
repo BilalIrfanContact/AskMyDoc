@@ -185,7 +185,7 @@ class ChromaRetrievalAdapter:
         )
 
     def _labels(self, chunk_ids: Sequence[str]) -> dict[str, str]:
-        """Chunk labels written at indexing time; documents indexed before labelling have none."""
+        """Legacy labels for the eval scripts' evidence picker; new uploads have none."""
         if not chunk_ids:
             return {}
         stored = self._vectordb._collection.get(ids=list(chunk_ids), include=["metadatas"])

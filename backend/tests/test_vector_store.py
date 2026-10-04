@@ -4,7 +4,6 @@ from unittest.mock import Mock, patch
 
 import chromadb
 
-from backend.services.chunk_labels import DocumentLabels
 from backend.services.vector_store import (
     IndexPayload,
     StaleEmbeddings,
@@ -17,7 +16,7 @@ from backend.services.vector_store import (
 
 
 class VectorStoreTestCase(unittest.TestCase):
-    def test_build_vector_store_embeds_plain_text_and_keeps_labels_for_reranking(self):
+    def test_build_vector_store_embeds_plain_text_without_labelling(self):
         embeddings = Mock()
         embeddings.embed_documents.return_value = [[0.1], [0.2]]
         collection = Mock()
@@ -29,11 +28,7 @@ class VectorStoreTestCase(unittest.TestCase):
             patch("backend.services.vector_store.get_embedding_model", return_value=embeddings),
             patch("backend.services.vector_store.chromadb.PersistentClient", return_value=client),
         ):
-            stored_count = build_vector_store(
-                "doc-1",
-                ["alpha", "beta"],
-                label_fn=lambda chunks: DocumentLabels(title="Acme 10-K", labels=["Balance sheet", ""]),
-            )
+            stored_count = build_vector_store("doc-1", ["alpha", "beta"])
 
         self.assertEqual(stored_count, 2)
         embeddings.embed_documents.assert_called_once_with(
@@ -45,8 +40,8 @@ class VectorStoreTestCase(unittest.TestCase):
         self.assertEqual(
             added["metadatas"],
             [
-                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0, "label": "Balance sheet", "document_title": "Acme 10-K"},
-                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1, "label": "", "document_title": "Acme 10-K"},
+                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0},
+                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1},
             ],
         )
         self.assertEqual(client.create_collection.call_args.kwargs["metadata"]["embedding_input"], "plain")

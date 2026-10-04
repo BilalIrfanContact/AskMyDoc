@@ -1,54 +1,45 @@
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 from backend.scripts.reindex_documents import reindex_document
-
-
-def _collection(metadatas):
-    collection = Mock()
-    collection.get.return_value = {
-        "ids": [f"doc:chunk:{index}" for index in range(len(metadatas))],
-        "documents": [f"text {index}" for index in range(len(metadatas))],
-        "metadatas": metadatas,
-    }
-    return collection
+from backend.services.vector_store import IndexPayload, get_persisted_collection, write_index_payload
 
 
 class ReembedTestCase(unittest.TestCase):
-    def _run(self, metadatas, **kwargs):
+    def test_reembedding_keeps_existing_metadata_and_replaces_the_collection(self):
+        metadatas = [
+            {"chunk_id": "doc:chunk:0", "chunk_index": 0, "label": "Balance sheet", "document_title": "Acme 10-K"},
+            {"chunk_id": "doc:chunk:1", "chunk_index": 1},
+        ]
+        embeddings = Mock()
+        embeddings.embed_documents.return_value = [[1.0, 0.0], [0.0, 1.0]]
         with (
-            patch("backend.scripts.reindex_documents.get_persisted_collection", return_value=_collection(metadatas)),
-            patch("backend.scripts.reindex_documents.prepare_index_payload") as prepare,
-            patch("backend.scripts.reindex_documents.replace_index_payload") as replace,
-            patch("backend.scripts.reindex_documents.restore_interrupted_swap"),
-            patch("backend.scripts.reindex_documents.title_document", return_value="Generated title") as title,
+            tempfile.TemporaryDirectory() as store,
+            patch("backend.services.vector_store.PERSIST_DIRECTORY", store),
+            patch("backend.services.vector_store.embedding_model_name", return_value="test-embedding-model"),
+            patch("backend.services.vector_store.get_embedding_model", return_value=embeddings),
         ):
-            outcome = reindex_document("doc", **kwargs)
-        return outcome, prepare, replace, title
+            write_index_payload(
+                "doc",
+                IndexPayload(
+                    ids=["doc:chunk:1", "doc:chunk:0"],
+                    documents=["text 1", "text 0"],
+                    embeddings=[[0.5, 0.5], [0.5, 0.5]],
+                    metadatas=list(reversed(metadatas)),
+                ),
+            )
+            outcome = reindex_document("doc")
+            collection = get_persisted_collection("doc")
+            stored = collection.get(include=["documents", "metadatas", "embeddings"])
 
-    def test_reembedding_reuses_stored_labels_and_title(self):
-        outcome, prepare, _, title = self._run(
-            [{"label": "Balance sheet", "document_title": "Acme 10-K"}, {"label": "Risk factors", "document_title": "Acme 10-K"}],
-            reembed=True,
-        )
-
-        labels = prepare.call_args.args[2](["text 0", "text 1"])
         self.assertEqual(outcome, "reembedded")
-        self.assertEqual((labels.title, labels.labels), ("Acme 10-K", ["Balance sheet", "Risk factors"]))
-        title.assert_not_called()
-
-    def test_reembedding_generates_only_a_missing_title(self):
-        _, prepare, _, title = self._run([{"label": "Balance sheet"}], reembed=True)
-
-        self.assertEqual(prepare.call_args.args[2](["text 0"]).title, "Generated title")
-        title.assert_called_once()
-
-    def test_an_unlabelled_document_is_not_reembedded_or_replaced(self):
-        outcome, prepare, replace, _ = self._run([{"chunk_id": "doc:chunk:0"}], reembed=True)
-
-        self.assertEqual(outcome, "skipped")
-        prepare.assert_not_called()
-        replace.assert_not_called()
+        embeddings.embed_documents.assert_called_once_with(["text 0", "text 1"])
+        self.assertEqual(stored["ids"], ["doc:chunk:0", "doc:chunk:1"])
+        self.assertEqual(stored["documents"], ["text 0", "text 1"])
+        self.assertEqual(stored["metadatas"], metadatas)
+        self.assertEqual([list(vector) for vector in stored["embeddings"]], [[1.0, 0.0], [0.0, 1.0]])
+        self.assertEqual(collection.metadata["embedding_model"], "test-embedding-model")
 
 
 if __name__ == "__main__":
