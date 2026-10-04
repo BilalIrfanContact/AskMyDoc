@@ -109,6 +109,11 @@ class AnswerGroundingTestCase(unittest.TestCase):
         self.assert_grounded("Margins: 36.76% − 32.93% = +3.83 percentage points.", excerpt="Margins 36.76% 32.93%")
         self.assert_rejected("Margins: 36.76% − 32.93% = +4.10 percentage points.", "calculation_incorrect", excerpt="Margins 36.76% 32.93%")
 
+    def test_a_date_is_not_read_as_a_division(self):
+        excerpt = "Inventory 1,055 604. Cost of sales 10,069."
+        answer = "Inventory at 12/31/2021 = $604 million. Average = (604 + 1,055) ÷ 2 = 829.5. Turnover = 10,069 ÷ 829.5 = 12.14 times."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt]))
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
