@@ -32,9 +32,9 @@ from .calculator import Calculation, evaluate
 
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 _SCALE = re.compile(r"\s*(?:(?:thousand|million|billion|trillion)s?\b|(?:k|m|mm|bn|b)\b)", re.IGNORECASE)
-# A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may be negative. The result
-# is matched by lookahead so it can start the next step's working.
-_WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–]?\$?\(?(\d[\d,]*(?:\.\d+)?))")
+# A shown calculation: anything up to "=" (or "≈") on one line, then the result, which may carry a sign ("−3.0",
+# "+3.83"). The result is matched by lookahead so it can start the next step's working.
+_WORKING = re.compile(r"([^=≈\n]+?)\s*[=≈]\s*(?=[-−–+]?\$?\(?(\d[\d,]*(?:\.\d+)?))")
 # Label words such as "Operating profit", "D&A" or a bare "&"; dropped before the arithmetic is read, along with
 # brackets left empty by notes like "(from the cash flow statement)".
 _LABEL = re.compile(r"[A-Za-z&][A-Za-z&'’]*")
@@ -156,7 +156,7 @@ def find_grounding_failure(
         result = numbers_in(match.group(2))[0]
         chained = _chained_side(answer, match)
         if chained and abs(chained[1] - computed) <= 0.005 * abs(computed) + 1e-9:
-            missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived])]
+            missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived, *calculated])]
             if missing:
                 return _failure("unsupported_numbers", missing)
             derived += [*operands, *chained[0]]  # Same value restated; the next "=" checks the result.
@@ -169,7 +169,7 @@ def find_grounding_failure(
         as_percent = re.match(r"\s*(?:%|percent)", answer[match.end(2):]) is not None
         if not (_rounds_to(abs(computed), result) or (as_percent and _rounds_to(abs(computed) * 100, result))):
             return _failure("calculation_incorrect", [result.text])
-        missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived])]
+        missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived, *calculated])]
         if missing:
             return _failure("unsupported_numbers", missing)
         derived += [result, *operands]  # The checked sum vouches for its own constants and result.

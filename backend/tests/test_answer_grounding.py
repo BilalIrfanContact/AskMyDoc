@@ -98,6 +98,17 @@ class AnswerGroundingTestCase(unittest.TestCase):
         answer = "( $689 million + $1,875 million ) ÷ $4,476 million = $2,564 million ÷ $4,476 million = 0.5728 (≈0.57)."
         self.assertIsNone(find_grounding_failure(answer, [excerpt]))
 
+    def test_a_shown_step_may_use_calculator_results_as_its_inputs(self):
+        # Adobe, repeat 2 of entry 017: the margins came from the calculator, the change from a shown step.
+        excerpt = "Operating income 6,098 5,802. Total revenue 17,606 15,785."
+        calculations = [Calculation("6098/17606", 0.346359), Calculation("5802/15785", 0.367564)]
+        answer = "The margin went from 36.76% to 34.64%. Change: 34.64% – 36.76% = –2.12 percentage points."
+        self.assertIsNone(find_grounding_failure(answer, [excerpt], "", calculations))
+
+    def test_a_result_written_with_a_plus_sign_counts_as_shown_working(self):
+        self.assert_grounded("Margins: 36.76% − 32.93% = +3.83 percentage points.", excerpt="Margins 36.76% 32.93%")
+        self.assert_rejected("Margins: 36.76% − 32.93% = +4.10 percentage points.", "calculation_incorrect", excerpt="Margins 36.76% 32.93%")
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
