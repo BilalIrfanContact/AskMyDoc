@@ -98,6 +98,7 @@ class AuthorizationRoutesTestCase(unittest.TestCase):
             with self.assertRaises(HTTPException) as exc:
                 chat(
                     ChatRequest(
+                        request_id="00000000-0000-4000-8000-000000000001",
                         document_id="doc-b",
                         conversation_id="convo-b",
                         message="What is in the PDF?",
@@ -125,6 +126,7 @@ class AuthorizationRoutesTestCase(unittest.TestCase):
             with self.assertRaises(HTTPException) as exc:
                 chat(
                     ChatRequest(
+                        request_id="00000000-0000-4000-8000-000000000001",
                         document_id="doc-other",
                         conversation_id="convo-a",
                         message="What is in the PDF?",

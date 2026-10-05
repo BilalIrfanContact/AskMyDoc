@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +39,7 @@ class UploadErrorResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    request_id: UUID
     document_id: str
     question: Optional[str] = Field(None, max_length=2000)
     message: Optional[str] = Field(None, max_length=2000)
@@ -77,6 +79,7 @@ class ConversationsResponse(BaseModel):
 
 
 class MessageRecord(BaseModel):
+    request_id: Optional[UUID] = None
     id: str
     conversation_id: str
     role: str

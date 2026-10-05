@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import unittest
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import httpx
@@ -31,7 +31,6 @@ class RequestConcurrencyTestCase(unittest.IsolatedAsyncioTestCase):
         conversation = {"id": "convo-a", "user_id": "user-a", "document_id": "doc-a"}
         results = {
             "backend.services.conversation_turn.require_user_conversation": conversation,
-            "backend.services.conversation_turn.insert_message": {},
             "backend.services.conversation_turn.answer_question": AnswerDecision(
                 answer="The refund window is 30 days.", intent="qa", retrieval_mode="semantic",
                 answer_status="answered", citations=[],
@@ -55,7 +54,7 @@ class RequestConcurrencyTestCase(unittest.IsolatedAsyncioTestCase):
         }
         cases = [
             ("chat generation", "backend.services.conversation_turn.answer_question", "POST", "/chat", {
-                "json": {"document_id": "doc-a", "conversation_id": "convo-a", "message": "Refund window?"},
+                "json": {"request_id": "00000000-0000-4000-8000-000000000001", "document_id": "doc-a", "conversation_id": "convo-a", "message": "Refund window?"},
             }),
             ("upload extraction", "backend.services.document_lifecycle.extract_text_from_pdf", "POST", "/upload", {
                 "files": {"file": ("report.pdf", b"%PDF-test", "application/pdf")},
@@ -77,12 +76,18 @@ class RequestConcurrencyTestCase(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
             for label, blocked_call, method, path, kwargs in cases:
                 with self.subTest(workflow=label), ExitStack() as stack:
-                    stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
                     stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-a"}))
                     stack.enter_context(patch("backend.routers.documents.cached_suggestions", side_effect=lambda user, doc, generate: generate(doc)))
                     for target, result in results.items():
                         stack.enter_context(patch(target, return_value=result))
 
+                    def transition(action, **kwargs):
+                        if action == "claim":
+                            return {"state": "generating"}
+                        if action == "save":
+                            return {"state": "generated", "result": kwargs["result"]}
+                        return {"state": "completed", "result": vars(results["backend.services.conversation_turn.answer_question"])}
+                    stack.enter_context(patch("backend.services.conversation_turn.transition_turn", side_effect=transition))
                     started = threading.Event()
                     release = threading.Event()
                     expired = threading.Event()

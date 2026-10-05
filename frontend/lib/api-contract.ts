@@ -14,6 +14,7 @@ export interface ChatRequest {
   "document_id": string;
   "message"?: string | null;
   "question"?: string | null;
+  "request_id": string;
 }
 
 export interface ChatResponse {
@@ -92,6 +93,7 @@ export interface MessageRecord {
   "conversation_id": string;
   "created_at"?: string | null;
   "id": string;
+  "request_id"?: string | null;
   "role": string;
 }
 

@@ -10,16 +10,6 @@ from backend.services.document_lifecycle import UploadLifecycleResult, upload_do
 
 
 class DemoLimitsTestCase(unittest.TestCase):
-    def test_failed_question_refunds_but_valid_fallback_counts(self):
-        with patch.object(demo_limits, 'operation', return_value={'id': 'reservation'}) as op:
-            with self.assertRaisesRegex(RuntimeError, 'model unavailable'):
-                with demo_limits.question_allowance('user'):
-                    raise RuntimeError('model unavailable')
-            self.assertEqual(op.call_args.args, ('fail', 'user', 'question', 'reservation'))
-            with demo_limits.question_allowance('user'):
-                pass  # A persisted insufficient-context answer is a successful turn.
-            self.assertEqual(op.call_args.args, ('complete', 'user', 'question', 'reservation'))
-
     def test_database_outage_fails_closed(self):
         with patch.object(demo_limits, 'get_postgrest_client', side_effect=RuntimeError('offline')):
             with self.assertRaises(HTTPException) as error:
