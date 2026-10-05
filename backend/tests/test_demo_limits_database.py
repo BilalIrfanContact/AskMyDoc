@@ -108,6 +108,22 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         self.assertEqual(cached['suggestions'], ['Question?'])
         self.assertFalse(cached['pending'])
 
+    def test_expired_suggestions_stop_waiting_without_another_generation(self):
+        user, document = uuid4(), uuid4()
+        query = f"set role service_role; select demo_suggestions('{user}','{document}');"
+        first = json.loads(self.sql(query))
+        self.sql(f"update demo_operations set expires_at = now() - interval '1 second' where id = '{first['id']}';")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(lambda _: json.loads(self.sql(query)), range(4)))
+        for result in results:
+            self.assertFalse(result['generate'])
+            self.assertFalse(result['pending'])
+            self.assertEqual(result['suggestions'], [])
+        self.assertEqual(self.sql(f"select count(*) from demo_operations where user_id = '{user}';"), '1')
+        # A slow original worker can still save its result; expiry never starts a second AI call.
+        self.sql(f"select demo_operation('complete','{user}','suggestions','{first['id']}','[\"Question?\"]');")
+        self.assertEqual(json.loads(self.sql(query))['suggestions'], ['Question?'])
+
     def test_public_roles_cannot_bypass_limits_and_bucket_enforces_size(self):
         for role in ('anon', 'authenticated'):
             with self.assertRaisesRegex(AssertionError, 'permission denied'):
