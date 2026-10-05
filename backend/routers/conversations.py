@@ -28,7 +28,7 @@ router = APIRouter()
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_user_conversations(
+def get_user_conversations(
     document_id: str | None = Query(None, description="Filter by document UUID"),
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -57,7 +57,7 @@ async def get_user_conversations(
         502: {"model": ErrorDetailResponse},
     },
 )
-async def create_conversation_endpoint(
+def create_conversation_endpoint(
     request: ConversationCreateRequest,
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -85,7 +85,7 @@ async def create_conversation_endpoint(
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_conversation_messages(
+def get_conversation_messages(
     conversation_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):

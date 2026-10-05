@@ -17,11 +17,11 @@ router = APIRouter()
         502: {"model": UploadErrorResponse},
     },
 )
-async def upload_pdf(
+def upload_pdf(
     file: UploadFile = File(...),
     user_id: str = Depends(require_authenticated_user),
 ):
-    result = await upload_document(file=file, user_id=user_id)
+    result = upload_document(file=file, user_id=user_id)
     if result.status != "completed":
         raise result.to_http_exception()
 

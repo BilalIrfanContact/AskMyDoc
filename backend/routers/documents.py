@@ -22,7 +22,7 @@ router = APIRouter()
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_user_documents(user_id: str = Depends(require_authenticated_user)):
+def get_user_documents(user_id: str = Depends(require_authenticated_user)):
     try:
         documents = list_user_documents(user_id=user_id)
     except PersistenceError as exc:
@@ -46,7 +46,7 @@ async def get_document_question_suggestions(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
-    require_user_document(document_id=document_id, user_id=user_id)
+    await run_in_threadpool(require_user_document, document_id=document_id, user_id=user_id)
     try:
         suggestions = await asyncio.wait_for(
             run_in_threadpool(generate_question_suggestions, document_id),
@@ -71,7 +71,7 @@ async def get_document_question_suggestions(
         502: {"model": DeleteErrorResponse},
     },
 )
-async def delete_user_document(
+def delete_user_document(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
