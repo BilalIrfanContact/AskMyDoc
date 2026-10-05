@@ -1,13 +1,12 @@
 import os
 from dataclasses import dataclass
-from typing import Callable, List
+from typing import List, Sequence
 
 import chromadb
 from chromadb.config import Settings
 from langchain_chroma import Chroma
 
 from ..bootstrap import apply_runtime_defaults
-from .chunk_labels import DocumentLabels, label_document
 from .ai_providers import embedding_model_name
 from .embedder import get_embedding_model
 
@@ -43,18 +42,18 @@ class IndexPayload:
 def prepare_index_payload(
     document_id: str,
     chunks: List[str],
-    label_fn: Callable[[List[str]], DocumentLabels] = label_document,
+    kept_metadata: Sequence[dict] | None = None,
 ) -> IndexPayload:
-    """Label and embed chunks without touching the store.
+    """Embed chunks without touching the store.
 
-    Embed only the original text: adding titles and labels reduced Voyage retrieval coverage in the
-    working-set experiment. Keep labels and titles as metadata for reranking and later re-embedding.
+    Only the chunk text is embedded, with no chat model calls. `kept_metadata` carries what a document already
+    has when it is re-embedded, such as labels from the earlier labelling experiment, which the eval
+    scripts' evidence picker still reads.
     """
-    labels = label_fn(chunks)
     ids = [f"{document_id}:chunk:{index}" for index, _ in enumerate(chunks)]
     metadatas = [
-        {"chunk_id": chunk_id, "chunk_index": index, "label": label, "document_title": labels.title}
-        for index, (chunk_id, label) in enumerate(zip(ids, labels.labels))
+        {**(kept_metadata[index] if kept_metadata else {}), "chunk_id": chunk_id, "chunk_index": index}
+        for index, chunk_id in enumerate(ids)
     ]
     return IndexPayload(
         ids=ids,
@@ -135,13 +134,9 @@ def replace_index_payload(document_id: str, payload: IndexPayload) -> int:
     return stored_count
 
 
-def build_vector_store(
-    document_id: str,
-    chunks: List[str],
-    label_fn: Callable[[List[str]], DocumentLabels] = label_document,
-) -> int:
-    """Label, embed and store a document's chunks under `<document_id>:chunk:<index>` IDs."""
-    return write_index_payload(document_id, prepare_index_payload(document_id, chunks, label_fn))
+def build_vector_store(document_id: str, chunks: List[str]) -> int:
+    """Embed and store a document's chunks under `<document_id>:chunk:<index>` IDs."""
+    return write_index_payload(document_id, prepare_index_payload(document_id, chunks))
 
 
 class StaleEmbeddings(RuntimeError):
@@ -152,7 +147,7 @@ def get_vector_store(document_id: str) -> Chroma:
     """Open a document's collection for search, requiring the current model and plain input format.
 
     Vectors from different embedding models can't be compared, so such a document must be re-embedded
-    first (`backend/scripts/reindex_documents.py --reembed`). Older labelled-input collections must also
+    first (`backend/scripts/reindex_documents.py`). Older labelled-input collections must also
     be re-embedded. Collections created before the model was recorded used OpenAI's `text-embedding-3-large`.
     """
     _disable_chroma_telemetry()
@@ -163,7 +158,7 @@ def get_vector_store(document_id: str) -> Chroma:
         raise StaleEmbeddings(
             f"This document was indexed with {stored_model} ({stored_input} chunks), "
             f"but search now uses {embedding_model_name()} ({EMBEDDING_INPUT} chunks). "
-            f"Re-embed it: python -m backend.scripts.reindex_documents --reembed {document_id}"
+            f"Re-embed it: python -m backend.scripts.reindex_documents {document_id}"
         )
     embeddings = get_embedding_model()
     return Chroma(

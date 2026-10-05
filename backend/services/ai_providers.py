@@ -7,7 +7,7 @@ the provider reported afterwards (see `usage_ledger`). Code that needs a model a
     embedding_model().embed_documents(texts)
 
 Models are chosen per job with environment variables (defaults in brackets):
-- `AI_CHAT_MODEL` [openai/gpt-oss-20b]: chunk labels, evidence picking, suggested questions
+- `AI_CHAT_MODEL` [openai/gpt-oss-20b]: suggested questions, evidence picking (eval scripts only)
 - `AI_ANSWER_MODEL` [openai/gpt-oss-20b]: question routing, summaries and the cited answer
 - `AI_GRADER_MODEL` [openai/gpt-oss-120b]: the eval grader
 - `AI_EMBEDDING_MODEL` [voyage-4-lite]: document and question embeddings
@@ -16,12 +16,15 @@ Keys come from `GROQ_API_KEY` and `VOYAGE_API_KEY`.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
 
 import httpx
+import openai
 from langchain_core.embeddings import Embeddings
+from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
 from .usage_ledger import ensure_budget, record
@@ -34,11 +37,7 @@ DEFAULT_CHAT_MODEL = "openai/gpt-oss-20b"
 DEFAULT_GRADER_MODEL = "openai/gpt-oss-120b"
 DEFAULT_EMBEDDING_MODEL = "voyage-4-lite"
 _RETRIES = 6
-
-# gpt-oss models think before answering, and that hidden thinking is billed as output. Labels don't need it:
-# at the default effort a label averaged ~490 output tokens and some spent the whole cap thinking and came
-# back empty; at "low" they take ~100-150 tokens.
-REASONING_EFFORT = {"label": "low"}
+_TOOL_CALL_ATTEMPTS = 3
 
 
 def chat_model_for(task: str) -> str:
@@ -60,6 +59,7 @@ class MeteredChat:
     """
 
     provider = "groq"
+    supports_tools = True
 
     def __init__(self, task: str, model: str | None = None):
         self.task = task
@@ -67,6 +67,28 @@ class MeteredChat:
         self._llm = None
 
     def invoke(self, prompt: str) -> Any:
+        return self._call(prompt)
+
+    def invoke_with_tools(self, messages: list[Any], tools: list[dict]) -> Any:
+        """One call in a tool-using conversation (see `calculator.answer_with_calculator`), metered the same way.
+
+        gpt-oss sometimes sends its final JSON reply as a call to a tool named "json" that it wasn't offered.
+        Groq rejects that with `tool_use_failed` but returns the generation, so the reply is taken from it
+        instead of asking again (asking again repeated the same mistake). Other rejected tool calls are
+        retried, twice.
+        """
+        for attempt in range(_TOOL_CALL_ATTEMPTS):
+            try:
+                return self._call(messages, tools=tools)
+            except openai.BadRequestError as exc:
+                reply = _reply_sent_as_unknown_tool(exc, tools)
+                if reply is not None:
+                    record(self.provider, self.model, self.task, len(str(messages)) // 4 + 1, len(reply.content) // 4 + 1)
+                    return reply
+                if attempt == _TOOL_CALL_ATTEMPTS - 1:
+                    raise
+
+    def _call(self, model_input: Any, **kwargs: Any) -> Any:
         ensure_budget(self.provider, self.model)
         if self._llm is None:
             self._llm = ChatOpenAI(
@@ -75,12 +97,30 @@ class MeteredChat:
                 base_url=GROQ_BASE_URL,
                 api_key=os.getenv("GROQ_API_KEY"),
                 max_retries=_RETRIES,
-                model_kwargs={"reasoning_effort": REASONING_EFFORT[self.task]} if self.task in REASONING_EFFORT else {},
             )
-        response = self._llm.invoke(prompt)
-        input_tokens, output_tokens = _reported_tokens(response, prompt)
+        response = self._llm.invoke(model_input, **kwargs)
+        input_tokens, output_tokens = _reported_tokens(response, str(model_input))
         record(self.provider, self.model, self.task, input_tokens, output_tokens)
         return response
+
+
+def _reply_sent_as_unknown_tool(exc: openai.BadRequestError, tools: list[dict]) -> AIMessage | None:
+    """The arguments of a rejected call to a tool that wasn't offered, as a plain reply; None otherwise.
+
+    The tokens of a rejected call aren't reported, so the caller records an estimate.
+    """
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body["error"] if isinstance(body.get("error"), dict) else body
+    if error.get("code") != "tool_use_failed":
+        return None
+    try:
+        call = json.loads(error.get("failed_generation") or "")
+    except ValueError:
+        return None
+    offered = {tool.get("function", {}).get("name") for tool in tools}
+    if not isinstance(call, dict) or call.get("name") in offered or not isinstance(call.get("arguments"), dict):
+        return None
+    return AIMessage(content=json.dumps(call["arguments"], ensure_ascii=False))
 
 
 def chat_adapter(task: str, model: str | None = None) -> MeteredChat:

@@ -186,8 +186,8 @@ def build_case(
 ) -> dict[str, Any]:
     """Return an evaluator case; answerable cases get `gold_chunk_ids` and a `gold_mapping`.
 
-    Scoring fields are copied when present: `acceptable_answers` (any one value passes, for questions
-    with two standard methods), `key_values` (numbers the answer must contain), `scoring` (a special
+    Scoring fields are copied when present: `acceptable_answers` (any one option passes, for questions
+    with two standard methods; an option may list several values), `key_values` (numbers the answer must contain), `scoring` (a special
     rule) and `grader_note` (extra guidance for the prose grader).
     """
     case = {

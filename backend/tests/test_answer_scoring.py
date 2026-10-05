@@ -78,6 +78,11 @@ class ScoreAnswerTestCase(unittest.TestCase):
         self.assertFalse(score_answer(case, run("About 10 times."), must_not_grade)["passed"])
         self.assertEqual(must_not_grade.prompts, [])
 
+    def test_an_acceptable_method_with_several_values_needs_all_of_them(self):
+        case = {"expected": "answer", "answer_format": "numeric", "acceptable_answers": [["0.67", "0.69"], ["0.53", "0.57"]]}
+        self.assertTrue(score_answer(case, run("It rose from 0.53 to 0.57."), None)["passed"])
+        self.assertFalse(score_answer(case, run("It rose from 0.53 to 0.69."), None)["passed"])
+
     def test_yes_no_needs_matching_verdict_and_key_numbers(self):
         case = {
             "expected": "answer",

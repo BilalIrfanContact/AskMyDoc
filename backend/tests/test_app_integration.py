@@ -356,6 +356,10 @@ class FakeVectorCollection:
         self.query_call_count += 1
         return self._query_result
 
+    def get(self, *, include: list[str]) -> dict:
+        # The whole document, read when the answer step adds the primary statements; none here.
+        return {"ids": [], "documents": [], "metadatas": []}
+
 
 class FakeVectorStore:
     def __init__(
@@ -810,7 +814,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
         )
 
         with (
@@ -939,7 +943,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
         )
 
         with (
@@ -990,7 +994,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(
                 content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
             )
         )
