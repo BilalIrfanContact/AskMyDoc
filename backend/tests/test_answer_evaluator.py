@@ -150,6 +150,7 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
 
         answerable_only = rescore_report(report, cases[:1], score_fn)
         self.assertEqual(answerable_only["summary"]["limit_4"]["scores"]["all"], {"passed": 1, "total": 1})
+        self.assertEqual(answerable_only["summary"]["limit_4"]["run_count"], 1)
 
     def test_missing_gold_labels_are_invalid(self):
         report = evaluate_cases(

@@ -89,8 +89,20 @@ def evaluate_cases(
     if score_fn is not None:
         score_results(cases, case_results, score_fn)
 
+    summary = _summarize(case_results, normalized_limits, scored=score_fn is not None)
+
+    return {
+        "limits": normalized_limits,
+        "case_count": len(case_results),
+        "summary": summary,
+        "cases": case_results,
+    }
+
+
+def _summarize(case_results: Sequence[dict[str, Any]], limits: Sequence[int], scored: bool) -> dict[str, Any]:
+    """Per-limit run counts, fallback reasons and averages, plus pass counts when the runs are scored."""
     summary = {}
-    for limit in normalized_limits:
+    for limit in limits:
         runs = [
             (case["expected"], case["results"][f"limit_{limit}"])
             for case in case_results
@@ -112,15 +124,9 @@ def evaluate_cases(
             "mean_context_char_count": _mean(run["context_char_count"] for run in completed),
             "mean_latency_seconds": _mean(run["latency_seconds"] for run in completed),
         }
-        if score_fn is not None:
+        if scored:
             summary[f"limit_{limit}"]["scores"] = _score_summary(case_results, limit)
-
-    return {
-        "limits": normalized_limits,
-        "case_count": len(case_results),
-        "summary": summary,
-        "cases": case_results,
-    }
+    return summary
 
 
 def _evaluate_case(
@@ -316,8 +322,7 @@ def rescore_report(
     report["cases"] = [result for result in report["cases"] if result["case_id"] in case_ids]
     report["case_count"] = len(report["cases"])
     score_results(cases, report["cases"], score_fn)
-    for limit in report["limits"]:
-        report["summary"][f"limit_{limit}"]["scores"] = _score_summary(report["cases"], limit)
+    report["summary"] = _summarize(report["cases"], report["limits"], scored=True)
     return report
 
 
