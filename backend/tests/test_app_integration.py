@@ -113,13 +113,14 @@ _usage_dir = None
 
 def setUpModule():
     """Keep metered test calls out of the real AI spending log."""
-    global _usage_dir
+    global _usage_dir, _usage_env
     _usage_dir = tempfile.TemporaryDirectory()
-    os.environ["AI_USAGE_DIR"] = _usage_dir.name
+    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
+    _usage_env.start()
 
 
 def tearDownModule():
-    os.environ.pop("AI_USAGE_DIR", None)
+    _usage_env.stop()
     _usage_dir.cleanup()
 
 
