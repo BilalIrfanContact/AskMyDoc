@@ -20,6 +20,7 @@ class UploadErrorDetail(BaseModel):
     lifecycle_status: Literal["failed", "rejected"]
     failure_stage: Literal["validation", "indexing", "storage", "metadata"]
     reason_code: Literal[
+        "file_too_large",
         "invalid_file_type",
         "unreadable_document",
         "no_extractable_text",
@@ -38,8 +39,8 @@ class UploadErrorResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     document_id: str
-    question: Optional[str] = None
-    message: Optional[str] = None
+    question: Optional[str] = Field(None, max_length=2000)
+    message: Optional[str] = Field(None, max_length=2000)
     conversation_id: Optional[str] = None
 
 
@@ -127,3 +128,14 @@ class DeleteDocumentResponse(BaseModel):
     deleted: Literal[True]
     lifecycle_status: Literal["deleted"] = Field(..., description="Lifecycle state for the delete flow")
     cleanup_status: Literal["completed"] = Field(..., description="Cleanup outcome for the delete flow")
+
+
+class UploadInitRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    size: int = Field(gt=0)
+
+
+class UploadInitResponse(BaseModel):
+    upload_id: str
+    signed_url: str
+    content_type: str

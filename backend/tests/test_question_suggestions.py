@@ -89,6 +89,11 @@ class QuestionSuggestionTests(unittest.TestCase):
 
 
 class QuestionSuggestionRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        limits = patch("backend.routers.documents.cached_suggestions", side_effect=lambda user, doc, generate: generate(doc))
+        limits.start()
+        self.addCleanup(limits.stop)
+
     @patch("backend.routers.documents.generate_question_suggestions")
     @patch("backend.routers.documents.require_user_document")
     async def test_route_authorizes_the_document_before_generating_questions(

@@ -6,6 +6,7 @@ from typing import Callable, Literal
 from fastapi import HTTPException, UploadFile
 
 from ..models.schemas import DeleteDocumentResponse, UploadResponse
+from .demo_limits import MAX_UPLOAD_BYTES, SMALLER_FILE_MESSAGE
 from .markdown_extractor import extract_text_from_markdown
 from .pdf_extractor import extract_text_from_pdf
 from .persistence import PersistenceError
@@ -23,6 +24,7 @@ UploadFailureStage = Literal["validation", "indexing", "storage", "metadata"]
 UploadCleanupStatus = Literal["not-needed", "completed", "failed"]
 UploadLifecycleStatus = Literal["completed", "rejected", "failed"]
 UploadReasonCode = Literal[
+    "file_too_large",
     "invalid_file_type",
     "unreadable_document",
     "no_extractable_text",
@@ -186,7 +188,13 @@ def _delete_failure(
     )
 
 
-def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
+def upload_document(
+    file: UploadFile,
+    user_id: str,
+    *,
+    document_id: str | None = None,
+    existing_storage_url: str | None = None,
+) -> UploadLifecycleResult:
     """Process an upload synchronously; the FastAPI sync route runs this in a worker thread."""
     upload_kind = _resolve_upload_kind(file)
     if upload_kind is None:
@@ -198,7 +206,15 @@ def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
             reason_code="invalid_file_type",
         )
 
-    data = file.file.read()
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return UploadLifecycleResult(
+            status="rejected",
+            http_status=413,
+            detail=SMALLER_FILE_MESSAGE,
+            failure_stage="validation",
+            reason_code="file_too_large",
+        )
     try:
         text = upload_kind.extract_text(data)
     except Exception:
@@ -229,7 +245,7 @@ def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
             reason_code="no_usable_chunks",
         )
 
-    document_id = str(uuid.uuid4())
+    document_id = document_id or str(uuid.uuid4())
     try:
         stored_count = build_vector_store(document_id=document_id, chunks=chunks)
     except Exception as exc:
@@ -269,7 +285,7 @@ def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
     filename = file.filename or upload_kind.fallback_filename
 
     try:
-        storage_url = upload_file_to_storage(
+        storage_url = existing_storage_url or upload_file_to_storage(
             user_id=user_id,
             document_id=document_id,
             filename=filename,

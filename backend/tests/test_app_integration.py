@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import Mock, patch
@@ -400,6 +400,8 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
             "backend.services.persistence.documents_repository.get_postgrest_client",
@@ -737,6 +739,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
             "backend.services.persistence.documents_repository.get_postgrest_client",

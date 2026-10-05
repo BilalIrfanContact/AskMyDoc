@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse, QuestionSuggestionsResponse
+from ..services.demo_limits import cached_suggestions
 from ..services.authz import require_user_document
 from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
@@ -49,7 +50,7 @@ async def get_document_question_suggestions(
     await run_in_threadpool(require_user_document, document_id=document_id, user_id=user_id)
     try:
         suggestions = await asyncio.wait_for(
-            run_in_threadpool(generate_question_suggestions, document_id),
+            run_in_threadpool(cached_suggestions, user_id, document_id, generate_question_suggestions),
             timeout=20,
         )
     except TimeoutError as exc:

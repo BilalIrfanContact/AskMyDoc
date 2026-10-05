@@ -20,6 +20,8 @@ router = APIRouter()
         401: {"model": ErrorDetailResponse},
         403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
+        429: {"model": ErrorDetailResponse},
+        503: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
     },
 )

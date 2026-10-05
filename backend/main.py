@@ -6,7 +6,10 @@ initialize_backend_environment()
 
 from .routers import chat, conversations, documents, upload
 
+from .services.request_body_limit import RequestBodyLimitMiddleware
+
 app = FastAPI(title="AskMyDoc")
+app.add_middleware(RequestBodyLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
