@@ -4,6 +4,7 @@ from uuid import UUID
 from .demo_limits import MAX_QUESTION_CHARS
 from .authz import require_user_conversation, require_user_document
 from .persistence.turns_repository import transition_turn
+from .persistence.messages_repository import load_turn_history
 from .rag_pipeline import AnswerCitation, AnswerDecision, answer_question
 
 
@@ -58,7 +59,10 @@ def execute_conversation_turn(
     turn = transition_turn("claim", **params)
     if turn["state"] == "generating":
         try:
-            decision = answer_question(document_id=conversation["document_id"], question=question)
+            history = load_turn_history(request.conversation_id, request_id)
+            decision = answer_question(
+                document_id=conversation["document_id"], question=question, history=history,
+            )
         except Exception:
             transition_turn("fail", **params)
             raise

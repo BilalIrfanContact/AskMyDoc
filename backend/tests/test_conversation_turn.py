@@ -24,6 +24,9 @@ class ConversationTurnTestCase(unittest.TestCase):
                           return_value={'document_id': 'doc-a'})
         authorize.start()
         self.addCleanup(authorize.stop)
+        history = patch('backend.services.conversation_turn.load_turn_history', return_value=())
+        self.history = history.start()
+        self.addCleanup(history.stop)
 
     def execute(self, request=None):
         return execute_conversation_turn(user_id='user-a', request=request or self.request)
@@ -34,7 +37,7 @@ class ConversationTurnTestCase(unittest.TestCase):
                 {'state': 'generating'}, {'state': 'generated'}, receipt]) as transition, \
              patch('backend.services.conversation_turn.answer_question', return_value=self.decision) as answer:
             self.assertEqual(self.execute(), self.decision)
-        answer.assert_called_once_with(document_id='doc-a', question='Refund window?')
+        answer.assert_called_once_with(document_id='doc-a', question='Refund window?', history=())
         self.assertEqual([c.args[0] for c in transition.call_args_list], ['claim', 'save', 'complete'])
         self.assertEqual(transition.call_args_list[1].kwargs['result'], asdict(self.decision))
 
@@ -44,6 +47,7 @@ class ConversationTurnTestCase(unittest.TestCase):
              patch('backend.services.conversation_turn.answer_question') as answer:
             self.assertEqual(self.execute(), self.decision)
         answer.assert_not_called()
+        self.history.assert_not_called()
         self.assertEqual(transition.call_count, 1)
 
     def test_saved_answer_resumes_completion_without_generation(self):
@@ -52,6 +56,7 @@ class ConversationTurnTestCase(unittest.TestCase):
              patch('backend.services.conversation_turn.answer_question') as answer:
             self.assertEqual(self.execute(), self.decision)
         answer.assert_not_called()
+        self.history.assert_not_called()
         self.assertEqual([c.args[0] for c in transition.call_args_list], ['claim', 'complete'])
 
     def test_generation_failure_marks_turn_failed_for_safe_retry(self):
@@ -94,6 +99,7 @@ class ConversationTurnTestCase(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 self.execute()
         claim.assert_not_called()
+        self.history.assert_not_called()
 
     def test_mismatched_document_is_rejected_before_claim(self):
         with patch('backend.services.conversation_turn.require_user_document') as authorize, \
@@ -102,3 +108,24 @@ class ConversationTurnTestCase(unittest.TestCase):
                 self.execute(replace(self.request, document_id='doc-b'))
         authorize.assert_called_once_with(document_id='doc-b', user_id='user-a')
         claim.assert_not_called()
+
+    def test_passes_only_the_authorized_turn_history_into_generation(self):
+        from backend.services.conversation_history import ConversationExchange
+        history = (ConversationExchange(question='What revenue?', answer='Revenue was 10 million.'),)
+        self.history.return_value = history
+        with patch('backend.services.conversation_turn.transition_turn', side_effect=[
+                {'state': 'generating'}, {'state': 'generated'},
+                {'state': 'completed', 'result': asdict(self.decision)}]), \
+             patch('backend.services.conversation_turn.answer_question', return_value=self.decision) as answer:
+            self.execute()
+        self.history.assert_called_once_with('convo-a', self.request.request_id)
+        answer.assert_called_once_with(document_id='doc-a', question='Refund window?', history=history)
+
+    def test_history_failure_refunds_the_claim_without_starting_generation(self):
+        self.history.side_effect = RuntimeError('history unavailable')
+        with patch('backend.services.conversation_turn.transition_turn', return_value={'state': 'generating'}) as transition, \
+             patch('backend.services.conversation_turn.answer_question') as answer:
+            with self.assertRaisesRegex(RuntimeError, 'history unavailable'):
+                self.execute()
+        answer.assert_not_called()
+        self.assertEqual([c.args[0] for c in transition.call_args_list], ['claim', 'fail'])

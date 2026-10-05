@@ -152,6 +152,10 @@ class FakePostgrestQuery:
         self._filters.append((field, value))
         return self
 
+    def lt(self, field: str, value):
+        self._filters.append((f"lt:{field}", value))
+        return self
+
     def limit(self, value: int):
         self._limit = value
         return self
@@ -243,7 +247,11 @@ class InMemoryAppState:
 
     @staticmethod
     def _matches_filters(row: dict, filters: list[tuple[str, object]]) -> bool:
-        return all(row.get(field) == value for field, value in filters)
+        return all(
+            row.get(field[3:]) is not None and row[field[3:]] < value
+            if field.startswith("lt:") else row.get(field) == value
+            for field, value in filters
+        )
 
     @staticmethod
     def _project_row(row: dict, selected_fields: list[str] | None) -> dict:
@@ -812,8 +820,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         return json.loads(response_body)["conversation_id"]
 
-    async def _chat(self, conversation_id: str, message: str) -> tuple[int, dict]:
-        self.request_id = str(uuid4())
+    async def _chat(self, conversation_id: str, message: str, request_id: str | None = None) -> tuple[int, dict]:
+        self.request_id = request_id or str(uuid4())
         status, _, response_body = await _request_asgi(
             self.app,
             method="POST",
@@ -842,6 +850,46 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(status, 200)
         return json.loads(response_body)["messages"]
+
+    async def test_follow_up_uses_saved_dialogue_and_completed_retry_replays_its_answer(self):
+        from backend.services.rag_pipeline import AnswerCitation, RagDependencies, RetrievedContext
+        conversation_id = await self._create_conversation()
+        retriever = Mock()
+        retriever.count.return_value = 1
+        retriever.retrieve.side_effect = [
+            RetrievedContext(text="Revenue increased from 100 to 120 million in 2025.", citations=[
+                AnswerCitation(chunk_id="chunk-first", excerpt="Revenue increased from 100 to 120 million in 2025.")
+            ], retrieved_document_count=1),
+            RetrievedContext(text="Revenue increased because software subscriptions grew.", citations=[
+                AnswerCitation(chunk_id="chunk-followup", excerpt="Revenue increased because software subscriptions grew.")
+            ], retrieved_document_count=1),
+        ]
+        generator = Mock()
+        generator.invoke.side_effect = [
+            SimpleNamespace(content="qa"),
+            SimpleNamespace(content='{"found_in_excerpts":true,"answer":"Revenue increased from 100 to 120 million in 2025."}'),
+            SimpleNamespace(content='{"intent":"qa","question":"Why did revenue increase in 2025?"}'),
+            SimpleNamespace(content='{"found_in_excerpts":true,"answer":"Revenue increased because software subscriptions grew."}'),
+        ]
+        dependencies = RagDependencies(retrieval_factory=lambda _: retriever, generation=generator)
+        with patch("backend.services.rag_pipeline._default_dependencies", return_value=dependencies):
+            status, first = await self._chat(conversation_id, "How did revenue change in 2025?")
+            self.assertEqual(status, 200)
+            self.assertEqual(first["answer_status"], "answered")
+            status, followup = await self._chat(conversation_id, "Why did that increase?")
+            request_id = self.request_id
+            self.assertEqual(status, 200)
+            self.assertEqual(followup["answer_status"], "answered")
+            self.assertEqual(followup["citations"][0]["chunk_id"], "chunk-followup")
+            status, replay = await self._chat(conversation_id, "Why did that increase?", request_id=request_id)
+        self.assertEqual(status, 200)
+        self.assertEqual(replay, followup)
+        self.assertEqual(generator.invoke.call_count, 4)
+        self.assertEqual(retriever.retrieve.call_args_list[1].args, ("semantic", "Why did revenue increase in 2025?", 1))
+        route_prompt = generator.invoke.call_args_list[2].args[0]
+        self.assertIn("How did revenue change in 2025?", route_prompt)
+        self.assertIn("Revenue increased from 100 to 120 million in 2025.", route_prompt)
+        self.assertEqual(len(await self._messages(conversation_id)), 4)
 
     async def test_chat_runs_real_grounded_answer_path_and_persists_citations(self):
         conversation_id = await self._create_conversation()
