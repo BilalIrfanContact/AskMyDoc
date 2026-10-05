@@ -2,7 +2,8 @@
 
 For each case and each limit, this calls the real answer pipeline and records the answer,
 whether it fell back (and why), whether the gold chunks reached the answer model, context
-size, and latency. Each answer is also scored against the case's verified answer key using the rules
+size, and latency. A case may carry `history` (earlier `{"question", "answer"}` exchanges in the same
+chat) to measure how follow-up rewriting affects it. Each answer is also scored against the case's verified answer key using the rules
 in `backend/scripts/answer_scoring.py` (a grader model checks prose), unless `--no-score` is given.
 
 Cases default to `"expected": "answer"` and need `gold_chunk_ids`. Cases marked
@@ -34,11 +35,12 @@ from backend.bootstrap import initialize_backend_environment
 from backend.scripts.answer_scoring import grader_model, model_grade_fn, score_answer
 from backend.scripts.evaluate_retrieval import _load_cases
 from backend.services import rag_pipeline
+from backend.services.conversation_history import ConversationExchange
 from backend.services.rag_pipeline import AnswerDecision
 
 
 DEFAULT_LIMITS = (4, 8)
-AnswerFn = Callable[[str, str, int], AnswerDecision]
+AnswerFn = Callable[[str, str, int, tuple[ConversationExchange, ...]], AnswerDecision]
 ScoreFn = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
@@ -141,6 +143,7 @@ def _evaluate_case(
     question = str(case.get("question") or "").strip()
     expected = case.get("expected", "answer")
     gold_chunk_ids = [str(chunk_id) for chunk_id in case.get("gold_chunk_ids", [])]
+    history = tuple(ConversationExchange(**exchange) for exchange in case.get("history", []))
     if expected not in ("answer", "abstain"):
         return {"case_id": case_id, "status": "invalid", "error": 'expected must be "answer" or "abstain"'}
     if not document_id or not question or (expected == "answer" and not gold_chunk_ids):
@@ -155,7 +158,7 @@ def _evaluate_case(
         capture.events.clear()
         started = time.perf_counter()
         try:
-            decision = answer_fn(document_id, question, limit)
+            decision = answer_fn(document_id, question, limit, history)
         except Exception as exc:
             results[f"limit_{limit}"] = {"status": "failed", "error": type(exc).__name__}
             continue
@@ -193,6 +196,7 @@ def _evaluate_case(
         "status": status,
         "document_id": document_id,
         "question": question,
+        "history": case.get("history", []),
         "expected": expected,
         "expected_answer": case.get("expected_answer"),
         "answer_format": case.get("answer_format"),
@@ -284,8 +288,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             report = evaluate_cases(
                 cases,
-                answer_fn=lambda document_id, question, limit: rag_pipeline.answer_question(
-                    document_id, question, qa_limit=limit
+                answer_fn=lambda document_id, question, limit, history: rag_pipeline.answer_question(
+                    document_id, question, qa_limit=limit, history=history
                 ),
                 limits=args.limits,
                 score_fn=score_fn,
