@@ -1,11 +1,10 @@
 import json
-import os
 from dataclasses import dataclass
 from typing import Callable
 
-from langchain_openai import ChatOpenAI
 
-from .rag_adapters import ChromaRetrievalAdapter, OpenAIChatAdapter
+from .ai_providers import chat_adapter
+from .rag_adapters import ChromaRetrievalAdapter
 from .rag_pipeline import GenerationAdapter, RetrievalAdapter
 from .vector_store import get_vector_store
 
@@ -21,12 +20,11 @@ class QuestionSuggestionDependencies:
 
 
 def _default_dependencies() -> QuestionSuggestionDependencies:
-    model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
     return QuestionSuggestionDependencies(
         retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
             get_vector_store(document_id=document_id),
         ),
-        generation=OpenAIChatAdapter(ChatOpenAI(model=model, temperature=0)),
+        generation=chat_adapter("suggest"),
     )
 
 

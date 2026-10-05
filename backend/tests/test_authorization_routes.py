@@ -13,8 +13,8 @@ from backend.routers.conversations import (
 from backend.routers.documents import delete_user_document
 
 
-class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
-    async def test_list_conversations_allows_missing_document_filter(self):
+class AuthorizationRoutesTestCase(unittest.TestCase):
+    def test_list_conversations_allows_missing_document_filter(self):
         with (
             patch(
                 "backend.routers.conversations.require_user_document",
@@ -25,7 +25,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
                 return_value=[],
             ) as list_user_conversations_mock,
         ):
-            response = await get_user_conversations(document_id="doc-missing", user_id="user-a")
+            response = get_user_conversations(document_id="doc-missing", user_id="user-a")
 
         self.assertEqual(response.conversations, [])
         list_user_conversations_mock.assert_called_once_with(
@@ -33,7 +33,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             document_id="doc-missing",
         )
 
-    async def test_list_conversations_rejects_cross_user_document_filter(self):
+    def test_list_conversations_rejects_cross_user_document_filter(self):
         with patch(
             "backend.routers.conversations.require_user_document",
             side_effect=HTTPException(
@@ -42,7 +42,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await get_user_conversations(document_id="doc-b", user_id="user-a")
+                get_user_conversations(document_id="doc-b", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 403)
         self.assertEqual(
@@ -50,7 +50,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "You are not authorized to access this document.",
         )
 
-    async def test_create_conversation_rejects_cross_user_document(self):
+    def test_create_conversation_rejects_cross_user_document(self):
         with patch(
             "backend.routers.conversations.require_user_document",
             side_effect=HTTPException(
@@ -59,7 +59,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await create_conversation_endpoint(
+                create_conversation_endpoint(
                     ConversationCreateRequest(document_id="doc-b"),
                     user_id="user-a",
                 )
@@ -70,7 +70,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "You are not authorized to access this document.",
         )
 
-    async def test_get_conversation_messages_rejects_cross_user_conversation(self):
+    def test_get_conversation_messages_rejects_cross_user_conversation(self):
         with patch(
             "backend.routers.conversations.require_user_conversation",
             side_effect=HTTPException(
@@ -79,7 +79,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await get_conversation_messages(conversation_id="convo-b", user_id="user-a")
+                get_conversation_messages(conversation_id="convo-b", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 403)
         self.assertEqual(
@@ -87,7 +87,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "You are not authorized to access this conversation.",
         )
 
-    async def test_chat_rejects_cross_user_conversation(self):
+    def test_chat_rejects_cross_user_conversation(self):
         with patch(
             "backend.services.conversation_turn.require_user_conversation",
             side_effect=HTTPException(
@@ -96,7 +96,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await chat(
+                chat(
                     ChatRequest(
                         document_id="doc-b",
                         conversation_id="convo-b",
@@ -111,7 +111,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "You are not authorized to access this conversation.",
         )
 
-    async def test_chat_rejects_mismatched_owned_document(self):
+    def test_chat_rejects_mismatched_owned_document(self):
         with (
             patch(
                 "backend.services.conversation_turn.require_user_conversation",
@@ -123,7 +123,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await chat(
+                chat(
                     ChatRequest(
                         document_id="doc-other",
                         conversation_id="convo-a",
@@ -138,7 +138,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "Conversation does not belong to the provided document.",
         )
 
-    async def test_delete_document_rejects_cross_user_document(self):
+    def test_delete_document_rejects_cross_user_document(self):
         with patch(
             "backend.routers.documents.require_user_document",
             side_effect=HTTPException(
@@ -147,7 +147,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await delete_user_document(document_id="doc-b", user_id="user-a")
+                delete_user_document(document_id="doc-b", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 403)
         self.assertEqual(
@@ -155,7 +155,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             "You are not authorized to access this document.",
         )
 
-    async def test_delete_document_returns_structured_lifecycle_failure(self):
+    def test_delete_document_returns_structured_lifecycle_failure(self):
         failed_result = Mock(status="failed")
         failed_result.to_http_exception.return_value = HTTPException(
             status_code=502,
@@ -179,7 +179,7 @@ class AuthorizationRoutesTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as exc:
-                await delete_user_document(document_id="doc-a", user_id="user-a")
+                delete_user_document(document_id="doc-a", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 502)
         self.assertEqual(

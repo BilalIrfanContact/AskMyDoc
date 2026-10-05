@@ -1,15 +1,20 @@
+import logging
+
 from fastapi import HTTPException
 
 from .persistence import PersistenceError
 from .persistence.conversations_repository import get_conversation, get_user_conversation
 from .persistence.documents_repository import get_document, get_user_document
 
+logger = logging.getLogger(__name__)
+
 
 def require_user_document(document_id: str, user_id: str) -> dict:
     try:
         document = get_user_document(document_id=document_id, user_id=user_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Ownership lookup failed")
+        raise HTTPException(status_code=502, detail="Unable to verify document access. Please try again later.") from exc
 
     if document:
         return document
@@ -17,7 +22,8 @@ def require_user_document(document_id: str, user_id: str) -> dict:
     try:
         existing_document = get_document(document_id=document_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Ownership lookup failed")
+        raise HTTPException(status_code=502, detail="Unable to verify document access. Please try again later.") from exc
 
     if existing_document:
         raise HTTPException(
@@ -32,7 +38,8 @@ def require_user_conversation(conversation_id: str, user_id: str) -> dict:
     try:
         conversation = get_user_conversation(conversation_id=conversation_id, user_id=user_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Ownership lookup failed")
+        raise HTTPException(status_code=502, detail="Unable to verify conversation access. Please try again later.") from exc
 
     if conversation:
         return conversation
@@ -40,7 +47,8 @@ def require_user_conversation(conversation_id: str, user_id: str) -> dict:
     try:
         existing_conversation = get_conversation(conversation_id=conversation_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Ownership lookup failed")
+        raise HTTPException(status_code=502, detail="Unable to verify conversation access. Please try again later.") from exc
 
     if existing_conversation:
         raise HTTPException(

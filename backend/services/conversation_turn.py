@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from .demo_limits import MAX_QUESTION_CHARS, question_allowance
 from .authz import require_user_conversation, require_user_document
 from .persistence.messages_repository import insert_message
 from .rag_pipeline import AnswerDecision, answer_question
@@ -26,6 +27,9 @@ def execute_conversation_turn(
     if not question:
         raise ConversationTurnValidationError("Question cannot be empty.")
 
+    if len(question) > MAX_QUESTION_CHARS:
+        raise ConversationTurnValidationError("Please keep your question within 2,000 characters.")
+
     if not request.conversation_id:
         raise ConversationTurnValidationError(
             "conversation_id is required to persist chat messages."
@@ -42,20 +46,21 @@ def execute_conversation_turn(
             "Conversation does not belong to the provided document."
         )
 
-    insert_message(
-        conversation_id=request.conversation_id,
-        role="user",
-        content=question,
-    )
-    decision = answer_question(document_id=conversation["document_id"], question=question)
-    insert_message(
-        conversation_id=request.conversation_id,
-        role="assistant",
-        content=decision.answer,
-        answer_status=decision.answer_status,
-        citations=[
-            {"chunk_id": citation.chunk_id, "excerpt": citation.excerpt}
-            for citation in decision.citations
-        ],
-    )
-    return decision
+    with question_allowance(user_id):
+        insert_message(
+            conversation_id=request.conversation_id,
+            role="user",
+            content=question,
+        )
+        decision = answer_question(document_id=conversation["document_id"], question=question)
+        insert_message(
+            conversation_id=request.conversation_id,
+            role="assistant",
+            content=decision.answer,
+            answer_status=decision.answer_status,
+            citations=[
+                {"chunk_id": citation.chunk_id, "excerpt": citation.excerpt}
+                for citation in decision.citations
+            ],
+        )
+        return decision

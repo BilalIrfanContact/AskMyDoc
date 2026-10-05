@@ -9,6 +9,7 @@ from backend.main import app
 OUTPUT_PATH = Path(__file__).resolve().parents[2] / "frontend" / "lib" / "api-contract.ts"
 
 CORE_OPERATIONS = [
+    ("UploadInitResponseBody", "/uploads", "post", "response"),
     ("UploadPdfRequestBody", "/upload", "post", "request"),
     ("UploadPdfResponse", "/upload", "post", "response"),
     ("UploadPdfErrorResponse", "/upload", "post", "error"),

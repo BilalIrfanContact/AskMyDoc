@@ -1,3 +1,5 @@
+import logging
+
 import uuid
 from dataclasses import dataclass
 from os.path import splitext
@@ -6,6 +8,7 @@ from typing import Callable, Literal
 from fastapi import HTTPException, UploadFile
 
 from ..models.schemas import DeleteDocumentResponse, UploadResponse
+from .demo_limits import MAX_UPLOAD_BYTES, SMALLER_FILE_MESSAGE
 from .markdown_extractor import extract_text_from_markdown
 from .pdf_extractor import extract_text_from_pdf
 from .persistence import PersistenceError
@@ -19,10 +22,13 @@ from .persistence.storage_repository import delete_storage_object, upload_file_t
 from .text_chunker import chunk_text
 from .vector_store import build_vector_store, delete_vector_store
 
+logger = logging.getLogger(__name__)
+
 UploadFailureStage = Literal["validation", "indexing", "storage", "metadata"]
 UploadCleanupStatus = Literal["not-needed", "completed", "failed"]
 UploadLifecycleStatus = Literal["completed", "rejected", "failed"]
 UploadReasonCode = Literal[
+    "file_too_large",
     "invalid_file_type",
     "unreadable_document",
     "no_extractable_text",
@@ -157,12 +163,14 @@ def _cleanup_failed_upload(document_id: str, storage_url: str | None = None) -> 
     try:
         delete_vector_store(document_id)
     except Exception:
+        logger.exception("Failed upload index cleanup failed")
         cleanup_failed = True
 
     if storage_url:
         try:
             delete_storage_object(storage_url)
         except PersistenceError:
+            logger.exception("Failed upload storage cleanup failed")
             cleanup_failed = True
 
     return "failed" if cleanup_failed else "completed"
@@ -186,7 +194,14 @@ def _delete_failure(
     )
 
 
-async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
+def upload_document(
+    file: UploadFile,
+    user_id: str,
+    *,
+    document_id: str | None = None,
+    existing_storage_url: str | None = None,
+) -> UploadLifecycleResult:
+    """Process an upload synchronously; the FastAPI sync route runs this in a worker thread."""
     upload_kind = _resolve_upload_kind(file)
     if upload_kind is None:
         return UploadLifecycleResult(
@@ -197,10 +212,19 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             reason_code="invalid_file_type",
         )
 
-    data = await file.read()
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return UploadLifecycleResult(
+            status="rejected",
+            http_status=413,
+            detail=SMALLER_FILE_MESSAGE,
+            failure_stage="validation",
+            reason_code="file_too_large",
+        )
     try:
         text = upload_kind.extract_text(data)
     except Exception:
+        logger.exception("Document extraction failed")
         return UploadLifecycleResult(
             status="rejected",
             http_status=400,
@@ -228,12 +252,13 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             reason_code="no_usable_chunks",
         )
 
-    document_id = str(uuid.uuid4())
+    document_id = document_id or str(uuid.uuid4())
     try:
         stored_count = build_vector_store(document_id=document_id, chunks=chunks)
-    except Exception as exc:
+    except Exception:
+        logger.exception("Document indexing failed")
         cleanup_status = _cleanup_failed_upload(document_id)
-        detail = str(exc) or "Failed to index document chunks."
+        detail = "Unable to process this document. Please try again later."
         if cleanup_status == "failed":
             detail = f"{detail} Cleanup may be required for partially indexed chunks."
 
@@ -250,7 +275,8 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
 
     if stored_count == 0:
         cleanup_status = _cleanup_failed_upload(document_id)
-        detail = "Chunks were created but not stored. Check OpenAI key and embedding setup."
+        logger.error("Document indexing stored no chunks")
+        detail = "Unable to process this document. Please try again later."
         if cleanup_status == "failed":
             detail = f"{detail} Cleanup may be required for partially indexed chunks."
 
@@ -268,16 +294,17 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
     filename = file.filename or upload_kind.fallback_filename
 
     try:
-        storage_url = upload_file_to_storage(
+        storage_url = existing_storage_url or upload_file_to_storage(
             user_id=user_id,
             document_id=document_id,
             filename=filename,
             data=data,
             content_type=upload_kind.content_type,
         )
-    except PersistenceError as exc:
+    except PersistenceError:
+        logger.exception("Document storage upload failed")
         cleanup_status = _cleanup_failed_upload(document_id)
-        detail = str(exc)
+        detail = "Unable to store this document. Please try again later."
         if cleanup_status == "failed":
             detail = f"{detail} Cleanup may be required for indexed chunks."
 
@@ -300,9 +327,10 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             filename=filename,
             storage_url=storage_url,
         )
-    except PersistenceError as exc:
+    except PersistenceError:
+        logger.exception("Document metadata persistence failed")
         cleanup_status = _cleanup_failed_upload(document_id, storage_url=storage_url)
-        detail = str(exc)
+        detail = "Unable to save this document. Please try again later."
         if cleanup_status == "failed":
             detail = f"{detail} Cleanup may be required for uploaded document artifacts."
 
@@ -330,9 +358,10 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
 def delete_document(document_id: str, user_id: str, storage_url: str | None = None) -> DeleteLifecycleResult:
     try:
         conversation_ids = list_document_conversation_ids(user_id=user_id, document_id=document_id)
-    except PersistenceError as exc:
+    except PersistenceError:
+        logger.exception("Document conversation lookup failed")
         return _delete_failure(
-            detail=str(exc),
+            detail="Unable to remove this document. Please try again later.",
             failure_stage="conversations",
             reason_code="conversation_lookup_failed",
             cleanup_status="not-started",
@@ -342,9 +371,10 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
         for conversation_id in conversation_ids:
             delete_messages_for_conversation(conversation_id)
         delete_user_document_conversations(user_id=user_id, document_id=document_id)
-    except PersistenceError as exc:
+    except PersistenceError:
+        logger.exception("Document conversation cleanup failed")
         return _delete_failure(
-            detail=str(exc),
+            detail="Unable to remove this document. Please try again later.",
             failure_stage="conversations",
             reason_code="conversation_cleanup_failed",
             cleanup_status="partial",
@@ -352,9 +382,10 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
 
     try:
         delete_vector_store(document_id)
-    except Exception as exc:
+    except Exception:
+        logger.exception("Document index cleanup failed")
         return _delete_failure(
-            detail=str(exc) or "Failed to delete indexed document chunks.",
+            detail="Unable to remove this document. Please try again later.",
             failure_stage="indexing",
             reason_code="indexing_cleanup_failed",
             cleanup_status="partial",
@@ -364,9 +395,10 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
     if storage_url:
         try:
             delete_storage_object(storage_url)
-        except PersistenceError as exc:
+        except PersistenceError:
+            logger.exception("Document storage cleanup failed")
             return _delete_failure(
-                detail=str(exc),
+                detail="Unable to remove this document. Please try again later.",
                 failure_stage="storage",
                 reason_code="storage_delete_failed",
                 cleanup_status="partial",
@@ -375,9 +407,10 @@ def delete_document(document_id: str, user_id: str, storage_url: str | None = No
     # Delete metadata last so the document remains the retry identity after a partial cleanup.
     try:
         delete_document_record(document_id=document_id, user_id=user_id)
-    except PersistenceError as exc:
+    except PersistenceError:
+        logger.exception("Document metadata deletion failed")
         return _delete_failure(
-            detail=str(exc),
+            detail="Unable to remove this document. Please try again later.",
             failure_stage="metadata",
             reason_code="metadata_delete_failed",
             cleanup_status="partial",

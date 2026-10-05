@@ -104,11 +104,22 @@ export interface UploadErrorDetail {
   "failure_stage": "validation" | "indexing" | "storage" | "metadata";
   "lifecycle_status": "failed" | "rejected";
   "message": string;
-  "reason_code": "invalid_file_type" | "unreadable_document" | "no_extractable_text" | "no_usable_chunks" | "indexing_failed" | "no_chunks_stored" | "storage_upload_failed" | "metadata_persist_failed";
+  "reason_code": "file_too_large" | "invalid_file_type" | "unreadable_document" | "no_extractable_text" | "no_usable_chunks" | "indexing_failed" | "no_chunks_stored" | "storage_upload_failed" | "metadata_persist_failed";
 }
 
 export interface UploadErrorResponse {
   "detail": UploadErrorDetail;
+}
+
+export interface UploadInitRequest {
+  "filename": string;
+  "size": number;
+}
+
+export interface UploadInitResponse {
+  "content_type": string;
+  "signed_url": string;
+  "upload_id": string;
 }
 
 export interface UploadResponse {
@@ -125,6 +136,7 @@ export interface ValidationError {
   "type": string;
 }
 
+export type UploadInitResponseBody = UploadInitResponse;
 export type UploadPdfRequestBody = Body_upload_pdf_upload_post;
 export type UploadPdfResponse = UploadResponse;
 export type UploadPdfErrorResponse = UploadErrorResponse | ErrorDetailResponse | HTTPValidationError;

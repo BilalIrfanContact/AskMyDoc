@@ -1,3 +1,4 @@
+import { getUploadValidationError, SMALLER_FILE_MESSAGE } from "./uploadValidation";
 import type {
   ChatResponseBody,
   ChatRequestBody,
@@ -12,6 +13,7 @@ import type {
   GetUserDocumentsResponseBody,
   MessageRecord,
   QuestionSuggestionsResponse,
+  UploadInitResponseBody,
   UploadErrorDetail,
   UploadPdfResponse
 } from "./api-contract";
@@ -48,6 +50,7 @@ function parseUploadReasonCode(
   detail: Partial<UploadErrorDetail> & Record<string, unknown>
 ): UploadReasonCode | null {
   if (
+    detail.reason_code === "file_too_large" ||
     detail.reason_code === "invalid_file_type" ||
     detail.reason_code === "unreadable_document" ||
     detail.reason_code === "no_extractable_text" ||
@@ -183,13 +186,21 @@ export type PersistedConversation = ConversationRecord;
 export type PersistedMessage = MessageRecord;
 
 export async function uploadPdf(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const res = await fetch(`${API_BASE}/upload`, {
-    method: "POST",
-    body: formData
+  const validationError = getUploadValidationError(file);
+  if (validationError) throw new UploadFlowError(validationError, { lifecycleStatus: "rejected" });
+  const authorization = await fetch(`${API_BASE}/upload`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, size: file.size })
   });
+  if (!authorization.ok) throw new UploadFlowError(await getErrorMessage(authorization, "Unable to start upload."));
+  const { upload_id, signed_url, content_type } = await authorization.json() as UploadInitResponseBody;
+  const stored = await fetch(signed_url, {
+    method: "PUT", headers: { "Content-Type": content_type, "x-upsert": "false" }, body: file
+  });
+  if (!stored.ok) {
+    throw new UploadFlowError(stored.status === 413 ? SMALLER_FILE_MESSAGE : "File upload failed. Please try again later.");
+  }
+  const res = await fetch(`${API_BASE}/upload/${encodeURIComponent(upload_id)}/complete`, { method: "POST" });
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: { message: "Upload failed." } }));

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import AnswerCitation, ChatRequest, ChatResponse, ErrorDetailResponse
@@ -7,7 +9,8 @@ from ..services.conversation_turn import (
     execute_conversation_turn,
 )
 from ..services.internal_auth import require_authenticated_user
-from ..services.persistence import PersistenceError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,10 +23,12 @@ router = APIRouter()
         401: {"model": ErrorDetailResponse},
         403: {"model": ErrorDetailResponse},
         404: {"model": ErrorDetailResponse},
+        429: {"model": ErrorDetailResponse},
+        503: {"model": ErrorDetailResponse},
         502: {"model": ErrorDetailResponse},
     },
 )
-async def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user)):
+def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user)):
     try:
         decision = execute_conversation_turn(
             user_id=user_id,
@@ -38,10 +43,9 @@ async def chat(request: ChatRequest, user_id: str = Depends(require_authenticate
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
         raise
-    except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Chat request failed")
+        raise HTTPException(status_code=502, detail="Unable to answer your question. Please try again later.") from exc
 
     return ChatResponse(
         answer=decision.answer,

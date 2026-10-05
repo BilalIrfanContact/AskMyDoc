@@ -1,0 +1,253 @@
+{
+  "date": "2026-09-26",
+  "method": "Searched every stored Chroma chunk of each filing (the full extracted text AskMyDoc can retrieve) for the question's terms and variants, ignoring case and whitespace because extraction glues some words; then read the matching passages to judge whether any states or allows deriving the requested fact. Each case lists the terms searched. Text only present in images was not checked.",
+  "reviewers": [
+    "Claude (first pass)"
+  ],
+  "cases": [
+    {
+      "case_id": "askmydoc_abs_adobe_2022_10k",
+      "split": "working",
+      "question": "How many paid Creative Cloud subscribers did Adobe have at FY2022 year end?",
+      "verdict": "absent",
+      "closest_material": "Mentions Creative Cloud subscribers and subscriptions and ARR definitions; no subscriber count.",
+      "search_terms": [
+        "creative cloud",
+        "subscriber",
+        "paid seat",
+        "seats",
+        "subscriptions"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_amazon_2017_10k",
+      "split": "working",
+      "question": "How many paid Amazon Prime members did Amazon have at the end of FY2017?",
+      "verdict": "absent",
+      "closest_material": "Describes Amazon Prime membership and how its fees are recognized; no member count.",
+      "search_terms": [
+        "prime",
+        "member",
+        "subscriber"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_amcor_2023_10k",
+      "split": "working",
+      "question": "How many flexible packages did Amcor manufacture in FY2023?",
+      "verdict": "absent",
+      "closest_material": "Flexible packaging segment discussion and percentage volume changes; no package or unit counts.",
+      "search_terms": [
+        "flexible",
+        "packages",
+        "units",
+        "billion",
+        "production volume",
+        "volume"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_americanexpress_2022_10k",
+      "split": "working",
+      "question": "Exactly how many American Express card accounts were closed during FY2022?",
+      "verdict": "absent",
+      "closest_material": "Cards-in-force totals (e.g. 133.3 million) and attrition as a risk; no count of closed accounts, and cards-in-force changes are net of new cards.",
+      "search_terms": [
+        "closed",
+        "cancel",
+        "attrition",
+        "cards-in-force",
+        "cardsinforce",
+        "card accounts",
+        "cardmember accounts"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_block_2020_10k",
+      "split": "working",
+      "question": "How many Cash App users lived in California at FY2020 year end?",
+      "verdict": "absent",
+      "closest_material": "California appears only for headquarters, auditors and tax credits; Cash App users given only as 36 million+ monthly transacting actives across the US and Europe.",
+      "search_terms": [
+        "california",
+        "cash app",
+        "monthly active",
+        "state"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_boeing_2022_10k",
+      "split": "working",
+      "question": "How many 737 MAX aircraft did Boeing actually deliver during FY2023?",
+      "verdict": "absent",
+      "closest_material": "FY2022 filing: only expectations for 2023 (737-7 certification and delivery); actual FY2023 deliveries postdate the filing.",
+      "search_terms": [
+        "737",
+        "deliver",
+        "2023"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_cvshealth_2022_10k",
+      "split": "working",
+      "question": "How many prescriptions were filled at each individual CVS store in FY2022?",
+      "verdict": "absent",
+      "closest_material": "Company share of US retail prescriptions (26.8%); no per-store figures.",
+      "search_terms": [
+        "prescriptions",
+        "per store",
+        "each store",
+        "store"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_gis_2018",
+      "split": "working",
+      "question": "How many boxes of Cheerios did General Mills sell in FY2018?",
+      "verdict": "absent",
+      "closest_material": "Cheerios appears only in a brand list; no box or unit counts.",
+      "search_terms": [
+        "cheerios",
+        "boxes",
+        "cereal",
+        "units",
+        "pound volume"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_microsoft_2023_10k",
+      "split": "working",
+      "question": "How many Xbox consoles did Microsoft sell in FY2023?",
+      "verdict": "absent",
+      "closest_material": "Xbox hardware revenue down 11% on lower volume and price of consoles sold; no unit count.",
+      "search_terms": [
+        "xbox",
+        "console",
+        "units",
+        "hardware"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_pepsico_2022_10k",
+      "split": "working",
+      "question": "How many individual Gatorade bottles did PepsiCo sell in FY2022?",
+      "verdict": "absent",
+      "closest_material": "Gatorade volume up mid-single-digit percent; no bottle counts.",
+      "search_terms": [
+        "gatorade",
+        "bottle",
+        "volume",
+        "cases",
+        "servings"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_3m_2018_10k",
+      "split": "test",
+      "question": "How many N95 respirator masks did 3M sell in FY2018?",
+      "verdict": "absent",
+      "closest_material": "N95 never appears; respirator masks appear in asbestos litigation and product lists only.",
+      "search_terms": [
+        "n95",
+        "respirator",
+        "mask",
+        "units"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_amd_2022_10k",
+      "split": "test",
+      "question": "How many MI300 accelerators did AMD ship in FY2022?",
+      "verdict": "absent",
+      "closest_material": "MI300 never appears; Instinct MI200/MI210 described without shipment counts.",
+      "search_terms": [
+        "mi300",
+        "instinct",
+        "shipped",
+        "units",
+        "accelerator"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_activisionblizzard_2019_10k",
+      "split": "test",
+      "question": "How many Call of Duty game copies were sold in FY2019?",
+      "verdict": "absent",
+      "closest_material": "'Copies' appears only as master or pirated copies; no Call of Duty unit sales.",
+      "search_terms": [
+        "call of duty",
+        "copies",
+        "units sold",
+        "sold"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_bestbuy_2024q2_10q",
+      "split": "test",
+      "question": "How many laptop computers did Best Buy sell in Q2 FY2024?",
+      "verdict": "absent",
+      "closest_material": "Computing and Mobile Phones revenue and comparable-sales percentages; no laptop unit counts.",
+      "search_terms": [
+        "laptop",
+        "computing",
+        "units",
+        "notebook"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_etr_2009",
+      "split": "test",
+      "question": "How much electricity did each Entergy nuclear plant generate in actual MWh during FY2010?",
+      "verdict": "absent",
+      "closest_material": "FY2009 report: planned 2010 generation for the non-utility nuclear fleet as one total (40 TWh) and contract coverage; forecast, not per-plant actuals.",
+      "search_terms": [
+        "mwh",
+        "gwh",
+        "2010",
+        "nuclear",
+        "generation",
+        "capacity factor"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_johnson_johnson_2022_10k",
+      "split": "test",
+      "question": "How many Band-Aid boxes did Johnson & Johnson sell in FY2022?",
+      "verdict": "absent",
+      "closest_material": "BAND-AID appears once as a brand; no box or unit counts.",
+      "search_terms": [
+        "band-aid",
+        "bandaid",
+        "boxes",
+        "units"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_pfizer_2021_10k",
+      "split": "test",
+      "question": "What were Pfizer's actual Paxlovid sales in Q2 FY2023?",
+      "verdict": "absent",
+      "closest_material": "FY2021 filing: forecast of about $22 billion Paxlovid revenue for 2022; nothing about Q2 FY2023 actuals.",
+      "search_terms": [
+        "paxlovid",
+        "2023",
+        "second quarter",
+        "q2"
+      ]
+    },
+    {
+      "case_id": "askmydoc_abs_verizon_2022_10k",
+      "split": "test",
+      "question": "How many iPhone 14 handsets did Verizon sell in FY2022?",
+      "verdict": "absent",
+      "closest_material": "'iPhone' never appears; device sales described only as higher volume and mix.",
+      "search_terms": [
+        "iphone",
+        "handset",
+        "devices sold",
+        "apple",
+        "units"
+      ]
+    }
+  ]
+}

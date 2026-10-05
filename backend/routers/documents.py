@@ -1,15 +1,19 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse, QuestionSuggestionsResponse
+from ..services.demo_limits import SuggestionsPendingError, cached_suggestions
 from ..services.authz import require_user_document
 from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
 from ..services.persistence.documents_repository import list_user_documents
-from ..services.question_suggestions import SuggestionGenerationError, generate_question_suggestions
+from ..services.question_suggestions import generate_question_suggestions
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -22,11 +26,12 @@ router = APIRouter()
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_user_documents(user_id: str = Depends(require_authenticated_user)):
+def get_user_documents(user_id: str = Depends(require_authenticated_user)):
     try:
         documents = list_user_documents(user_id=user_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Document list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your documents. Please try again later.") from exc
 
     return DocumentsResponse(documents=documents)
 
@@ -46,17 +51,26 @@ async def get_document_question_suggestions(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
-    require_user_document(document_id=document_id, user_id=user_id)
+    await run_in_threadpool(require_user_document, document_id=document_id, user_id=user_id)
+
+    async def load_suggestions():
+        while True:
+            try:
+                return await run_in_threadpool(
+                    cached_suggestions, user_id, document_id, generate_question_suggestions,
+                )
+            except SuggestionsPendingError:
+                # Wait without occupying a worker while the original request generates.
+                await asyncio.sleep(0.5)
+
     try:
-        suggestions = await asyncio.wait_for(
-            run_in_threadpool(generate_question_suggestions, document_id),
-            timeout=20,
-        )
+        suggestions = await asyncio.wait_for(load_suggestions(), timeout=20)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Question suggestions timed out.") from exc
-    except SuggestionGenerationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
+        logger.exception("Question suggestions failed")
         raise HTTPException(status_code=502, detail="Failed to load question suggestions.") from exc
     return QuestionSuggestionsResponse(suggestions=suggestions)
 
@@ -71,7 +85,7 @@ async def get_document_question_suggestions(
         502: {"model": DeleteErrorResponse},
     },
 )
-async def delete_user_document(
+def delete_user_document(
     document_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -86,7 +100,8 @@ async def delete_user_document(
     except HTTPException:
         raise
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Document deletion failed")
+        raise HTTPException(status_code=502, detail="Unable to delete this document. Please try again later.") from exc
 
     if result.status != "completed":
         raise result.to_http_exception()

@@ -1,6 +1,8 @@
 import json
+import os
+import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import Mock, patch
@@ -104,6 +106,22 @@ async def _request_asgi(
 
     await app(scope, receive, send)
     return response_status, response_headers, bytes(response_body)
+
+
+_usage_dir = None
+
+
+def setUpModule():
+    """Keep metered test calls out of the real AI spending log."""
+    global _usage_dir, _usage_env
+    _usage_dir = tempfile.TemporaryDirectory()
+    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
+    _usage_env.start()
+
+
+def tearDownModule():
+    _usage_env.stop()
+    _usage_dir.cleanup()
 
 
 class FakeResponse:
@@ -338,6 +356,10 @@ class FakeVectorCollection:
         self.query_call_count += 1
         return self._query_result
 
+    def get(self, *, include: list[str]) -> dict:
+        # The whole document, read when the answer step adds the primary statements; none here.
+        return {"ids": [], "documents": [], "metadatas": []}
+
 
 class FakeVectorStore:
     def __init__(
@@ -378,6 +400,8 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
             "backend.services.persistence.documents_repository.get_postgrest_client",
@@ -685,7 +709,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 502)
         self.assertEqual(
             json.loads(response_body),
-            {"detail": "model unavailable"},
+            {"detail": "Unable to answer your question. Please try again later."},
         )
 
         status, _, response_body = await _request_asgi(
@@ -715,6 +739,8 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
             "backend.services.persistence.documents_repository.get_postgrest_client",
@@ -792,12 +818,12 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"answer": "The refund window is 30 days."}')
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
         )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -858,13 +884,13 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
             SimpleNamespace(
-                content='{"answer": "The handbook covers benefits policy and time-off rules."}'
+                content='{"found_in_excerpts": true, "answer": "The handbook covers benefits policy and time-off rules."}'
             ),
         ]
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "Summarize this document.")
 
@@ -913,17 +939,20 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vectordb.get_call_count, 1)
         self.assertEqual(vectordb._collection.query_call_count, 0)
 
-    async def test_chat_returns_deterministic_fallback_when_retrieval_evidence_is_too_weak(self):
+    async def test_chat_returns_deterministic_fallback_when_model_reports_not_found(self):
         conversation_id = await self._create_conversation()
         vectordb = FakeVectorStore(
             query_documents=["The onboarding checklist covers payroll setup and laptop pickup."],
             query_metadatas=[{"chunk_id": "doc-a:chunk:3"}],
             query_ids=[None],
         )
+        llm = SimpleNamespace(
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -969,14 +998,14 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(
-                content='{"answer": "The refund window is 45 days and includes free returns."}'
+            invoke=lambda prompt, **_kwargs: SimpleNamespace(
+                content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
             )
         )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -1024,12 +1053,12 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"answer": ""}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": ""}'),
         ]
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm),
+            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 

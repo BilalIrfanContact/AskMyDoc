@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..models.schemas import (
@@ -16,6 +18,8 @@ from ..services.persistence.conversations_repository import (
 )
 from ..services.persistence.messages_repository import list_conversation_messages
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -28,7 +32,7 @@ router = APIRouter()
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_user_conversations(
+def get_user_conversations(
     document_id: str | None = Query(None, description="Filter by document UUID"),
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -42,7 +46,8 @@ async def get_user_conversations(
     try:
         conversations = list_user_conversations(user_id=user_id, document_id=document_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your conversations. Please try again later.") from exc
 
     return ConversationsResponse(conversations=conversations)
 
@@ -57,7 +62,7 @@ async def get_user_conversations(
         502: {"model": ErrorDetailResponse},
     },
 )
-async def create_conversation_endpoint(
+def create_conversation_endpoint(
     request: ConversationCreateRequest,
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -69,7 +74,8 @@ async def create_conversation_endpoint(
             document_id=request.document_id,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation creation failed")
+        raise HTTPException(status_code=502, detail="Unable to create a conversation. Please try again later.") from exc
 
     return ConversationCreateResponse(conversation_id=conversation_id)
 
@@ -85,7 +91,7 @@ async def create_conversation_endpoint(
         502: {"model": ErrorDetailResponse},
     },
 )
-async def get_conversation_messages(
+def get_conversation_messages(
     conversation_id: str,
     user_id: str = Depends(require_authenticated_user),
 ):
@@ -94,6 +100,7 @@ async def get_conversation_messages(
     try:
         messages = list_conversation_messages(conversation_id=conversation_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation message list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your messages. Please try again later.") from exc
 
     return ConversationMessagesResponse(messages=messages)

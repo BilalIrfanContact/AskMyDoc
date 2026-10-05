@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 270" width="960" height="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+<title id="title">How AskMyDoc answers a question</title>
+<desc id="desc">A question goes to search (top 15 chunks plus the three financial statements), then to the answer model, which uses a calculator for arithmetic, then to a number check. If every figure is backed by the filing the answer is shown; otherwise the app says the answer is not in the document.</desc>
+<style>
+  .bg { fill: #fcfcfb; stroke: rgba(11,11,11,0.10); }
+  .t1 { fill: #0b0b0b; } .t2 { fill: #52514e; } .t3 { fill: #898781; }
+  .box { fill: #ffffff; stroke: #c3c2b7; }
+  .line { stroke: #c3c2b7; } .grid { stroke: #e1e0d9; } .base { stroke: #c3c2b7; }
+  .accent { fill: #2a78d6; } .accent-stroke { stroke: #2a78d6; }
+  .glow { fill: #2a78d6; } .bad { fill: #d03b3b; } .bad-stroke { stroke: #d03b3b; }
+  .good { fill: #006300; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #1a1a19; stroke: rgba(255,255,255,0.10); }
+    .t1 { fill: #ffffff; } .t2 { fill: #c3c2b7; }
+    .box { fill: #222220; stroke: #383835; }
+    .line { stroke: #383835; } .grid { stroke: #2c2c2a; } .base { stroke: #383835; }
+    .accent { fill: #3987e5; } .accent-stroke { stroke: #3987e5; } .glow { fill: #3987e5; }
+    .good { fill: #0ca30c; }
+  }
+
+  @keyframes lit0 { 0%, 0.0% { opacity: 0; } 0.0%, 4.0% { opacity: 1; } 7.0%, 100% { opacity: 0; } }
+  .lit0 { animation: lit0 6s linear infinite; }
+@keyframes lit1 { 0%, 1.8% { opacity: 0; } 3.8%, 23.8% { opacity: 1; } 26.8%, 100% { opacity: 0; } }
+  .lit1 { animation: lit1 6s linear infinite; }
+@keyframes lit2 { 0%, 25.5% { opacity: 0; } 27.5%, 47.5% { opacity: 1; } 50.5%, 100% { opacity: 0; } }
+  .lit2 { animation: lit2 6s linear infinite; }
+@keyframes lit3 { 0%, 49.2% { opacity: 0; } 51.2%, 71.2% { opacity: 1; } 74.2%, 100% { opacity: 0; } }
+  .lit3 { animation: lit3 6s linear infinite; }
+@keyframes lit4 { 0%, 73.0% { opacity: 0; } 75.0%, 96.0% { opacity: 1; } 99.0%, 100% { opacity: 0; } }
+  .lit4 { animation: lit4 6s linear infinite; }
+  @keyframes ping { 0%, 30.5% { opacity: 0; transform: translateY(0); } 31.5% { opacity: 1; transform: translateY(0); }
+    36.5% { opacity: 1; transform: translateY(48px); } 41.5% { opacity: 1; transform: translateY(0); }
+    42.5%, 100% { opacity: 0; transform: translateY(0); } }
+  .ping { animation: ping 6s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .ping, .travel, [class*="lit"] { animation: none !important; } .travel { display: none; } }
+</style>
+<rect class="bg" x="0.5" y="0.5" width="959" height="269" rx="12"/>
+<line class="line" x1="180" y1="92.0" x2="780" y2="92.0" stroke-width="2"/>
+<g class="travel"><circle class="accent" r="7" cx="0" cy="0">
+  <animateMotion dur="6s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.75;1" calcMode="linear" path="M180,92.0 H780"/>
+  <animate attributeName="opacity" dur="6s" repeatCount="indefinite" values="1;1;0;0" keyTimes="0;0.74;0.75;1"/>
+</circle></g>
+<rect class="box" x="20" y="50" width="160" height="84" rx="10" stroke-width="1.5"/>
+<rect class="glow lit0" x="20" y="50" width="160" height="84" rx="10" opacity="0" fill-opacity="0.12"/>
+<rect class="accent-stroke lit0" x="20" y="50" width="160" height="84" rx="10" fill="none" stroke-width="2" opacity="0"/>
+<rect class="box" x="210" y="50" width="160" height="84" rx="10" stroke-width="1.5"/>
+<rect class="glow lit1" x="210" y="50" width="160" height="84" rx="10" opacity="0" fill-opacity="0.12"/>
+<rect class="accent-stroke lit1" x="210" y="50" width="160" height="84" rx="10" fill="none" stroke-width="2" opacity="0"/>
+<rect class="box" x="400" y="50" width="160" height="84" rx="10" stroke-width="1.5"/>
+<rect class="glow lit2" x="400" y="50" width="160" height="84" rx="10" opacity="0" fill-opacity="0.12"/>
+<rect class="accent-stroke lit2" x="400" y="50" width="160" height="84" rx="10" fill="none" stroke-width="2" opacity="0"/>
+<rect class="box" x="590" y="50" width="160" height="84" rx="10" stroke-width="1.5"/>
+<rect class="glow lit3" x="590" y="50" width="160" height="84" rx="10" opacity="0" fill-opacity="0.12"/>
+<rect class="accent-stroke lit3" x="590" y="50" width="160" height="84" rx="10" fill="none" stroke-width="2" opacity="0"/>
+<rect class="box" x="780" y="50" width="160" height="84" rx="10" stroke-width="1.5"/>
+<rect class="glow lit4" x="780" y="50" width="160" height="84" rx="10" opacity="0" fill-opacity="0.12"/>
+<rect class="accent-stroke lit4" x="780" y="50" width="160" height="84" rx="10" fill="none" stroke-width="2" opacity="0"/>
+<text class="t1" x="100.0" y="80" text-anchor="middle" font-size="15" font-weight="600">Question</text><text class="t2" x="100.0" y="102" text-anchor="middle" font-size="12.5">“What was Amazon’s</text><text class="t2" x="100.0" y="119" text-anchor="middle" font-size="12.5">FY2017 DPO?”</text>
+<text class="t1" x="290.0" y="80" text-anchor="middle" font-size="15" font-weight="600">Search</text><text class="t2" x="290.0" y="102" text-anchor="middle" font-size="12.5">top 15 chunks +</text><text class="t2" x="290.0" y="119" text-anchor="middle" font-size="12.5">the 3 statements</text>
+<text class="t1" x="480.0" y="80" text-anchor="middle" font-size="15" font-weight="600">Answer model</text><text class="t2" x="480.0" y="102" text-anchor="middle" font-size="12.5">gpt-oss on Groq,</text><text class="t2" x="480.0" y="119" text-anchor="middle" font-size="12.5">writes the answer</text>
+<text class="t1" x="670.0" y="80" text-anchor="middle" font-size="15" font-weight="600">Number check</text><text class="t2" x="670.0" y="102" text-anchor="middle" font-size="12.5">every figure backed</text><text class="t2" x="670.0" y="119" text-anchor="middle" font-size="12.5">by the filing?</text>
+<text class="t1" x="860.0" y="80" text-anchor="middle" font-size="15" font-weight="600">Answer</text><text class="t2" x="860.0" y="102" text-anchor="middle" font-size="12.5">93.86 days,</text><text class="t2" x="860.0" y="119" text-anchor="middle" font-size="12.5">with its working</text>
+<line class="line" x1="480.0" y1="134" x2="480.0" y2="182" stroke-width="1.5"/>
+<rect class="box" x="420" y="182" width="120" height="44" rx="8" stroke-width="1.5"/>
+<text class="t1" x="480" y="201" text-anchor="middle" font-size="13" font-weight="600">Calculator</text>
+<text class="t3" x="480" y="217" text-anchor="middle" font-size="11.5" font-family="ui-monospace, Menlo, monospace">calculate(…)</text>
+<circle class="accent ping" cx="480.0" cy="134" r="5" opacity="0"/>
+<line class="bad-stroke" x1="670.0" y1="134" x2="670.0" y2="182" stroke-width="1.5" stroke-dasharray="4 4"/>
+<rect class="box" x="600" y="182" width="140" height="44" rx="8" stroke-width="1.5"/>
+<text class="t1" x="670" y="201" text-anchor="middle" font-size="12.5" font-weight="600"><tspan class="bad">✕</tspan> Not in the</text>
+<text class="t1" x="670" y="217" text-anchor="middle" font-size="12.5" font-weight="600">document</text>
+<text class="t3" x="678.0" y="164" font-size="11">no</text>
+<text class="t3" x="488.0" y="164" font-size="11">every step</text>
+</svg>

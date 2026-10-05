@@ -25,28 +25,57 @@ export async function getUserByEmail(email: string): Promise<AuthUserRecord | nu
   return data ?? null;
 }
 
-export async function upsertGoogleUser(input: {
-  googleId: string;
-  email: string;
-  name?: string | null;
-}): Promise<AuthUserRecord> {
+// Google subjects identify accounts. An email collision must never change an existing login method.
+export async function getOrCreateGoogleUser(
+  input: { googleId: string; email: string; name?: string | null; beforeCreate?: () => Promise<void> },
+  supabaseAdmin = getSupabaseAdmin()
+): Promise<AuthUserRecord | null> {
   const normalizedEmail = input.email.trim().toLowerCase();
-  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data: googleUser, error: googleLookupError } = await supabaseAdmin
+    .from("users")
+    .select("id, email, name, google_id, password_hash")
+    .eq("google_id", input.googleId)
+    .maybeSingle<AuthUserRecord>();
+
+  if (googleLookupError) {
+    throw new Error(`Failed to load Google user: ${googleLookupError.message}`);
+  }
+  if (googleUser) {
+    return googleUser;
+  }
+
+  const { data: emailUser, error: emailLookupError } = await supabaseAdmin
+    .from("users")
+    .select("id")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+
+  if (emailLookupError) {
+    throw new Error(`Failed to check Google email: ${emailLookupError.message}`);
+  }
+  if (emailUser) {
+    return null;
+  }
+
+  await input.beforeCreate?.();
 
   const payload = {
     email: normalizedEmail,
     google_id: input.googleId,
-    name: input.name ?? null
+    name: input.name ?? null,
+    password_hash: null
   };
 
   const { data, error } = await supabaseAdmin
     .from("users")
-    .upsert(payload, { onConflict: "email" })
+    // Unique email and google_id constraints also reject a conflicting concurrent signup.
+    .insert(payload)
     .select("id, email, name, google_id, password_hash")
     .single<AuthUserRecord>();
 
   if (error) {
-    throw new Error(`Failed to upsert Google user: ${error.message}`);
+    throw new Error(`Failed to create Google user: ${error.message}`);
   }
 
   return data;
