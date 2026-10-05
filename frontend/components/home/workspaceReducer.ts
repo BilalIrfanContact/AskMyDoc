@@ -26,9 +26,10 @@ export type WorkspaceAction =
   | { type: "delete/success"; documentId: string }
   | { type: "delete/failure"; error: string }
   | { type: "delete/close" }
-  | { type: "chat/send-start"; question: string }
+  | { type: "chat/send-start"; question: string; requestId: string }
   | {
       type: "chat/send-success";
+      requestId: string;
       answer: string;
       answerStatus: "answered" | "insufficient_context";
       citations: Message["citations"];
@@ -260,22 +261,27 @@ export function workspaceReducer(
     case "chat/send-start":
       return {
         ...state,
-        messages: [...state.messages, { role: "user", content: action.question }],
+        messages: state.messages.some((message) => message.requestId === action.requestId)
+          ? state.messages
+          : [...state.messages, { role: "user", content: action.question, requestId: action.requestId }],
         error: null,
         isAssistantTyping: true
       };
     case "chat/send-success":
       return {
         ...state,
-        messages: [
-          ...state.messages,
-          {
-            role: "assistant",
-            content: action.answer,
-            answerStatus: action.answerStatus,
-            citations: action.citations
-          }
-        ],
+        messages: state.messages.some((message) => message.role === "assistant" && message.requestId === action.requestId)
+          ? state.messages
+          : [
+              ...state.messages,
+              {
+                role: "assistant",
+                requestId: action.requestId,
+                content: action.answer,
+                answerStatus: action.answerStatus,
+                citations: action.citations
+              }
+            ],
         isAssistantTyping: false
       };
     case "chat/send-failure":
