@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -10,7 +11,9 @@ from ..services.document_lifecycle import delete_document as delete_document_lif
 from ..services.internal_auth import require_authenticated_user
 from ..services.persistence import PersistenceError
 from ..services.persistence.documents_repository import list_user_documents
-from ..services.question_suggestions import SuggestionGenerationError, generate_question_suggestions
+from ..services.question_suggestions import generate_question_suggestions
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -27,7 +30,8 @@ def get_user_documents(user_id: str = Depends(require_authenticated_user)):
     try:
         documents = list_user_documents(user_id=user_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Document list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your documents. Please try again later.") from exc
 
     return DocumentsResponse(documents=documents)
 
@@ -65,9 +69,8 @@ async def get_document_question_suggestions(
         raise HTTPException(status_code=504, detail="Question suggestions timed out.") from exc
     except HTTPException:
         raise
-    except SuggestionGenerationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("Question suggestions failed")
         raise HTTPException(status_code=502, detail="Failed to load question suggestions.") from exc
     return QuestionSuggestionsResponse(suggestions=suggestions)
 
@@ -97,7 +100,8 @@ def delete_user_document(
     except HTTPException:
         raise
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Document deletion failed")
+        raise HTTPException(status_code=502, detail="Unable to delete this document. Please try again later.") from exc
 
     if result.status != "completed":
         raise result.to_http_exception()

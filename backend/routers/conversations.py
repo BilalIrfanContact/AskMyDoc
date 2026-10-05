@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..models.schemas import (
@@ -15,6 +17,8 @@ from ..services.persistence.conversations_repository import (
     list_user_conversations,
 )
 from ..services.persistence.messages_repository import list_conversation_messages
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -42,7 +46,8 @@ def get_user_conversations(
     try:
         conversations = list_user_conversations(user_id=user_id, document_id=document_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your conversations. Please try again later.") from exc
 
     return ConversationsResponse(conversations=conversations)
 
@@ -69,7 +74,8 @@ def create_conversation_endpoint(
             document_id=request.document_id,
         )
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation creation failed")
+        raise HTTPException(status_code=502, detail="Unable to create a conversation. Please try again later.") from exc
 
     return ConversationCreateResponse(conversation_id=conversation_id)
 
@@ -94,6 +100,7 @@ def get_conversation_messages(
     try:
         messages = list_conversation_messages(conversation_id=conversation_id)
     except PersistenceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Conversation message list failed")
+        raise HTTPException(status_code=502, detail="Unable to load your messages. Please try again later.") from exc
 
     return ConversationMessagesResponse(messages=messages)
