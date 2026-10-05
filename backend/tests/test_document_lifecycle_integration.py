@@ -205,7 +205,7 @@ class DocumentLifecycleHttpIntegrationTestCase(unittest.IsolatedAsyncioTestCase)
             json.loads(response_body),
             {
                 "detail": {
-                    "message": "Failed to upload document to Supabase Storage",
+                    "message": "Unable to store this document. Please try again later.",
                     "lifecycle_status": "failed",
                     "failure_stage": "storage",
                     "reason_code": "storage_upload_failed",
@@ -426,7 +426,7 @@ class DocumentLifecycleHttpIntegrationTestCase(unittest.IsolatedAsyncioTestCase)
             json.loads(response_body),
             {
                 "detail": {
-                    "message": "Failed to delete document from Supabase Storage",
+                    "message": "Unable to remove this document. Please try again later.",
                     "lifecycle_status": "failed",
                     "failure_stage": "storage",
                     "reason_code": "storage_delete_failed",

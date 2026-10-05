@@ -65,11 +65,11 @@ class DocumentLifecycleTestCase(unittest.TestCase):
         self.assertEqual(result.failure_stage, "storage")
         self.assertEqual(result.http_status, 502)
         self.assertEqual(result.cleanup_status, "completed")
-        self.assertEqual(result.detail, "Failed to upload document to Supabase Storage")
+        self.assertEqual(result.detail, "Unable to store this document. Please try again later.")
         self.assertEqual(
             result.to_error_detail(),
             {
-                "message": "Failed to upload document to Supabase Storage",
+                "message": "Unable to store this document. Please try again later.",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
                 "reason_code": "storage_upload_failed",
@@ -101,7 +101,7 @@ class DocumentLifecycleTestCase(unittest.TestCase):
         self.assertEqual(result.reason_code, "indexing_failed")
         self.assertEqual(result.http_status, 500)
         self.assertEqual(result.cleanup_status, "completed")
-        self.assertEqual(result.detail, "Embedding provider unavailable")
+        self.assertEqual(result.detail, "Unable to process this document. Please try again later.")
         delete_vector_store_mock.assert_called_once_with("doc-1")
 
     def test_upload_document_cleans_up_storage_and_index_when_metadata_persist_fails(self):
@@ -133,7 +133,7 @@ class DocumentLifecycleTestCase(unittest.TestCase):
         self.assertEqual(result.reason_code, "metadata_persist_failed")
         self.assertEqual(result.http_status, 502)
         self.assertEqual(result.cleanup_status, "completed")
-        self.assertEqual(result.detail, "Failed to persist document metadata")
+        self.assertEqual(result.detail, "Unable to save this document. Please try again later.")
         delete_vector_store_mock.assert_called_once_with("doc-1")
         delete_storage_object_mock.assert_called_once_with("documents/user-a/doc-1/report.pdf")
 
@@ -331,7 +331,7 @@ class DocumentLifecycleTestCase(unittest.TestCase):
         self.assertEqual(
             result.to_error_detail(),
             {
-                "message": "Failed to delete document from Supabase Storage",
+                "message": "Unable to remove this document. Please try again later.",
                 "lifecycle_status": "failed",
                 "failure_stage": "storage",
                 "reason_code": "storage_delete_failed",

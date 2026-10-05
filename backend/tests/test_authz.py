@@ -61,7 +61,7 @@ class AuthorizationServiceTestCase(unittest.TestCase):
                 require_user_document(document_id="doc-a", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 502)
-        self.assertEqual(exc.exception.detail, "database unavailable")
+        self.assertEqual(exc.exception.detail, "Unable to verify document access. Please try again later.")
 
     def test_require_user_conversation_raises_403_for_cross_user_conversation(self):
         with (
@@ -100,7 +100,7 @@ class AuthorizationServiceTestCase(unittest.TestCase):
                 require_user_conversation(conversation_id="convo-a", user_id="user-a")
 
         self.assertEqual(exc.exception.status_code, 502)
-        self.assertEqual(exc.exception.detail, "database unavailable")
+        self.assertEqual(exc.exception.detail, "Unable to verify conversation access. Please try again later.")
 
 
 if __name__ == "__main__":
