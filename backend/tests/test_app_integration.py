@@ -792,7 +792,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             query_ids=[None],
         )
         llm = SimpleNamespace(
-            invoke=lambda prompt: SimpleNamespace(content='{"answer": "The refund window is 30 days."}')
+            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}')
         )
 
         with (
@@ -858,7 +858,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="summary"),
             SimpleNamespace(
-                content='{"answer": "The handbook covers benefits policy and time-off rules."}'
+                content='{"found_in_excerpts": true, "answer": "The handbook covers benefits policy and time-off rules."}'
             ),
         ]
 
@@ -913,17 +913,20 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vectordb.get_call_count, 1)
         self.assertEqual(vectordb._collection.query_call_count, 0)
 
-    async def test_chat_returns_deterministic_fallback_when_retrieval_evidence_is_too_weak(self):
+    async def test_chat_returns_deterministic_fallback_when_model_reports_not_found(self):
         conversation_id = await self._create_conversation()
         vectordb = FakeVectorStore(
             query_documents=["The onboarding checklist covers payroll setup and laptop pickup."],
             query_metadatas=[{"chunk_id": "doc-a:chunk:3"}],
             query_ids=[None],
         )
+        llm = SimpleNamespace(
+            invoke=lambda prompt: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
+        )
 
         with (
             patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.rag_pipeline.ChatOpenAI") as chat_openai_mock,
+            patch("backend.services.rag_pipeline.ChatOpenAI", return_value=llm) as chat_openai_mock,
         ):
             status, payload = await self._chat(conversation_id, "What is the refund window?")
 
@@ -970,7 +973,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         )
         llm = SimpleNamespace(
             invoke=lambda prompt: SimpleNamespace(
-                content='{"answer": "The refund window is 45 days and includes free returns."}'
+                content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
             )
         )
 
@@ -1024,7 +1027,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         llm.invoke.side_effect = [
             SimpleNamespace(content="qa"),
             SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"answer": ""}'),
+            SimpleNamespace(content='{"found_in_excerpts": true, "answer": ""}'),
         ]
 
         with (

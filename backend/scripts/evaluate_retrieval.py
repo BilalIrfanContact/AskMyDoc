@@ -45,7 +45,12 @@ def evaluate_cases(
     retriever_factory: RetrieverFactory,
     limits: Sequence[int] = DEFAULT_LIMITS,
 ) -> dict[str, Any]:
-    """Run each case against the existing semantic retrieval adapter."""
+    """Run each case against the existing semantic retrieval adapter.
+
+    Abstain cases (`"expected": "abstain"`) have no gold chunks to find, so they are skipped.
+    """
+    skipped_abstain_count = sum(case.get("expected") == "abstain" for case in cases)
+    cases = [case for case in cases if case.get("expected") != "abstain"]
     normalized_limits = sorted(set(limits))
     if not normalized_limits or any(limit < 1 for limit in normalized_limits):
         raise ValueError("limits must contain positive integers")
@@ -123,6 +128,7 @@ def evaluate_cases(
         "limits": normalized_limits,
         "case_count": len(case_results),
         "completed_case_count": len(completed),
+        "skipped_abstain_case_count": skipped_abstain_count,
         "summary": summary,
         "cases": case_results,
     }

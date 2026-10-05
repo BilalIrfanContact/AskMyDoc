@@ -74,10 +74,10 @@ The README used to reflect the v2 app. The merged v3 work on `main` added a much
 ### Grounded Chat
 
 - Question answering scoped to the selected document
-- Intent-aware retrieval policy that uses head retrieval for summary-style prompts and semantic retrieval with a quality gate for question-answer prompts
-- Structured answer generation through a JSON harness
+- Intent-aware retrieval policy that uses head retrieval for summary-style prompts and semantic retrieval for question-answer prompts
+- Structured answer generation through a JSON harness, including an explicit "not found in the excerpts" signal
 - Evidence-aware validation before returning an answer
-- Insufficient-context fallback when retrieval or grounding is not strong enough
+- Insufficient-context fallback when the model reports the answer isn't in the excerpts or the answer fails grounding
 - Citation-bearing chat responses at the API layer
 
 ### Persistent Conversations
@@ -107,9 +107,9 @@ The README used to reflect the v2 app. The merged v3 work on `main` added a much
 6. The workspace creates or restores a document-scoped conversation
 7. When the user sends a prompt, the backend selects a retrieval policy:
    - summary intent -> head retrieval
-   - QA intent -> semantic retrieval with a quality gate
+   - QA intent -> semantic retrieval
 8. Retrieved excerpts are passed into the LLM with a structured output contract
-9. The answer is checked for grounding against the cited evidence
+9. If the model reports the answer isn't in the excerpts, the fallback is returned; otherwise the answer is checked for grounding against the cited evidence
 10. The API returns a structured decision containing:
     answer, answer_status, intent, retrieval_mode, and citations
 11. User and assistant messages are persisted for later reload

@@ -32,3 +32,9 @@ plans/
 .graphify_detect.json
 .playwright-mcp/
 design-concepts/
+tmp/
+
+# evals: PDFs are re-downloadable from manifest URLs; *.local.* files hold machine-specific IDs
+evals/pdfqa-benchmark/
+evals/financial-filings/documents/
+evals/**/*.local.json
