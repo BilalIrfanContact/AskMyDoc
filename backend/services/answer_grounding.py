@@ -45,7 +45,8 @@ _DATE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 # A "(000)" after an amount means "in thousands", copied from a table header; it isn't a figure.
 _THOUSANDS_MARKER = re.compile(r"\(\s*'?000'?s?\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
-_PERCENT = re.compile(r"\)?\s*(?:%|percent)", re.IGNORECASE)
+# "34.6%", "(0.6)%", "34.6 percent", "2.1 percentage points", "2.1 points", "2.1 pp".
+_PERCENT = re.compile(r"\)?\s*(?:%|percent|points?\b|pp\b)", re.IGNORECASE)
 # After a shown result: an operator, possibly after a unit, means the right side is itself a calculation
 # ("= 365 × 29,962.5 ÷ …", "= $2,564 million ÷ $4,476 million = 0.57").
 _CONTINUES = re.compile(rf"(?:{_SCALE.pattern})?\s*%?\s*\)?\s*[+\-−–*/×÷]", re.IGNORECASE)
@@ -59,7 +60,7 @@ class Number:
     value: float
     decimals: int
     scaled: bool  # written with a unit like "million" or "bn", so it may be a table figure in other units
-    percent: bool = False  # written as a percentage ("34.6%", "2.1 percentage points")
+    percent: bool = False  # written as a percentage or percentage points (see `_PERCENT`)
 
 
 def numbers_in(text: str) -> list[Number]:

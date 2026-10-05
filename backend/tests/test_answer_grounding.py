@@ -141,6 +141,12 @@ class AnswerGroundingTestCase(unittest.TestCase):
         failure = find_grounding_failure("Together they are 5,000.", ["Parts 20 and 30."], "", calculations)
         self.assertEqual(failure["reason"], "unsupported_numbers")
 
+    def test_percentage_points_written_as_points_or_pp_can_be_a_calculator_result(self):
+        calculations = [Calculation("5802/15785 - 6098/17606", 0.021205)]
+        excerpt = "Operating income 6,098 5,802. Total revenue 17,606 15,785."
+        for answer in ("The margin fell 2.12 points.", "The margin fell 2.12 pp."):
+            self.assertIsNone(find_grounding_failure(answer, [excerpt], "", calculations))
+
     def test_a_restated_step_may_only_use_values_the_left_side_computes(self):
         # Greptile's example on PR #79: the wrong 39.9 must not vouch for itself.
         self.assert_rejected("17 + 23 = 39.9 + 0 = 39.9", "unsupported_numbers", excerpt="Parts 17 and 23.")
