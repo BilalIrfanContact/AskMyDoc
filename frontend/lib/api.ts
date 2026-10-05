@@ -351,11 +351,13 @@ export async function getConversationMessages(conversationId: string) {
 }
 
 export async function askQuestion(input: {
+  requestId: string;
   documentId: string;
   conversationId: string;
   message: string;
 }) {
   const body: ChatRequestBody = {
+    request_id: input.requestId,
     document_id: input.documentId,
     conversation_id: input.conversationId,
     message: input.message

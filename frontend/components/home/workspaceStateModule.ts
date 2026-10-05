@@ -16,7 +16,11 @@ import type { Message, UploadBootstrapResult, UploadMeta, WorkspaceState } from 
 
 type WorkspaceCoreState = Omit<WorkspaceState, "filteredDocuments">;
 
+type PendingTurn = { requestId: string; question: string };
+
 export type WorkspaceServices = {
+  readPendingTurn: (conversationId: string) => PendingTurn | null;
+  writePendingTurn: (conversationId: string, turn: PendingTurn | null) => void;
   askQuestion: typeof askQuestion;
   createConversation: typeof createConversation;
   deleteUserDocument: typeof deleteUserDocument;
@@ -40,6 +44,28 @@ type RefreshDocumentsOptions = {
 };
 
 const defaultServices: WorkspaceServices = {
+  readPendingTurn(conversationId) {
+    try {
+      const raw = sessionStorage.getItem(`askmydoc:pending-turn:${conversationId}`);
+      const turn: unknown = raw ? JSON.parse(raw) : null;
+      if (turn && typeof turn === "object" && "requestId" in turn && "question" in turn &&
+          typeof turn.requestId === "string" && typeof turn.question === "string") {
+        return { requestId: turn.requestId, question: turn.question };
+      }
+    } catch {
+      // Storage can be unavailable; retries still work during this module's lifetime.
+    }
+    return null;
+  },
+  writePendingTurn(conversationId, turn) {
+    try {
+      const key = `askmydoc:pending-turn:${conversationId}`;
+      if (turn) sessionStorage.setItem(key, JSON.stringify(turn));
+      else sessionStorage.removeItem(key);
+    } catch {
+      // The durable server receipt remains intact even if browser storage is unavailable.
+    }
+  },
   askQuestion,
   createConversation,
   deleteUserDocument,
@@ -86,6 +112,8 @@ export function createWorkspaceStateModule({
   const services = { ...defaultServices, ...overrides };
   const workflowRuns = createFlowTracker();
   const chatRuns = createFlowTracker();
+  const pendingTurns = new Map<string, PendingTurn>();
+  const sendingConversations = new Set<string>();
 
   async function refreshDocuments(options?: RefreshDocumentsOptions) {
     dispatch({ type: "documents/load-start" });
@@ -252,12 +280,19 @@ export function createWorkspaceStateModule({
         return;
       }
 
+      const pending = pendingTurns.get(nextConversationId) ?? services.readPendingTurn(nextConversationId);
+      if (pending && persistedMessages.some((message) =>
+          message.role === "assistant" && message.request_id === pending.requestId)) {
+        pendingTurns.delete(nextConversationId);
+        services.writePendingTurn(nextConversationId, null);
+      }
       dispatch({
         type: "workflow/chat-ready",
         conversationId: nextConversationId,
         messages: persistedMessages.map((message) => ({
           role: message.role === "assistant" ? "assistant" : "user",
           content: message.content,
+          ...(message.request_id ? { requestId: message.request_id } : {}),
           ...(message.answer_status ? { answerStatus: message.answer_status } : {}),
           ...(message.citations ? { citations: message.citations } : {})
         }))
@@ -325,21 +360,39 @@ export function createWorkspaceStateModule({
 
   async function handleSend(question: string) {
     const currentState = getState();
-    if (!currentState.documentId || !currentState.conversationId) return;
+    if (!currentState.documentId || !currentState.conversationId || currentState.isAssistantTyping ||
+        sendingConversations.has(currentState.conversationId)) return;
 
     const documentId = currentState.documentId;
     const conversationId = currentState.conversationId;
     const runId = chatRuns.begin();
 
-    dispatch({ type: "chat/send-start", question });
+    question = question.trim();
+    if (!question) return;
+    const pending = pendingTurns.get(conversationId) ?? services.readPendingTurn(conversationId);
+    const unanswered = [...currentState.messages].reverse().find((message) =>
+      message.role === "user" && message.content.trim() === question && message.requestId &&
+      !currentState.messages.some((answer) => answer.role === "assistant" && answer.requestId === message.requestId));
+    const turn = pending?.question === question
+      ? pending
+      : { requestId: unanswered?.requestId ?? crypto.randomUUID(), question };
+    sendingConversations.add(conversationId);
+    pendingTurns.set(conversationId, turn);
+    services.writePendingTurn(conversationId, turn);
+    dispatch({ type: "chat/send-start", question, requestId: turn.requestId });
 
     try {
       const response = await services.askQuestion({
         documentId,
         conversationId,
+        requestId: turn.requestId,
         message: question
       });
 
+      if (pendingTurns.get(conversationId)?.requestId === turn.requestId) {
+        pendingTurns.delete(conversationId);
+        services.writePendingTurn(conversationId, null);
+      }
       const nextState = getState();
       if (
         !chatRuns.isActive(runId) ||
@@ -351,6 +404,7 @@ export function createWorkspaceStateModule({
 
       dispatch({
         type: "chat/send-success",
+        requestId: turn.requestId,
         answer: response.answer,
         answerStatus: response.answer_status,
         citations: response.citations
@@ -367,6 +421,8 @@ export function createWorkspaceStateModule({
 
       const message = error instanceof Error ? error.message : "Something went wrong.";
       dispatch({ type: "chat/send-failure", error: message });
+    } finally {
+      sendingConversations.delete(conversationId);
     }
   }
 

@@ -1,6 +1,6 @@
 # Portfolio demo limits
 
-Apply `migrations/202610050001_demo_limits.sql`, `migrations/202610050002_wait_for_suggestions.sql`, then `migrations/202610050003_expire_suggestion_wait.sql`, in the Supabase SQL editor **before deploying either application**. If the first migration is already applied, run the remaining migrations in order. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not rerun the first migration.
+Apply `migrations/202610050001_demo_limits.sql`, `migrations/202610050002_wait_for_suggestions.sql`, `migrations/202610050003_expire_suggestion_wait.sql`, then `migrations/202610050004_chat_turns.sql`, in the Supabase SQL editor **before deploying either application**. If the first migration is already applied, run the remaining migrations in order. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not rerun the first migration.
 
 The Supabase project's global Storage file-size limit must be at least 15 MB. Keep the service-role key on the servers. No browser database privileges or public bucket permissions are needed. The restrictive Storage policy keeps this bucket private even if older permissive policies cover other buckets.
 
@@ -8,7 +8,7 @@ The browser first requests upload permission from Next.js. It sends file bytes d
 
 ## Allowances
 
-- 20 successfully persisted questions per account across all documents, including insufficient-context answers. Exceptions refund the reservation.
+- 20 successfully persisted questions per account across all documents, including insufficient-context answers. Generation exceptions refund the reservation. Saved answers awaiting message persistence keep their reservation, and completed retries do not use another question or rate attempt.
 - 3 successfully processed documents per account. Deleting a document does not refund an upload.
 - 5 question attempts per minute per account, 5 password-login attempts per minute per IP, and 3 signup attempts per hour per IP. Failed attempts still count toward these short cooldowns.
 - 2,000 characters per question. Files may contain up to 15,000,000 bytes, including exactly that size. Larger files show "Please select a smaller file."
@@ -48,3 +48,15 @@ The database tests start a disposable local PostgreSQL instance and apply the pr
 After applying the migration, perform one deployment smoke test with a disposable account: upload an 8–10 MB PDF, ask a question, refresh the document, and check that its suggestions are reused. Try a file larger than 15 MB and confirm the smaller-file message appears. Automated tests cover the limits and concurrency, but do not verify the live Supabase/Vercel/Railway configuration.
 
 Suggestion requests wait for an active generation, but stop waiting when its receipt expires (2 hours 5 minutes). An abandoned generation then returns an empty suggestion list without another AI call. A late original worker can still persist its result.
+
+## Chat retry safety
+
+Apply `202610050004_chat_turns.sql` before deploying the backend and frontend together. It requires the existing `public.conversations` and `public.messages` tables with UUID identifiers. Older clients without a UUID `request_id` receive a validation error; existing messages remain readable with no request ID.
+
+Each submitted question carries a stable request ID bound to its account, conversation, and normalized question. Reusing it for different input returns 409. A concurrent retry during generation returns 409 without another AI call. A completed retry returns its stored response, including citations, without another reservation. The user message and reservation are committed together; the assistant message, completion state, and quota receipt are committed together. A saved answer can retry the latter transaction without generation. Failed generations can retry the same user message with a new reservation and remain subject to the short cooldown.
+
+The frontend retains the latest unanswered submission in tab session storage and identifies older unanswered turns using request IDs in loaded messages. Resending the same unanswered question retries that turn rather than appending another question. Refreshing the workspace restores a completed answer after a lost response. When session storage is unavailable, a request rejected before saving its user message cannot recover its ID after a reload; it has not started paid work.
+
+A crash during generation, or an uncertain answer-receipt write, leaves the turn in `generating` and its quota reservation in `running`. Do not automatically expire these states. Before manual recovery, ensure the original worker has stopped and inspect the turn, messages, provider logs, and quota receipt. A stored `generated` answer can be completed by resending the same request; an answer never durably stored cannot be recovered automatically without potentially repeating paid work. A generation exception may follow partially charged provider work, so retrying a failed generation can still incur provider charges. This change does not promise exactly-once execution at an external AI provider.
+
+Deleting a conversation cascades its turn records; lifetime quota receipts remain. If deletion interrupts generation, inspect its remaining running reservation during recovery. No live database migration is applied by the local test suite.

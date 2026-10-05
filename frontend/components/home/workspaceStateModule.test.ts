@@ -48,7 +48,10 @@ function createHarness() {
     ["conv-b", [{ id: "msg-b", conversation_id: "conv-b", role: "assistant", content: "beta", created_at: "2026-06-14T00:00:00Z" }]]
   ]);
 
+  const pendingTurns = new Map<string, { requestId: string; question: string }>();
   const services: WorkspaceServices = {
+    readPendingTurn: (id) => pendingTurns.get(id) ?? null,
+    writePendingTurn: (id, turn) => { if (turn) pendingTurns.set(id, turn); else pendingTurns.delete(id); },
     askQuestion: async ({ message }): Promise<ChatResponseBody> => ({
       answer: `answer:${message}`,
       answer_status: "answered",
@@ -367,10 +370,11 @@ test("send appends the user question and assistant answer in chat view", async (
   await workspaceModule.handleSend("What is alpha?");
 
   assert.deepEqual(harness.getState().messages, [
-    { role: "user", content: "What is alpha?" },
+    { role: "user", content: "What is alpha?", requestId: harness.getState().messages[0].requestId },
     {
       role: "assistant",
       content: "answer:What is alpha?",
+      requestId: harness.getState().messages[0].requestId,
       answerStatus: "answered",
       citations: []
     }
@@ -402,6 +406,7 @@ test("send preserves answer status and citations for the grounded answer UI", as
   assert.deepEqual(harness.getState().messages[1], {
     role: "assistant",
     content: "The launch remains on October 14.",
+    requestId: harness.getState().messages[0].requestId,
     answerStatus: "answered",
     citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }]
   });
@@ -424,7 +429,7 @@ test("send failure keeps the user question and surfaces the chat error", async (
   await workspaceModule.handleSend("What is alpha?");
 
   assert.deepEqual(harness.getState().messages, [
-    { role: "user", content: "What is alpha?" }
+    { role: "user", content: "What is alpha?", requestId: harness.getState().messages[0].requestId }
   ]);
   assert.equal(harness.getState().isAssistantTyping, false);
   assert.equal(harness.getState().error, "Chat failed.");
@@ -551,3 +556,134 @@ test("delete recovery failure still exits deleting state when the refresh also f
     "Conversation cleanup failed. The document has already been removed from the workspace. The document was removed, but chat cleanup is still incomplete."
   );
 });
+
+test("resending a failed question keeps its request ID and one visible question", async () => {
+  const harness = createHarness();
+  const requests: string[] = [];
+  harness.services.askQuestion = async ({ requestId }) => {
+    requests.push(requestId);
+    if (requests.length === 1) throw new Error("Response lost.");
+    return { answer: "30 days", intent: "qa", retrieval_mode: "semantic", answer_status: "answered", citations: [] };
+  };
+  harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("Refund window?");
+  await workspaceModule.handleSend("  Refund window?  ");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0], requests[1]);
+  assert.deepEqual(harness.getState().messages.map(({ role, content }) => ({ role, content })), [
+    { role: "user", content: "Refund window?" }, { role: "assistant", content: "30 days" }
+  ]);
+  await workspaceModule.handleSend("Refund window?");
+  assert.notEqual(requests[2], requests[0], "A new turn after success gets a fresh ID");
+});
+
+test("a retry after module recreation uses the stored ID and loaded question", async () => {
+  const harness = createHarness();
+  const requests: string[] = [];
+  harness.services.askQuestion = async ({ requestId }) => {
+    requests.push(requestId);
+    throw new Error("Response lost.");
+  };
+  harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+  await harness.createModule().handleSend("Refund window?");
+  const pendingQuestion = harness.getState().messages[0];
+  harness.services.getConversationMessages = async () => [{
+    id: "msg-1", conversation_id: "conv-a", role: "user", content: pendingQuestion.content,
+    request_id: requests[0], created_at: "2026-10-05T00:00:00Z"
+  }];
+  const recreated = harness.createModule();
+  await recreated.handleSelectDocument(harness.documents[0]);
+  await recreated.handleSend("Refund window?");
+  assert.equal(requests[0], requests[1]);
+  assert.equal(harness.getState().messages.length, 1);
+});
+
+test("loading a completed turn clears its pending ID after a lost response", async () => {
+  const harness = createHarness();
+  const requests: string[] = [];
+  harness.services.askQuestion = async ({ requestId }) => {
+    requests.push(requestId);
+    throw new Error("Response lost.");
+  };
+  harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+  await harness.createModule().handleSend("Refund window?");
+  harness.services.getConversationMessages = async () => [{
+    id: "msg-2", conversation_id: "conv-a", role: "assistant", content: "30 days",
+    request_id: requests[0], created_at: "2026-10-05T00:00:00Z"
+  }];
+  const recreated = harness.createModule();
+  await recreated.handleSelectDocument(harness.documents[0]);
+  await recreated.handleSend("Refund window?");
+  assert.notEqual(requests[0], requests[1]);
+});
+
+test("sending twice while a turn is pending makes one request", async () => {
+  const harness = createHarness();
+  const answer = createDeferred<ChatResponseBody>();
+  let requests = 0;
+  harness.services.askQuestion = async () => { requests += 1; return answer.promise; };
+  harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+  const workspaceModule = harness.createModule();
+  const first = workspaceModule.handleSend("Refund window?");
+  await workspaceModule.handleSend("Refund window?");
+  assert.equal(requests, 1);
+  answer.resolve({ answer: "30 days", intent: "qa", retrieval_mode: "semantic", answer_status: "answered", citations: [] });
+  await first;
+});
+
+test("retries an older unanswered turn using its message ID after browser storage is lost", async () => {
+  const harness = createHarness();
+  const requests: string[] = [];
+  harness.services.askQuestion = async ({ requestId }) => {
+    requests.push(requestId);
+    if (requests.length < 3) throw new Error("Response lost.");
+    return { answer: "30 days", intent: "qa", retrieval_mode: "semantic", answer_status: "answered", citations: [] };
+  };
+  harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+  const workspaceModule = harness.createModule();
+  await workspaceModule.handleSend("Refund window?");
+  await workspaceModule.handleSend("Different question?");
+  harness.services.readPendingTurn = () => null;
+  await harness.createModule().handleSend("Refund window?");
+  assert.equal(requests[2], requests[0]);
+  assert.equal(harness.getState().messages.filter((m) => m.role === "user").length, 2);
+});
+
+for (const outcome of ["success", "failure"] as const) {
+  test(`switching documents during a chat allows the new conversation to send despite the old ${outcome}`, async () => {
+    const harness = createHarness();
+    const oldAnswer = createDeferred<ChatResponseBody>();
+    const newAnswer = createDeferred<ChatResponseBody>();
+    const requests: string[] = [];
+    harness.services.askQuestion = async ({ conversationId }) => {
+      requests.push(conversationId);
+      return conversationId === "conv-a" ? oldAnswer.promise : newAnswer.promise;
+    };
+    harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+    const workspaceModule = harness.createModule();
+    const oldSend = workspaceModule.handleSend("Question for alpha?");
+    assert.equal(harness.getState().isAssistantTyping, true);
+
+    await workspaceModule.handleSelectDocument(harness.documents[1]);
+    assert.equal(harness.getState().isAssistantTyping, false);
+    const newSend = workspaceModule.handleSend("Question for beta?");
+    assert.deepEqual(requests, ["conv-a", "conv-b"]);
+    assert.equal(harness.getState().isAssistantTyping, true);
+
+    const response: ChatResponseBody = {
+      answer: "Answer for alpha", intent: "qa", retrieval_mode: "semantic", answer_status: "answered", citations: []
+    };
+    if (outcome === "success") oldAnswer.resolve(response);
+    else oldAnswer.reject(new Error("Alpha request failed."));
+    await oldSend;
+    assert.equal(harness.getState().isAssistantTyping, true);
+    assert.equal(harness.getState().error, null);
+    assert.deepEqual(harness.getState().messages.map(({ content }) => content), ["beta", "Question for beta?"]);
+
+    newAnswer.resolve({ ...response, answer: "Answer for beta" });
+    await newSend;
+    assert.equal(harness.getState().isAssistantTyping, false);
+    assert.deepEqual(harness.getState().messages.map(({ content }) => content), ["beta", "Question for beta?", "Answer for beta"]);
+  });
+}

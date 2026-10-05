@@ -2,15 +2,17 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 
 from backend.routers import chat, conversations, documents, upload
 from backend.services.internal_auth import require_authenticated_user
+from backend.services.persistence.messages_repository import insert_message
 from backend.services.rag_pipeline import AnswerDecision, INSUFFICIENT_CONTEXT_ANSWER
 
 
@@ -197,6 +199,7 @@ class FakePostgrestClient:
 
 class InMemoryAppState:
     def __init__(self):
+        self.turns = {}
         self.documents: dict[str, dict] = {
             "doc-a": {
                 "id": "doc-a",
@@ -273,6 +276,30 @@ class InMemoryAppState:
         if limit is not None:
             rows = rows[:limit]
         return [self._project_row(row, selected_fields) for row in rows]
+
+    def transition_turn(self, action, *, user_id, conversation_id, request_id, question, result=None):
+        # Production transactions/concurrency are exercised by the PostgreSQL tests.
+        key = (user_id, request_id)
+        turn = self.turns.get(key)
+        if action == 'claim':
+            if turn is None:
+                turn = self.turns[key] = {'state': 'generating'}
+                insert_message(conversation_id, 'user', question)
+                self.messages[-1]['request_id'] = request_id
+            elif turn['state'] == 'failed':
+                turn['state'] = 'generating'
+        elif action == 'save':
+            turn.update(state='generated', result=result)
+        elif action == 'complete':
+            if turn['state'] != 'completed':
+                answer = turn['result']
+                insert_message(conversation_id, 'assistant', answer['answer'],
+                               answer_status=answer['answer_status'], citations=answer['citations'])
+                self.messages[-1]['request_id'] = request_id
+                turn['state'] = 'completed'
+        elif action == 'fail':
+            turn['state'] = 'failed'
+        return dict(turn)
 
     def insert_row(self, table: str, payload: dict) -> list[dict]:
         row = dict(payload)
@@ -400,7 +427,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
-        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.transition_turn", side_effect=self.state.transition_turn))
         self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
@@ -611,6 +638,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "document_id": "doc-a",
                     "conversation_id": conversation_id,
                     "message": "Summarize the document",
+                    "request_id": "00000000-0000-4000-8000-000000000001",
                 }
             ).encode("utf-8"),
             headers=[
@@ -657,6 +685,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "Summarize the document",
+                    "request_id": "00000000-0000-4000-8000-000000000001",
                     "created_at": "2026-06-11T12:01:00Z",
                 },
                 {
@@ -664,6 +693,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "Document summary answer",
+                    "request_id": "00000000-0000-4000-8000-000000000001",
                     "answer_status": "answered",
                     "citations": [],
                     "created_at": "2026-06-11T12:02:00Z",
@@ -698,6 +728,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                         "document_id": "doc-a",
                         "conversation_id": conversation_id,
                         "message": "Summarize the document",
+                        "request_id": "00000000-0000-4000-8000-000000000001",
                     }
                 ).encode("utf-8"),
                 headers=[
@@ -727,6 +758,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "Summarize the document",
+                    "request_id": "00000000-0000-4000-8000-000000000001",
                     "created_at": "2026-06-11T12:01:00Z",
                 }
             ],
@@ -739,7 +771,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.state = InMemoryAppState()
         self.postgrest_client = FakePostgrestClient(self.state)
         self.exit_stack = ExitStack()
-        self.exit_stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+        self.exit_stack.enter_context(patch("backend.services.conversation_turn.transition_turn", side_effect=self.state.transition_turn))
         self.exit_stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"}))
 
         for target in (
@@ -781,6 +813,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         return json.loads(response_body)["conversation_id"]
 
     async def _chat(self, conversation_id: str, message: str) -> tuple[int, dict]:
+        self.request_id = str(uuid4())
         status, _, response_body = await _request_asgi(
             self.app,
             method="POST",
@@ -790,6 +823,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                     "document_id": "doc-a",
                     "conversation_id": conversation_id,
                     "message": message,
+                    "request_id": self.request_id,
                 }
             ).encode("utf-8"),
             headers=[
@@ -848,6 +882,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "id": "msg-1",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "What is the refund window?",
@@ -855,6 +890,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
                 {
                     "id": "msg-2",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "The refund window is 30 days.",
@@ -915,6 +951,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "id": "msg-1",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "Summarize this document.",
@@ -922,6 +959,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
                 {
                     "id": "msg-2",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": "The handbook covers benefits policy and time-off rules.",
@@ -973,6 +1011,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "id": "msg-1",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "What is the refund window?",
@@ -980,6 +1019,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
                 {
                     "id": "msg-2",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,
@@ -1025,6 +1065,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "id": "msg-1",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "What is the refund window?",
@@ -1032,6 +1073,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
                 {
                     "id": "msg-2",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,
@@ -1078,6 +1120,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "id": "msg-1",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "user",
                     "content": "What is the refund window?",
@@ -1085,6 +1128,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
                 },
                 {
                     "id": "msg-2",
+                    "request_id": self.request_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": INSUFFICIENT_CONTEXT_ANSWER,

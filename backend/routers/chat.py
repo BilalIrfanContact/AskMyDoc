@@ -19,6 +19,7 @@ router = APIRouter()
     "/chat",
     response_model=ChatResponse,
     responses={
+        409: {"model": ErrorDetailResponse},
         400: {"model": ErrorDetailResponse},
         401: {"model": ErrorDetailResponse},
         403: {"model": ErrorDetailResponse},
@@ -34,6 +35,7 @@ def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user
             user_id=user_id,
             request=ConversationTurnInput(
                 document_id=request.document_id,
+                request_id=str(request.request_id),
                 conversation_id=request.conversation_id,
                 message=request.message,
                 question=request.question,

@@ -29,7 +29,9 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         cls.legacy_user = str(uuid4())
         cls.sql("create role anon; create role authenticated; create role service_role; create schema storage; "
             "create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]); "
-            "create table public.documents(id uuid, user_id uuid); create table storage.objects(bucket_id text); alter table storage.objects enable row level security;")
+            "create table public.documents(id uuid, user_id uuid); "
+            "create table public.conversations(id uuid primary key, user_id uuid, document_id uuid); "
+            "create table public.messages(id uuid primary key, conversation_id uuid references conversations(id), role text, content text, created_at timestamptz default now()); create table storage.objects(bucket_id text); alter table storage.objects enable row level security;")
         cls.sql(f"insert into documents select gen_random_uuid(),'{cls.legacy_user}' from generate_series(1,3);")
         migrations = Path(__file__).resolve().parents[2] / 'supabase/migrations'
         for migration in sorted(migrations.glob('*.sql')):
@@ -198,3 +200,83 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         candidates = json.loads(self.sql("select coalesce(jsonb_agg(id),'[]') from demo_expired_uploads();"))
         self.assertIn(completed['id'], candidates)
         self.assertEqual(self.operation('get', completed_user, 'upload', completed['id'])['state'], 'completed')
+
+    def new_turn(self):
+        user, conversation, request = map(str, (uuid4(), uuid4(), uuid4()))
+        self.sql(f"insert into conversations values ('{conversation}','{user}',gen_random_uuid());")
+        return user, conversation, request
+
+    def turn(self, action, user, conversation, request, question="Refund window?", result=None):
+        payload = "null" if result is None else "'" + json.dumps(result).replace("'", "''") + "'::jsonb"
+        escaped = question.replace("'", "''")
+        return json.loads(self.sql(f"set role service_role; select chat_turn('{action}','{user}','{conversation}','{request}','{escaped}',{payload});"))
+
+    def answer_receipt(self):
+        return dict(answer="30 days", intent="qa", retrieval_mode="semantic", answer_status="answered",
+                    citations=[dict(chunk_id="chunk-1", excerpt="Refunds within 30 days.")])
+
+    def test_concurrent_turn_retries_claim_once_and_replay_at_quota(self):
+        user, conversation, request = self.new_turn()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            claims = list(pool.map(lambda _: self.turn('claim', user, conversation, request), range(8)))
+        self.assertEqual(sum(r.get('state') == 'generating' for r in claims), 1)
+        self.assertEqual(sum(r.get('error') == 'busy' for r in claims), 7)
+        self.assertEqual(self.sql(f"select count(*) from messages where conversation_id='{conversation}';"), '1')
+        receipt = self.answer_receipt()
+        self.turn('save', user, conversation, request, result=receipt)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            completions = list(pool.map(lambda _: self.turn('complete', user, conversation, request), range(8)))
+        self.assertTrue(all(r['result'] == receipt for r in completions))
+        self.assertEqual(self.sql(f"select count(*) from messages where conversation_id='{conversation}';"), '2')
+        self.sql(f"insert into demo_operations(user_id,kind,state) select '{user}','question','completed' from generate_series(1,19);")
+        self.assertEqual(self.turn('claim', user, conversation, request)['result'], receipt)
+        self.assertEqual(self.turn('claim', user, conversation, str(uuid4()))['error'], 'quota')
+
+    def test_failed_generation_reuses_user_message_and_refunds_reservation(self):
+        user, conversation, request = self.new_turn()
+        first = self.turn('claim', user, conversation, request)
+        self.turn('fail', user, conversation, request)
+        self.assertEqual(self.operation('get', user, 'question', first['operation_id'])['state'], 'failed')
+        second = self.turn('claim', user, conversation, request)
+        self.assertNotEqual(second['operation_id'], first['operation_id'])
+        self.assertEqual(self.sql(f"select count(*) from messages where conversation_id='{conversation}';"), '1')
+        self.turn('save', user, conversation, request, result=self.answer_receipt())
+        self.turn('complete', user, conversation, request)
+        self.assertEqual(self.sql(f"select count(*) from demo_operations where user_id='{user}' and state='completed';"), '1')
+
+    def test_failed_message_commit_keeps_answer_for_retry_and_rolls_back_quota(self):
+        user, conversation, request = self.new_turn()
+        self.turn('claim', user, conversation, request)
+        self.turn('save', user, conversation, request, result=self.answer_receipt())
+        # A temporary failure after the assistant insert must roll back the whole completion.
+        self.sql(f"create function reject_turn_completion() returns trigger language plpgsql as $$ begin "
+                 f"if new.request_id = '{request}' and new.state='completed' then raise exception 'receipt unavailable'; end if; return new; end $$; "
+                 "create trigger reject_completion before update on chat_turns for each row execute function reject_turn_completion();")
+        try:
+            with self.assertRaisesRegex(AssertionError, 'receipt unavailable'):
+                self.turn('complete', user, conversation, request)
+            claim = self.turn('claim', user, conversation, request)
+            self.assertEqual(claim['state'], 'generated')
+            self.assertEqual(claim['result'], self.answer_receipt())
+            self.assertEqual(self.sql(f"select count(*) from messages where conversation_id='{conversation}';"), '1')
+            self.assertEqual(self.operation('get', user, 'question', claim['operation_id'])['state'], 'running')
+        finally:
+            self.sql('drop trigger reject_completion on chat_turns; drop function reject_turn_completion();')
+        self.assertEqual(self.turn('complete', user, conversation, request)['state'], 'completed')
+
+    def test_turn_keys_are_bound_to_owner_conversation_and_question(self):
+        user, conversation, request = self.new_turn()
+        self.turn('claim', user, conversation, request)
+        self.assertEqual(self.turn('claim', user, conversation, request, question='Different?')['error'], 'conflict')
+        self.assertEqual(self.turn('claim', str(uuid4()), conversation, request)['error'], 'not_found')
+        other = str(uuid4())
+        self.sql(f"insert into conversations values ('{other}','{user}',gen_random_uuid());")
+        self.assertEqual(self.turn('claim', user, other, request)['error'], 'conflict')
+        for role in ('anon', 'authenticated'):
+            with self.assertRaisesRegex(AssertionError, 'permission denied'):
+                self.sql(f"set role {role}; select chat_turn('claim','{user}','{conversation}','{request}','Refund window?');")
+            with self.assertRaisesRegex(AssertionError, 'permission denied'):
+                self.sql(f"set role {role}; select * from chat_turns;")
+        self.sql(f"delete from messages where conversation_id='{conversation}'; delete from conversations where id='{conversation}';")
+        self.assertEqual(self.sql(f"select count(*) from chat_turns where request_id='{request}';"), '0')
+        self.assertEqual(self.turn('claim', user, conversation, request)['error'], 'not_found')

@@ -15,10 +15,10 @@ DIAGNOSTIC = 'database table private_users at /internal/data; provider token tes
 class SafeErrorResponseTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_failed_requests_hide_diagnostics_and_log_the_exception(self):
         cases = [
-            ('POST', '/chat', {'document_id': 'doc-a', 'question': 'What changed?'},
+            ('POST', '/chat', {'request_id': '00000000-0000-4000-8000-000000000001', 'document_id': 'doc-a', 'question': 'What changed?'},
              'backend.routers.chat.execute_conversation_turn', RuntimeError,
              'backend.routers.chat', 'Unable to answer your question. Please try again later.'),
-            ('POST', '/chat', {'document_id': 'doc-a', 'question': 'What changed?'},
+            ('POST', '/chat', {'request_id': '00000000-0000-4000-8000-000000000001', 'document_id': 'doc-a', 'question': 'What changed?'},
              'backend.routers.chat.execute_conversation_turn', PersistenceError,
              'backend.routers.chat', 'Unable to answer your question. Please try again later.'),
             ('GET', '/documents', None, 'backend.routers.documents.list_user_documents', PersistenceError,

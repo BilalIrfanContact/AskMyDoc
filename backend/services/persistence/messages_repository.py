@@ -47,7 +47,7 @@ def list_conversation_messages(conversation_id: str) -> List[Dict[str, Any]]:
         response = (
             get_postgrest_client()
             .from_("messages")
-            .select("id, conversation_id, role, content, created_at")
+            .select("id, conversation_id, role, content, created_at, request_id")
             .eq("conversation_id", conversation_id)
             .order("created_at")
             .execute()

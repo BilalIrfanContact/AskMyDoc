@@ -1,5 +1,4 @@
 """Durable demo allowances. Only trusted servers can call the database functions."""
-from contextlib import contextmanager
 
 from fastapi import HTTPException
 
@@ -37,18 +36,6 @@ def operation(action: str, user_id: str, kind: str, operation_id: str | None = N
     if error == 'expired':
         raise HTTPException(410, 'This upload has expired. Please select the file again.')
     return result
-
-
-@contextmanager
-def question_allowance(user_id: str):
-    reservation = operation('reserve', user_id, 'question')
-    try:
-        yield
-    except Exception:
-        operation('fail', user_id, 'question', reservation['id'])
-        raise
-    else:
-        operation('complete', user_id, 'question', reservation['id'])
 
 
 class SuggestionsPendingError(Exception):

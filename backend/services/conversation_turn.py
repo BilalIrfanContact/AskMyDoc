@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from uuid import UUID
 
-from .demo_limits import MAX_QUESTION_CHARS, question_allowance
+from .demo_limits import MAX_QUESTION_CHARS
 from .authz import require_user_conversation, require_user_document
-from .persistence.messages_repository import insert_message
-from .rag_pipeline import AnswerDecision, answer_question
+from .persistence.turns_repository import transition_turn
+from .rag_pipeline import AnswerCitation, AnswerDecision, answer_question
 
 
 class ConversationTurnValidationError(ValueError):
@@ -13,6 +14,7 @@ class ConversationTurnValidationError(ValueError):
 @dataclass(frozen=True)
 class ConversationTurnInput:
     document_id: str
+    request_id: str
     conversation_id: str | None
     message: str | None = None
     question: str | None = None
@@ -46,21 +48,27 @@ def execute_conversation_turn(
             "Conversation does not belong to the provided document."
         )
 
-    with question_allowance(user_id):
-        insert_message(
-            conversation_id=request.conversation_id,
-            role="user",
-            content=question,
-        )
-        decision = answer_question(document_id=conversation["document_id"], question=question)
-        insert_message(
-            conversation_id=request.conversation_id,
-            role="assistant",
-            content=decision.answer,
-            answer_status=decision.answer_status,
-            citations=[
-                {"chunk_id": citation.chunk_id, "excerpt": citation.excerpt}
-                for citation in decision.citations
-            ],
-        )
-        return decision
+    try:
+        request_id = str(UUID(request.request_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ConversationTurnValidationError("A valid request_id is required.") from exc
+
+    params = dict(user_id=user_id, conversation_id=request.conversation_id,
+                  request_id=request_id, question=question)
+    turn = transition_turn("claim", **params)
+    if turn["state"] == "generating":
+        try:
+            decision = answer_question(document_id=conversation["document_id"], question=question)
+        except Exception:
+            transition_turn("fail", **params)
+            raise
+        # An uncertain save must stay blocked: the model may already have charged.
+        turn = transition_turn("save", **params, result=asdict(decision))
+    if turn["state"] == "generated":
+        turn = transition_turn("complete", **params)
+    result = turn["result"]
+    return AnswerDecision(
+        answer=result["answer"], intent=result["intent"],
+        retrieval_mode=result["retrieval_mode"], answer_status=result["answer_status"],
+        citations=[AnswerCitation(**citation) for citation in result["citations"]],
+    )

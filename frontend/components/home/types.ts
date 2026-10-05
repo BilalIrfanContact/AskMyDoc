@@ -2,6 +2,7 @@ import type { PersistedDocument } from "../../lib/api";
 import type { AnswerCitation, ChatResponseBody } from "../../lib/api-contract";
 
 export type Message = {
+  requestId?: string;
   role: "user" | "assistant";
   content: string;
   answerStatus?: ChatResponseBody["answer_status"];
