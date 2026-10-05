@@ -37,8 +37,6 @@ class FollowUpQuestionTests(unittest.TestCase):
         self.assertIn('How did revenue change in 2025?', rewrite_prompt)
         self.assertIn('not document evidence', rewrite_prompt)
         self.assertIn('Question: Why did revenue increase in 2025?', answer_prompt)
-        self.assertIn('The user\'s own words were "Why did that increase?"', answer_prompt,
-                      'The answer model can reject a rewrite that changed the request')
         self.assertNotIn('Revenue increased.', answer_prompt, 'Earlier answers never reach the answer model')
 
     def test_history_and_rewrite_numbers_cannot_supply_missing_evidence(self):
@@ -70,7 +68,6 @@ class FollowUpQuestionTests(unittest.TestCase):
         result = answer_question('doc-1', question, history=history, dependencies=deps)
         self.assertEqual(result.answer_status, 'answered')
         retriever.retrieve.assert_called_once_with('semantic', question, 1)
-        self.assertNotIn("user's own words", generator.invoke.call_args.args[0], 'Unchanged questions get no rewrite note')
         prompt = generator.invoke.call_args_list[0].args[0]
         self.assertNotIn('OLD-0-', prompt)
         self.assertNotIn('OLD-1-', prompt)
@@ -78,6 +75,16 @@ class FollowUpQuestionTests(unittest.TestCase):
         self.assertIn('OLD-4-', prompt)
         self.assertNotIn('a' * 1001, prompt)
         self.assertNotIn('q' * 1001, prompt)
+
+    def test_rewrite_that_changes_a_year_the_user_typed_is_ignored(self):
+        history = (ConversationExchange(question='What was revenue in fiscal 2022?', answer='It was 17.6 billion.'),)
+        deps, retriever, generator = self.dependencies('Revenue was 15.8 billion in fiscal 2021.', [
+            '{"intent":"qa","question":"What was revenue in fiscal 2020?"}',
+            '{"found_in_excerpts":true,"answer":"Revenue was 15.8 billion in fiscal 2021."}',
+        ])
+        answer_question('doc-1', 'What about fiscal 2021?', history=history, dependencies=deps)
+        retriever.retrieve.assert_called_once_with('semantic', 'What about fiscal 2021?', 1)
+        self.assertIn('Question: What about fiscal 2021?', generator.invoke.call_args.args[0])
 
     def test_invalid_rewrite_falls_back_to_the_original_question_without_another_route_call(self):
         history = (ConversationExchange(question='What is the refund window?', answer='It is 30 days.'),)
