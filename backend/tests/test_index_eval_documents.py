@@ -54,6 +54,24 @@ class IndexEvalDocumentsTestCase(unittest.TestCase):
 
         self.assertEqual([entry["document_id"] for entry in manifest["documents"]], ["doc-new"])
 
+    def test_a_failed_collection_check_fails_only_that_pdf(self):
+        first = self._pdf("first.pdf", b"first")
+        second = self._pdf("second.pdf", b"second")
+        manifest = {"documents": [{"path": first, "sha256": hashlib.sha256(b"first").hexdigest(), "document_id": "doc-first"}]}
+
+        def count(document_id):
+            raise RuntimeError("database is locked")
+
+        failures = self._run(
+            [first, second],
+            manifest,
+            index_fn=lambda data: {"document_id": "doc-second", "chunk_count": 3, "stored_count": 3},
+            count_fn=count,
+        )
+
+        self.assertEqual([failure["path"] for failure in failures], [first])
+        self.assertEqual([entry["document_id"] for entry in manifest["documents"]], ["doc-first", "doc-second"])
+
     def test_records_failures_without_adding_them_to_the_manifest(self):
         broken = self._pdf("broken.pdf", b"broken")
         manifest = {}

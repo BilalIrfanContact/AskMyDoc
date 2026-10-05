@@ -93,20 +93,20 @@ def index_documents(
         data = Path(path).read_bytes()
         sha256 = _sha256(data)
         entry = next((entry for entry in documents if entry["sha256"] == sha256), None)
-        if entry is not None:
-            if count_fn(entry["document_id"]) > 0:
-                print(f"skip   {path} (already in manifest)", file=sys.stderr)
-                continue
-            print(f"stale  {path}: collection {entry['document_id']} is empty, indexing again", file=sys.stderr)
-            documents.remove(entry)
-
         try:
+            if entry is not None:
+                if count_fn(entry["document_id"]) > 0:
+                    print(f"skip   {path} (already in manifest)", file=sys.stderr)
+                    continue
+                print(f"stale  {path}: collection {entry['document_id']} is empty, indexing again", file=sys.stderr)
             result = index_fn(data)
         except Exception as exc:
             print(f"FAIL   {path}: {exc}", file=sys.stderr)
             failures.append({"path": path, "error": str(exc)})
             continue
 
+        if entry is not None:
+            documents.remove(entry)
         documents.append({"path": path, "sha256": sha256, "origin": "indexed", **result})
         save(manifest)
         print(f"indexed {path} -> {result['document_id']} ({result['stored_count']} chunks)", file=sys.stderr)
