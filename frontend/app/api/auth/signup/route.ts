@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createCredentialsUser, getUserByEmail } from "../../../../lib/auth-users";
+import { AuthRateLimitError, checkAuthRate } from "../../../../lib/auth-rate-limit";
 import { hashPassword } from "../../../../lib/password";
 
 export async function POST(request: NextRequest) {
   try {
+    await checkAuthRate("signup", request.headers);
     const body = await request.json();
     const email = String(body?.email ?? "").trim().toLowerCase();
     const password = String(body?.password ?? "");
@@ -36,7 +38,10 @@ export async function POST(request: NextRequest) {
       name: user.name
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create account.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (error instanceof AuthRateLimitError) {
+      return NextResponse.json({ error: "Too many signup attempts. Please try again in an hour." },
+        { status: 429, headers: { "Retry-After": String(error.retryAfter) } });
+    }
+    return NextResponse.json({ error: "Unable to create an account. Please try again later." }, { status: 503 });
   }
 }

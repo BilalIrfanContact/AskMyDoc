@@ -89,7 +89,8 @@ export async function forwardToBackend(
   return new NextResponse(body, {
     status: response.status,
     headers: {
-      "content-type": response.headers.get("content-type") || "application/json"
+      "content-type": response.headers.get("content-type") || "application/json",
+      ...(response.headers.has("retry-after") ? { "retry-after": response.headers.get("retry-after")! } : {})
     }
   });
 }

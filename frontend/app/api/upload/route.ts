@@ -1,13 +1,11 @@
+import { NextRequest } from "next/server";
 import { forwardToBackend } from "../../../lib/backend-proxy";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   return forwardToBackend({
-    path: "/upload",
+    path: "/uploads",
     method: "POST",
-    prepareBody: async () => {
-      const formData = await request.formData();
-      formData.delete("user_id");
-      return formData;
-    }
+    headers: { "Content-Type": "application/json" },
+    prepareBody: async () => JSON.stringify(await request.json())
   });
 }

@@ -1,4 +1,5 @@
-import type { NextAuthConfig } from "next-auth";
+import { CredentialsSignin, type NextAuthConfig } from "next-auth";
+import { AuthRateLimitError, checkAuthRate } from "./auth-rate-limit";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
@@ -8,7 +9,12 @@ import { verifyPassword } from "./password";
 // Expire pre-fix cookies, including any issued to a pre-created or previously merged account.
 const AUTH_VERSION = 1;
 
+class RateLimitedLogin extends CredentialsSignin {
+  code = "rate_limited";
+}
+
 type AuthDependencies = {
+  checkAuthRate: typeof checkAuthRate;
   getUserByEmail: typeof getUserByEmail;
   getOrCreateGoogleUser: typeof getOrCreateGoogleUser;
   verifyPassword: typeof verifyPassword;
@@ -16,7 +22,8 @@ type AuthDependencies = {
 
 // Tests supply an isolated user store while exercising the production providers and callbacks.
 export function createAuthConfig(
-  dependencies: AuthDependencies = { getUserByEmail, getOrCreateGoogleUser, verifyPassword }
+  dependencies: AuthDependencies = { getUserByEmail, getOrCreateGoogleUser, verifyPassword, checkAuthRate },
+  request?: { headers: Headers }
 ) {
   return {
     secret: process.env.NEXTAUTH_SECRET,
@@ -34,7 +41,13 @@ export function createAuthConfig(
           email: { label: "Email", type: "email" },
           password: { label: "Password", type: "password" }
         },
-        async authorize(credentials) {
+        async authorize(credentials, request) {
+          try {
+            await dependencies.checkAuthRate("login", request.headers);
+          } catch (error) {
+            if (error instanceof AuthRateLimitError) throw new RateLimitedLogin();
+            throw error;
+          }
           const email = String(credentials?.email ?? "").trim().toLowerCase();
           const password = String(credentials?.password ?? "");
 
@@ -81,11 +94,18 @@ export function createAuthConfig(
           return false;
         }
 
-        const dbUser = await dependencies.getOrCreateGoogleUser({
-          googleId,
-          email,
-          name: user.name ?? profile.name ?? null
-        });
+        let dbUser;
+        try {
+          dbUser = await dependencies.getOrCreateGoogleUser({
+            googleId,
+            email,
+            beforeCreate: () => dependencies.checkAuthRate("signup", request?.headers),
+            name: user.name ?? profile.name ?? null
+          });
+        } catch (error) {
+          if (error instanceof AuthRateLimitError) return "/login?error=SignupRateLimit";
+          throw error;
+        }
         if (!dbUser) {
           return false;
         }

@@ -7,6 +7,7 @@ import type { CredentialsConfig } from "next-auth/providers/credentials";
 import { encode, type JWT } from "next-auth/jwt";
 import { NextRequest } from "next/server";
 
+import { AuthRateLimitError } from "./auth-rate-limit";
 import { createAuthConfig } from "./auth-config";
 import { getOrCreateGoogleUser, type AuthUserRecord } from "./auth-users";
 import { hashPassword, verifyPassword } from "./password";
@@ -27,7 +28,7 @@ function userRecord(overrides: Partial<AuthUserRecord> = {}): AuthUserRecord {
 }
 
 // Use the real Supabase query builder against an in-memory REST endpoint. No external requests.
-function userStore(initialUsers: AuthUserRecord[] = []) {
+function userStore(initialUsers: AuthUserRecord[] = [], rateCheck: () => Promise<void> = async () => {}) {
   const users = structuredClone(initialUsers);
   const writes: string[] = [];
   let beforeInsert: (() => void) | undefined;
@@ -81,6 +82,7 @@ function userStore(initialUsers: AuthUserRecord[] = []) {
     }
   });
   const config = createAuthConfig({
+    checkAuthRate: rateCheck,
     getUserByEmail: async (email) => users.find((user) => user.email === email.trim().toLowerCase()) ?? null,
     getOrCreateGoogleUser: (input) => getOrCreateGoogleUser(input, client),
     verifyPassword
@@ -277,4 +279,14 @@ test("Auth.js exposes the database identity for a new Google session", async () 
   const session = await response.json();
   assert.equal(session.user.id, store.users[0].id);
   assert.equal(session.user.name, "Reader");
+});
+
+
+test("Google account creation respects signup limits while returning accounts can still sign in", async () => {
+  const store = userStore([], async () => { throw new AuthRateLimitError(3600); });
+  assert.equal(await store.googleLogin(), "/login?error=SignupRateLimit");
+  assert.equal(store.users.length, 0);
+  assert.equal(store.writes.length, 0);
+  const existing = userStore([userRecord({ google_id: "google-subject" })], async () => { throw new Error("Existing accounts must not spend signup allowance"); });
+  assert.equal(await existing.googleLogin(), true);
 });
