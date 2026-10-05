@@ -4,6 +4,10 @@
 
 AskMyDoc is a document Q&A app built for financial filings. You upload a filing, ask a question in plain English ("What was Amazon's FY2017 days payable outstanding?"), and get an answer drawn only from that document. When a figure has to be calculated, the app does the arithmetic with a calculator, not the language model, and checks every number in the answer against the filing before showing it. When the filing doesn't contain the answer, it says so instead of guessing.
 
+<p align="center">
+  <img src=".github/readme/pipeline.svg" alt="A question goes to search, then to the answer model, which uses a calculator for every step, then to a number check; backed answers are shown, anything else becomes &quot;not in the document&quot;." width="100%">
+</p>
+
 The project's other half is the measurement: an 85-question benchmark built from [FinanceBench](https://github.com/patronus-ai/financebench) and FinQA, with a hand-verified answer key, fixed scoring rules, and a test set kept aside and run once.
 
 | Working set (51 questions, 12 filings) | Result |
@@ -88,6 +92,15 @@ A RAG demo can look right on the questions you try by hand and still be wrong a 
 
 All of it lives in [`evals/financial-filings/`](evals/financial-filings/).
 
+```mermaid
+flowchart LR
+    FB["FinanceBench<br/>59 questions, 18 filings"] --> ALL
+    FQ["FinQA / pdfQA<br/>8 calculations, 2 reports"] --> ALL
+    TR["Written for AskMyDoc<br/>18 trap questions"] --> ALL
+    ALL(["85 questions<br/>20 filings"]) -- split by filing --> W["Working set<br/>51 questions · 12 filings<br/>41 answerable + 10 traps<br/>used to build and tune"]
+    ALL -- split by filing --> HO["Held-out set<br/>34 questions · 8 filings<br/>26 answerable + 8 traps<br/>run once, at the end"]
+```
+
 | | |
 |---|---|
 | **Filings** | 20 public company reports, 10-Ks plus one 10-Q and two annual reports, from 3M, Activision Blizzard, Adobe, AES, Amazon, AMD, Amcor, American Express, Best Buy, Block, Boeing, CVS Health, Entergy, General Mills, Johnson & Johnson, Microsoft, PepsiCo, Pfizer, Ulta Beauty and Verizon |
@@ -125,6 +138,10 @@ The rules in [`scoring-rules.md`](evals/financial-filings/scoring-rules.md) were
 ### Results
 
 Each row is a change to the app and the score it measured on the 41 answerable working questions. Trap questions were refused correctly, 10 of 10, in every run.
+
+<p align="center">
+  <img src=".github/readme/score-progress.svg" alt="Bar chart of answerable working questions correct out of 41: start 5, number check 15, no evidence picker 19, calculator about 23, three statements and none answers about 29, after code review 29." width="760">
+</p>
 
 | Change | Answerable correct |
 |---|---|
@@ -198,6 +215,16 @@ Changes to the answer check are also tested against real model output without pa
 
 The whole project runs on a budget of $5 a month, testing included, so spending is a feature, not an afterthought.
 
+```mermaid
+flowchart LR
+    CALL[AI call] --> FREE{Covered by Voyage's<br/>free tokens?}
+    FREE -- yes --> RUN[Call the provider]
+    FREE -- no --> SPENT{This month's billed spend<br/>below the budget?}
+    SPENT -- yes --> RUN
+    SPENT -- no --> STOP[Refuse with a clear message]
+    RUN --> LOG[Record reported tokens and cost<br/>in the ledger] --> DASH[Rebuild the local dashboard]
+```
+
 - **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark used `openai/gpt-oss-120b` for answers; the default is the smaller `gpt-oss-20b`.
 - **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a local ledger (`backend/usage/ledger.jsonl`) and prices them from a table of list prices.
 - **A monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, new paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working. Cost is recorded after a call returns, so calls already in flight when the limit is reached can take spend slightly past it, by cents at this app's scale.
@@ -235,6 +262,17 @@ The backend runs at `http://localhost:8000` and the frontend at `http://localhos
 ---
 
 ## Architecture
+
+```mermaid
+flowchart LR
+    U([Browser]) --> FE["Next.js app<br/>NextAuth sign-in"]
+    FE -- "signed identity header" --> BE["FastAPI backend<br/>ownership checks"]
+    BE --> SB[("Supabase<br/>users, documents,<br/>conversations, files")]
+    BE --> CH[("Chroma<br/>one collection<br/>per document")]
+    BE --> AI["ai_providers<br/>metered + budget"]
+    AI --> GQ["Groq<br/>gpt-oss chat"]
+    AI --> VY["Voyage AI<br/>voyage-4-lite embeddings"]
+```
 
 **Backend** (`backend/`)
 
