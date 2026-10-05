@@ -95,6 +95,15 @@ class FollowUpQuestionTests(unittest.TestCase):
         answer_question('doc-1', 'And FY25?', history=history, dependencies=deps)
         retriever.retrieve.assert_called_once_with('semantic', 'How did revenue change in FY2025?', 1)
 
+    def test_rewrite_may_not_turn_a_plain_two_digit_number_into_a_year(self):
+        history = (ConversationExchange(question='How many stores opened in 2024?', answer='30 stores.'),)
+        deps, retriever, _ = self.dependencies('25 stores closed.', [
+            '{"intent":"qa","question":"How many stores opened in 2025?"}',
+            '{"found_in_excerpts":true,"answer":"25 stores closed."}',
+        ])
+        answer_question('doc-1', 'What about the 25 that closed?', history=history, dependencies=deps)
+        retriever.retrieve.assert_called_once_with('semantic', 'What about the 25 that closed?', 1)
+
     def test_invalid_rewrite_falls_back_to_the_original_question_without_another_route_call(self):
         history = (ConversationExchange(question='What is the refund window?', answer='It is 30 days.'),)
         deps, retriever, generator = self.dependencies('Refunds are allowed for 30 days.', [

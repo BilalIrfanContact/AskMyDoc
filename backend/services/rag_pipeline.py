@@ -348,9 +348,10 @@ def _user_numbers(text: str) -> set[str]:
 
 
 def _keeps_user_numbers(question: str, rewrite: str) -> bool:
-    """Whether `rewrite` still has every number the user typed; a short year ("FY25") may become "2025"."""
+    """Whether `rewrite` still has every number the user typed; a short year ("FY25", "'25") may become "2025"."""
     kept = _user_numbers(rewrite)
-    return all(n in kept or (len(n) == 2 and f"20{n}" in kept) for n in _user_numbers(question))
+    short_years = set(re.findall(r"(?:\bFY\s?|['’])(\d{2})\b", question, re.IGNORECASE))
+    return all(n in kept or (n in short_years and f"20{n}" in kept) for n in _user_numbers(question))
 
 
 def _resolve_follow_up(
