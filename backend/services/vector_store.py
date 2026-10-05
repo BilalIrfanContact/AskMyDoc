@@ -92,10 +92,11 @@ def write_index_payload(document_id: str, payload: IndexPayload) -> int:
 def replace_index_payload(document_id: str, payload: IndexPayload) -> int:
     """Replace a document's collection with one built from `payload` and return its stored count.
 
-    The payload is written to a staging collection first; the old collection is deleted only once
-    the new one holds every chunk, so a failed write leaves the document searchable as before.
+    The payload is written to a staging collection first. Once it holds every chunk, the old collection is
+    renamed aside, the staging one takes its name, and only then is the old one deleted; if the swap fails,
+    the old collection gets its name back. Any failure leaves the document searchable as before.
     """
-    staging = f"{document_id}-reindex"
+    staging, previous = f"{document_id}-reindex", f"{document_id}-previous"
     delete_vector_store(staging)
     try:
         stored_count = write_index_payload(staging, payload)
@@ -104,8 +105,14 @@ def replace_index_payload(document_id: str, payload: IndexPayload) -> int:
     except Exception:
         delete_vector_store(staging)
         raise
-    delete_vector_store(document_id)
-    get_persisted_collection(staging).modify(name=document_id)
+    delete_vector_store(previous)
+    get_persisted_collection(document_id).modify(name=previous)
+    try:
+        get_persisted_collection(staging).modify(name=document_id)
+    except Exception:
+        get_persisted_collection(previous).modify(name=document_id)
+        raise
+    delete_vector_store(previous)
     return stored_count
 
 

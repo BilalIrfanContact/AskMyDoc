@@ -55,6 +55,16 @@ class VectorStoreTestCase(unittest.TestCase):
             self.assertEqual(client.get_collection("doc-1").get()["documents"], ["old"])
             self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
 
+            real_get = chromadb.api.client.Client.get_collection
+            def failing_swap(client, name, *args, **kwargs):
+                if name == "doc-1-reindex":
+                    raise RuntimeError("rename failed")
+                return real_get(client, name, *args, **kwargs)
+            with patch.object(chromadb.api.client.Client, "get_collection", failing_swap):
+                with self.assertRaises(RuntimeError):
+                    replace_index_payload("doc-1", new)
+            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["old"])
+
             self.assertEqual(replace_index_payload("doc-1", new), 1)
             self.assertEqual(client.get_collection("doc-1").get()["documents"], ["new"])
             self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
