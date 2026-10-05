@@ -59,6 +59,14 @@ class UsageLedgerTestCase(UsageTestCase):
         with self.assertRaises(usage_ledger.BudgetExceeded):
             usage_ledger.ensure_budget("groq", "openai/gpt-oss-20b")
 
+    def test_embeddings_still_covered_by_free_tokens_work_after_the_budget_is_spent(self):
+        usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 40_000_000)
+        usage_ledger.ensure_budget("voyage", "voyage-4-lite")
+
+        usage_ledger.record("voyage", "voyage-4-lite", "embed-document", 200_000_000)
+        with self.assertRaises(usage_ledger.BudgetExceeded):
+            usage_ledger.ensure_budget("voyage", "voyage-4-lite")
+
     def test_a_model_without_a_price_cannot_be_called(self):
         with self.assertRaises(usage_ledger.UnpricedModel):
             usage_ledger.ensure_budget("groq", "some-unpriced-model")

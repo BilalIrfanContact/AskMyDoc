@@ -133,10 +133,23 @@ def month_spend(entries: list[dict[str, Any]] | None = None, now: datetime | Non
     return sum(entry["billed_usd"] for entry in in_month(with_billing(entries), now or local_now()))
 
 
+def free_tokens_left(provider: str, model: str, entries: list[dict[str, Any]]) -> int:
+    """Tokens of the model's one-time free allowance not yet used, across the ledger's whole history."""
+    used = sum(e["input_tokens"] + e["output_tokens"] for e in entries if (e["provider"], e["model"]) == (provider, model))
+    return max(FREE_TOKENS.get((provider, model), 0) - used, 0)
+
+
 def ensure_budget(provider: str, model: str) -> None:
-    """Check the model is priced and this month's billed spend hasn't reached the budget, before a call."""
+    """Before a call, check the model is priced and the call is free or this month's budget isn't spent.
+
+    A model with free tokens left is always allowed, so free embeddings keep working after paid chat
+    spends the budget. Only the call that crosses the end of the allowance can be partly billed.
+    """
     price_of(provider, model)
-    spent = month_spend()
+    entries = read_entries()
+    if free_tokens_left(provider, model, entries) > 0:
+        return
+    spent = month_spend(entries)
     budget = monthly_budget()
     if spent >= budget:
         raise BudgetExceeded(
