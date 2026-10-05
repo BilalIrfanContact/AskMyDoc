@@ -649,3 +649,41 @@ test("retries an older unanswered turn using its message ID after browser storag
   assert.equal(requests[2], requests[0]);
   assert.equal(harness.getState().messages.filter((m) => m.role === "user").length, 2);
 });
+
+for (const outcome of ["success", "failure"] as const) {
+  test(`switching documents during a chat allows the new conversation to send despite the old ${outcome}`, async () => {
+    const harness = createHarness();
+    const oldAnswer = createDeferred<ChatResponseBody>();
+    const newAnswer = createDeferred<ChatResponseBody>();
+    const requests: string[] = [];
+    harness.services.askQuestion = async ({ conversationId }) => {
+      requests.push(conversationId);
+      return conversationId === "conv-a" ? oldAnswer.promise : newAnswer.promise;
+    };
+    harness.setState({ ...createInitialWorkspaceState(), documentId: "doc-a", conversationId: "conv-a", view: "chat" });
+    const workspaceModule = harness.createModule();
+    const oldSend = workspaceModule.handleSend("Question for alpha?");
+    assert.equal(harness.getState().isAssistantTyping, true);
+
+    await workspaceModule.handleSelectDocument(harness.documents[1]);
+    assert.equal(harness.getState().isAssistantTyping, false);
+    const newSend = workspaceModule.handleSend("Question for beta?");
+    assert.deepEqual(requests, ["conv-a", "conv-b"]);
+    assert.equal(harness.getState().isAssistantTyping, true);
+
+    const response: ChatResponseBody = {
+      answer: "Answer for alpha", intent: "qa", retrieval_mode: "semantic", answer_status: "answered", citations: []
+    };
+    if (outcome === "success") oldAnswer.resolve(response);
+    else oldAnswer.reject(new Error("Alpha request failed."));
+    await oldSend;
+    assert.equal(harness.getState().isAssistantTyping, true);
+    assert.equal(harness.getState().error, null);
+    assert.deepEqual(harness.getState().messages.map(({ content }) => content), ["beta", "Question for beta?"]);
+
+    newAnswer.resolve({ ...response, answer: "Answer for beta" });
+    await newSend;
+    assert.equal(harness.getState().isAssistantTyping, false);
+    assert.deepEqual(harness.getState().messages.map(({ content }) => content), ["beta", "Question for beta?", "Answer for beta"]);
+  });
+}

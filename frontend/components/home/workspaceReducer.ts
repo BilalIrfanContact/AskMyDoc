@@ -149,6 +149,7 @@ export function workspaceReducer(
         messages: [],
         suggestedQuestions: [],
         loadingSuggestions: false,
+        isAssistantTyping: false,
         error: null
       };
     case "workflow/upload-start":
@@ -163,6 +164,7 @@ export function workspaceReducer(
         messages: [],
         suggestedQuestions: [],
         loadingSuggestions: false,
+        isAssistantTyping: false,
         error: null
       };
     case "workflow/select-start":
@@ -177,6 +179,7 @@ export function workspaceReducer(
         messages: [],
         suggestedQuestions: [],
         loadingSuggestions: false,
+        isAssistantTyping: false,
         error: null
       };
     case "workflow/chat-ready":
