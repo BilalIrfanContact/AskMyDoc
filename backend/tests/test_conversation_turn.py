@@ -1,4 +1,5 @@
 import unittest
+from contextlib import nullcontext
 from unittest.mock import Mock, call, patch
 
 from fastapi import HTTPException
@@ -14,6 +15,9 @@ from backend.services.rag_pipeline import AnswerDecision
 
 class ConversationTurnTestCase(unittest.TestCase):
     def setUp(self):
+        limits = patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext())
+        limits.start()
+        self.addCleanup(limits.stop)
         self.request = ConversationTurnInput(
             document_id="doc-a",
             conversation_id="convo-a",

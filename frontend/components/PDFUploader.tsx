@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { isSupportedUploadFile, UPLOAD_FILE_ACCEPT } from "../lib/uploadValidation";
+import { getUploadValidationError, UPLOAD_FILE_ACCEPT } from "../lib/uploadValidation";
 import type { UploadBootstrapResult } from "./home/types";
 
 type PDFUploaderProps = {
@@ -31,8 +31,9 @@ export default function PDFUploader({
   const handleFileChange = async (file: File | null) => {
     if (!file) return;
 
-    if (!isSupportedUploadFile(file)) {
-      setStatus("Please select a valid PDF or Markdown file.");
+    const validationError = getUploadValidationError(file);
+    if (validationError) {
+      setStatus(validationError);
       return;
     }
 
@@ -62,7 +63,7 @@ export default function PDFUploader({
           </svg>
         </span>
         <strong>{isDragging ? "Drop your file here" : "Drop a file here"}</strong>
-        <span>or</span>
+        <span>PDF or Markdown, up to 15 MB</span>
         <button
           type="button"
           className="button-primary upload-choose-button"
@@ -77,7 +78,11 @@ export default function PDFUploader({
         type="file"
         accept={UPLOAD_FILE_ACCEPT}
         className="visually-hidden"
-        onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          event.target.value = "";
+          void handleFileChange(file);
+        }}
       />
 
       {status ? (

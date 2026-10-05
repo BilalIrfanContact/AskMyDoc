@@ -55,6 +55,7 @@ export default function ChatInput({ disabled, onSend, documentName }: ChatInputP
           placeholder={disabled ? "Document workspace is not ready." : `Ask about ${documentName ?? "this document"}`}
           className="chat-textarea"
           disabled={disabled}
+          maxLength={2000}
           rows={1}
           aria-label="Ask about this document"
           onKeyDown={(event) => {

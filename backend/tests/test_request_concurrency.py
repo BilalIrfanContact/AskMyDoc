@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from unittest.mock import patch
 
 import httpx
@@ -77,6 +77,9 @@ class RequestConcurrencyTestCase(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
             for label, blocked_call, method, path, kwargs in cases:
                 with self.subTest(workflow=label), ExitStack() as stack:
+                    stack.enter_context(patch("backend.services.conversation_turn.question_allowance", side_effect=lambda _: nullcontext()))
+                    stack.enter_context(patch("backend.routers.upload.operation", return_value={"id": "upload-a"}))
+                    stack.enter_context(patch("backend.routers.documents.cached_suggestions", side_effect=lambda user, doc, generate: generate(doc)))
                     for target, result in results.items():
                         stack.enter_context(patch(target, return_value=result))
 

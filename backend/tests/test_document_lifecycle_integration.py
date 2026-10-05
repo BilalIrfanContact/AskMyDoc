@@ -102,6 +102,9 @@ async def _request_asgi(
 
 class DocumentLifecycleHttpIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        limits = patch("backend.routers.upload.operation", return_value={"id": "upload-reservation"})
+        limits.start()
+        self.addCleanup(limits.stop)
         self.app = _build_test_app()
 
     async def asyncTearDown(self):

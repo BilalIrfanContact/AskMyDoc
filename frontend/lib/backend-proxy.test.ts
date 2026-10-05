@@ -88,3 +88,15 @@ test("uses a JSON content type when the backend does not provide one", async () 
   assert.equal(response.headers.get("content-type"), "application/json");
   assert.equal(await response.text(), "");
 });
+
+test("preserves rate-limit status, message, and Retry-After for the browser", async () => {
+  const response = await forwardToBackend({ path: "/chat", method: "POST" }, {
+    getSession: async () => ({ user: { id: "user-a" } }), createAuthHeaders: () => ({}),
+    fetch: async () => new Response(JSON.stringify({ detail: "Please wait a minute." }), {
+      status: 429, headers: { "Retry-After": "37", "content-type": "application/json" }
+    })
+  });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "37");
+  assert.deepEqual(await response.json(), { detail: "Please wait a minute." });
+});

@@ -27,7 +27,7 @@ export async function getUserByEmail(email: string): Promise<AuthUserRecord | nu
 
 // Google subjects identify accounts. An email collision must never change an existing login method.
 export async function getOrCreateGoogleUser(
-  input: { googleId: string; email: string; name?: string | null },
+  input: { googleId: string; email: string; name?: string | null; beforeCreate?: () => Promise<void> },
   supabaseAdmin = getSupabaseAdmin()
 ): Promise<AuthUserRecord | null> {
   const normalizedEmail = input.email.trim().toLowerCase();
@@ -57,6 +57,8 @@ export async function getOrCreateGoogleUser(
   if (emailUser) {
     return null;
   }
+
+  await input.beforeCreate?.();
 
   const payload = {
     email: normalizedEmail,

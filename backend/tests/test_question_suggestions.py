@@ -89,6 +89,11 @@ class QuestionSuggestionTests(unittest.TestCase):
 
 
 class QuestionSuggestionRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        limits = patch("backend.routers.documents.cached_suggestions", side_effect=lambda user, doc, generate: generate(doc))
+        limits.start()
+        self.addCleanup(limits.stop)
+
     @patch("backend.routers.documents.generate_question_suggestions")
     @patch("backend.routers.documents.require_user_document")
     async def test_route_authorizes_the_document_before_generating_questions(
@@ -103,6 +108,20 @@ class QuestionSuggestionRouteTests(unittest.IsolatedAsyncioTestCase):
         require_document.assert_called_once_with(document_id="doc-1", user_id="user-1")
         generate_suggestions.assert_called_once_with("doc-1")
         self.assertEqual(response.suggestions, ["What is the cancellation window?"])
+
+    async def test_concurrent_request_waits_for_the_existing_suggestion_result(self):
+        from backend.services.demo_limits import SuggestionsPendingError
+        with (
+            patch("backend.routers.documents.require_user_document"),
+            patch("backend.routers.documents.cached_suggestions", side_effect=[
+                SuggestionsPendingError(), SuggestionsPendingError(), ["What is the cancellation window?"],
+            ]) as cached,
+            patch("backend.routers.documents.generate_question_suggestions") as generate,
+        ):
+            response = await get_document_question_suggestions("doc-1", user_id="user-1")
+        self.assertEqual(response.suggestions, ["What is the cancellation window?"])
+        self.assertEqual(cached.call_count, 3)
+        generate.assert_not_called()
 
 
 if __name__ == "__main__":

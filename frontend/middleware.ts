@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 
 import { auth } from "./auth";
 
-export default auth((req) => {
+const authenticatedMiddleware = auth((req, _event: NextFetchEvent) => {
   const isLoggedIn = Boolean(req.auth);
   const pathname = req.nextUrl.pathname;
   const isAuthRoute = pathname.startsWith("/api/auth");
@@ -27,6 +27,12 @@ export default auth((req) => {
 
   return NextResponse.next();
 });
+
+// Lazy Auth.js config returns the wrapper asynchronously in the installed v5 beta.
+export default async function middleware(request: NextRequest, event: NextFetchEvent) {
+  const handler = await authenticatedMiddleware;
+  return handler(request, event);
+}
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
