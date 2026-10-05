@@ -1,17 +1,24 @@
-"""Measure whether the current semantic retriever finds declared gold chunks."""
+"""Measure whether the app's semantic retriever finds declared gold chunks.
+
+Each top-k limit is a cap: with the evidence reranker (the default) fewer than k chunks may come back,
+so the summary also reports the mean number returned.
+"""
 
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 
 from backend.bootstrap import initialize_backend_environment
-from backend.services.rag_adapters import ChromaRetrievalAdapter
+from backend.services.evidence_planner import plan_evidence
+from backend.services.rag_adapters import ChromaRetrievalAdapter, OpenAIChatAdapter
 from backend.services.vector_store import get_vector_store
 
 
@@ -37,6 +44,7 @@ def evaluate_chunk_ids(
         "gold_chunk_recall": len(found) / len(gold) if gold else None,
         "any_gold_chunk_found": bool(found),
         "all_gold_chunks_found": bool(gold) and len(found) == len(gold),
+        "returned_count": len(retrieved),
     }
 
 
@@ -98,11 +106,12 @@ def evaluate_cases(
         status = "completed" if successful_count == len(normalized_limits) else (
             "partial" if successful_count else "failed"
         )
-        case_results.append(
-            {"case_id": case_id, "status": status, "document_id": document_id,
-             "question": question, "retrieved_document_count": retrieved_document_count,
-             "results": results}
-        )
+        case_result = {"case_id": case_id, "status": status, "document_id": document_id,
+                       "question": question, "retrieved_document_count": retrieved_document_count,
+                       "results": results}
+        if getattr(retriever, "last_plan", None) is not None:
+            case_result["planned_needs"] = retriever.last_plan
+        case_results.append(case_result)
 
     summary = {}
     completed = [case for case in case_results if case["status"] == "completed"]
@@ -115,6 +124,7 @@ def evaluate_cases(
         any_hit_count = sum(measurement["any_gold_chunk_found"] for measurement in measurements)
         complete_hit_count = sum(measurement["all_gold_chunks_found"] for measurement in measurements)
         recalls = [measurement["gold_chunk_recall"] for measurement in measurements]
+        returned = [measurement["returned_count"] for measurement in measurements]
         summary[f"top_{limit}"] = {
             "case_count": len(measurements),
             "any_gold_chunk_hit_count": any_hit_count,
@@ -122,6 +132,7 @@ def evaluate_cases(
             "all_gold_chunks_hit_count": complete_hit_count,
             "all_gold_chunks_hit_rate": complete_hit_count / len(measurements) if measurements else None,
             "mean_gold_chunk_recall": sum(recalls) / len(recalls) if recalls else None,
+            "mean_returned_count": sum(returned) / len(returned) if returned else None,
         }
 
     return {
@@ -164,16 +175,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Top-k limits to measure (default: 4 8).",
     )
     parser.add_argument("--output", help="Write the JSON report to this path instead of stdout.")
+    parser.add_argument("--hybrid", action="store_true", help="Merge keyword (BM25) and embedding rankings.")
+    parser.add_argument("--planner", action="store_true", help="Also search for each evidence need a model lists.")
+    parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help="Rank by embedding only, without the evidence reranker (off anyway with --hybrid or --planner).",
+    )
     args = parser.parse_args(argv)
+    if args.hybrid and args.planner:
+        parser.error("--hybrid and --planner are separate strategies; pass one")
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     initialize_backend_environment()
+
+    generator = OpenAIChatAdapter(ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano"), temperature=0))
+    planner = (lambda question: plan_evidence(question, generator)) if args.planner else None
+    reranker = None if args.no_rerank or args.hybrid or args.planner else generator
 
     try:
         report = evaluate_cases(
             _load_cases(args.cases),
             retriever_factory=lambda document_id: ChromaRetrievalAdapter(
-                get_vector_store(document_id)
+                get_vector_store(document_id), hybrid=args.hybrid, planner=planner, reranker=reranker
             ),
             limits=args.limits,
         )

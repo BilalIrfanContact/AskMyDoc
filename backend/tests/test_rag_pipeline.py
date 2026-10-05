@@ -91,7 +91,7 @@ class RagPipelineTestCase(unittest.TestCase):
         )
         vectordb._collection.query.assert_called_once_with(
             query_embeddings=[[0.1, 0.2, 0.3]],
-            n_results=4,
+            n_results=30,
             include=["documents", "metadatas"],
         )
         self.assertEqual(chat_openai_mock.call_count, 1)
@@ -282,7 +282,7 @@ class RagPipelineTestCase(unittest.TestCase):
 
         self.assertEqual(policy.intent, "qa")
         self.assertEqual(policy.mode, "semantic")
-        self.assertEqual(policy.limit, 4)
+        self.assertEqual(policy.limit, 10)
 
     def test_summary_questions_route_to_head_retrieval_policy(self):
         llm = Mock()
@@ -592,7 +592,7 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.citations, [])
         vectordb._collection.query.assert_called_once_with(
             query_embeddings=[[0.1, 0.2, 0.3]],
-            n_results=4,
+            n_results=30,
             include=["documents", "metadatas"],
         )
         vectordb.get.assert_not_called()
