@@ -71,7 +71,7 @@ flowchart TD
 
 1. **Indexing.** On upload, the text is extracted (`pdfplumber`, with table-aware handling), split into chunks of about 2,000 characters with 200 characters of overlap, embedded with Voyage `voyage-4-lite`, and stored in a Chroma collection for that document.
 2. **Routing.** The answer model decides whether the question asks for a summary or a specific answer. Summaries read the start of the document; questions use semantic search.
-3. **Retrieval.** The 15 chunks closest to the question are retrieved. Financial questions often need a line from a statement that a similarity search ranks low, so the filing's three primary statements (income statement, balance sheet, cash flow statement) are always added. They're found by their titles and their density of figures.
+3. **Retrieval.** The 15 chunks closest to the question are retrieved. Financial questions often need a line from a statement that a similarity search ranks low, so the filing's three primary statements (income statement, balance sheet, cash flow statement) are added as well. They're detected by a statement title near the top of a chunk and a dense block of figures; a statement that the text extraction mangles badly enough can be missed, and then nothing is added for it.
 4. **Answering.** The answer model (Groq-hosted `gpt-oss`) writes a structured reply: whether the answer is in the excerpts, and the answer itself. It has one tool, `calculate`, and is told to use it for every arithmetic step. The calculator reads plain arithmetic only, by walking Python's syntax tree, so nothing the model sends can run as code.
 5. **Checking.** Before the answer is shown, every number in it must be accounted for. It must appear in the excerpts or the question (allowing for units and rounding: "$8.74 billion" matches "8,738" in millions), or come from shown working that is arithmetically correct, or come from a calculator result whose inputs are themselves backed. A number that can't be accounted for turns the answer into the "not in the document" response. Words aren't checked: an earlier word-overlap check rejected honest paraphrases and still let wrong answers through.
 6. **Saving.** The question and answer are stored with the conversation, and the API returns the answer with its status, retrieval mode and citations.
@@ -132,7 +132,7 @@ Each row is a change to the app and the score it measured on the 41 answerable w
 | Check answers by their numbers instead of their words | 15 / 41 |
 | Drop the model-based evidence picker; send the top 15 chunks instead | 19 / 41 |
 | Give the answer model a calculator | about 23 / 41 (three runs) |
-| Always include the three primary statements; let "there are none" be an answer | about 29 / 41 (three runs) |
+| Add the three primary statements to every question; let "there are none" be an answer | about 29 / 41 (three runs) |
 | Final merged code, after code review fixes | 29 / 41 (five-run average about 29) |
 
 The **held-out set** was run once, on the final pipeline before code review: **21 of 26** answerable and **8 of 8** traps. One of the five misses was a correct answer blocked by a bug in the number check, which read the "(000)" in-thousands marker as a figure. That bug was fixed afterwards. The held-out set was not run again, so the 21 stands.
@@ -200,7 +200,7 @@ The whole project runs on a budget of $5 a month, testing included, so spending 
 
 - **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark used `openai/gpt-oss-120b` for answers; the default is the smaller `gpt-oss-20b`.
 - **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a local ledger (`backend/usage/ledger.jsonl`) and prices them from a table of list prices.
-- **A hard monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working.
+- **A monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, new paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working. Cost is recorded after a call returns, so calls already in flight when the limit is reached can take spend slightly past it, by cents at this app's scale.
 - **A local dashboard.** `backend/usage/dashboard.html` shows spend against the budget, by model and by job, and how much of the free allowance is used.
 
 ---
