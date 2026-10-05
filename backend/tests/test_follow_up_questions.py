@@ -33,10 +33,11 @@ class FollowUpQuestionTests(unittest.TestCase):
         self.assertEqual(result.answer_status, 'answered')
         self.assertEqual(result.citations, [AnswerCitation(chunk_id='chunk-1', excerpt=evidence)])
         self.assertEqual(generator.invoke.call_count, 2, 'Rewrite replaces routing rather than adding a call')
-        for invocation in generator.invoke.call_args_list:
-            self.assertIn('How did revenue change in 2025?', invocation.args[0])
-            self.assertIn('not document evidence', invocation.args[0])
-        self.assertIn('Question: Why did that increase?', generator.invoke.call_args.args[0])
+        rewrite_prompt, answer_prompt = (call.args[0] for call in generator.invoke.call_args_list)
+        self.assertIn('How did revenue change in 2025?', rewrite_prompt)
+        self.assertIn('not document evidence', rewrite_prompt)
+        self.assertIn('Question: Why did revenue increase in 2025?', answer_prompt)
+        self.assertNotIn('Revenue increased.', answer_prompt, 'Earlier answers never reach the answer model')
 
     def test_history_and_rewrite_numbers_cannot_supply_missing_evidence(self):
         history = (ConversationExchange(question='What was revenue?', answer='Revenue was 900 million.'),)
@@ -67,16 +68,15 @@ class FollowUpQuestionTests(unittest.TestCase):
         result = answer_question('doc-1', question, history=history, dependencies=deps)
         self.assertEqual(result.answer_status, 'answered')
         retriever.retrieve.assert_called_once_with('semantic', question, 1)
-        for invocation in generator.invoke.call_args_list:
-            prompt = invocation.args[0]
-            self.assertNotIn('OLD-0-', prompt)
-            self.assertNotIn('OLD-1-', prompt)
-            self.assertIn('OLD-2-', prompt)
-            self.assertIn('OLD-4-', prompt)
-            self.assertNotIn('a' * 1001, prompt)
-            self.assertNotIn('q' * 1001, prompt)
+        prompt = generator.invoke.call_args_list[0].args[0]
+        self.assertNotIn('OLD-0-', prompt)
+        self.assertNotIn('OLD-1-', prompt)
+        self.assertIn('OLD-2-', prompt)
+        self.assertIn('OLD-4-', prompt)
+        self.assertNotIn('a' * 1001, prompt)
+        self.assertNotIn('q' * 1001, prompt)
 
-    def test_invalid_rewrite_falls_back_without_another_route_call_and_keeps_history_on_answer_retry(self):
+    def test_invalid_rewrite_falls_back_to_the_original_question_without_another_route_call(self):
         history = (ConversationExchange(question='What is the refund window?', answer='It is 30 days.'),)
         deps, retriever, generator = self.dependencies('Refunds are allowed for 30 days.', [
             'invalid routing JSON', 'invalid answer JSON',
@@ -86,4 +86,4 @@ class FollowUpQuestionTests(unittest.TestCase):
         self.assertEqual(result.answer_status, 'answered')
         retriever.retrieve.assert_called_once_with('semantic', 'How long is that?', 1)
         self.assertEqual(generator.invoke.call_count, 3)
-        self.assertIn('What is the refund window?', generator.invoke.call_args.args[0])
+        self.assertIn('Question: How long is that?', generator.invoke.call_args.args[0])
