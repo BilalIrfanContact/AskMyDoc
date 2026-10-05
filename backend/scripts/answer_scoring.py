@@ -147,6 +147,8 @@ def score_answer(case: dict[str, Any], run: dict[str, Any], grade_fn: GradeFn | 
         amounts = [q for q in read_quantities(answer) if q.value != 0 and not _looks_like_year(q)]
         if amounts:
             return _result(False, "zero_or_not_found", "gave an amount for an item that is not shown")
+        if not _SAYS_NONE.search(answer):
+            return _result(False, "zero_or_not_found", "said neither 0 nor that the item is not shown")
         return _result(True, "zero_or_not_found", "answered 0 or not shown")
 
     if _is_fallback(run):
@@ -186,6 +188,10 @@ def score_answer(case: dict[str, Any], run: dict[str, Any], grade_fn: GradeFn | 
         failures.append(f"numbers: expected {_missing_numbers(number_checks)}")
     reason = "all checks pass" if passed else "; ".join(failures) + f" | grader: {grade['reason']}"
     return _result(passed, "grader", reason, numbers=number_checks, grader=grade)
+
+
+# "0", "zero", or a statement that the item is absent ("no restructuring line", "not shown", "none").
+_SAYS_NONE = re.compile(r"\b(?:0|zero|none|nil|no|not)\b", re.IGNORECASE)
 
 
 def _looks_like_year(quantity: Quantity) -> bool:
