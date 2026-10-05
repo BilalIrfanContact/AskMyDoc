@@ -120,6 +120,28 @@ def answer_anchors(proposed: dict[str, Any], evidence: str, formula: str = "") -
     return numbers, words
 
 
+def add_answer_chunks(
+    chosen: list[str],
+    candidates: list[tuple[str, str]],
+    anchors: tuple[set[str], set[str]],
+) -> list[str]:
+    """Add page chunks holding answer numbers that the chosen chunks miss.
+
+    Coverage can reach its threshold on headings and neighbouring rows before the row with the
+    answer is picked, so the answer's own figures are checked separately.
+    """
+    numbers, _ = anchors
+    texts = dict(candidates)
+    held = set().union(*(tokens(texts[chunk_id]) for chunk_id in chosen)) & numbers
+    added = list(chosen)
+    for chunk_id, text in candidates:
+        missing = (numbers - held) & tokens(text)
+        if chunk_id not in added and missing:
+            added.append(chunk_id)
+            held |= missing
+    return added
+
+
 def keep_answer_chunks(
     chosen: list[str],
     texts: dict[str, str],
@@ -187,6 +209,7 @@ def build_case(
         candidates = [(chunk_id, text) for chunk_id, text in chunks if page in located.get(chunk_id, set())]
         chosen, coverage = select_chunks(evidence, candidates, min_coverage)
         anchors = answer_anchors(proposed, evidence, formula)
+        chosen = add_answer_chunks(chosen, candidates, anchors)
         kept, dropped = keep_answer_chunks(chosen, texts, anchors)
         result: dict[str, Any] = {"page": page, "chunk_ids": kept, "coverage": coverage}
         if dropped:

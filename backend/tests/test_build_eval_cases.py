@@ -113,6 +113,24 @@ class BuildEvalCasesTestCase(unittest.TestCase):
         self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:1"])
         self.assertEqual(case["gold_mapping"]["evidence"][0]["dropped_chunk_ids"], ["doc:chunk:2"])
 
+    def test_the_chunk_with_the_answer_is_gold_even_after_coverage_is_reached_without_it(self):
+        case = build_case(
+            {
+                "case_id": "inventories",
+                "question": "What were inventories?",
+                "expected": "answer",
+                "expected_answer": "$11,461 million",
+                "gold_evidence_text": ["Accounts payable 25,309 34,616 Inventories 11,461"],
+                "gold_page": [2],
+            },
+            "doc",
+            PAGES,
+            CHUNKS,
+            min_coverage=0.6,
+        )
+
+        self.assertEqual(case["gold_chunk_ids"], ["doc:chunk:2"])
+
     def test_calculated_answers_without_anchors_keep_every_selected_chunk(self):
         case = build_case(
             {
