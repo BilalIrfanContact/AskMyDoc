@@ -10,6 +10,7 @@ Decided before any AskMyDoc run on this corpus. Change a rule only for a reason 
 - Numbers that must appear are listed per case in `key_values` (the answer, not its workings); all must match.
 - When a case has `acceptable_answers`, the answer passes if it matches any one of them under the same rule.
 - Negatives written in brackets, like (0.6)%, read as negative. An unsigned number matches a negative expected value (the sign is often given in words); an explicitly signed one must match the sign.
+- The scorer checks that the expected figure is stated, not which year or line item it is attached to. On 2026-10-05 every saved pass that states more than one amount (77 answers across runs 015–018 and the held-out run) was checked by hand; none passed through a figure given for another year or item.
 - This normalisation happens only inside the scorer. The app's answer is never changed, and results keep the original answer text.
 
 ## 2. Yes/no (decided 2026-09-27)
