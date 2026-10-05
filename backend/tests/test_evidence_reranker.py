@@ -55,6 +55,10 @@ class RerankedRetrievalTestCase(unittest.TestCase):
         self.assertEqual(context.text, "text 4\n\ntext 2")
         self.assertIn("[4] label 4", generator.invoke.call_args.args[0])
 
+    def test_search_strategies_cannot_be_combined(self):
+        with self.assertRaises(ValueError):
+            ChromaRetrievalAdapter(self._vectordb(), hybrid=True, reranker=_generator("1"))
+
     def test_falls_back_to_embedding_order_when_the_model_reply_is_unusable(self):
         adapter = ChromaRetrievalAdapter(self._vectordb(), reranker=_generator("sorry"))
 

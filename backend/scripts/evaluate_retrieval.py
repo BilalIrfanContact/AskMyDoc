@@ -180,16 +180,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-rerank",
         action="store_true",
-        help="Rank by embedding only, without the app's evidence reranker.",
+        help="Rank by embedding only, without the evidence reranker (off anyway with --hybrid or --planner).",
     )
     args = parser.parse_args(argv)
+    if args.hybrid and args.planner:
+        parser.error("--hybrid and --planner are separate strategies; pass one")
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     initialize_backend_environment()
 
     generator = OpenAIChatAdapter(ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano"), temperature=0))
     planner = (lambda question: plan_evidence(question, generator)) if args.planner else None
-    reranker = None if args.no_rerank else generator
+    reranker = None if args.no_rerank or args.hybrid or args.planner else generator
 
     try:
         report = evaluate_cases(

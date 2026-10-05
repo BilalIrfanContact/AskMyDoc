@@ -35,6 +35,8 @@ def select_with_reserved_slots(question_ranking: Sequence[str], need_rankings: S
 class ChromaRetrievalAdapter:
     """Keep Chroma's concrete and private details outside the answer policy.
 
+    `hybrid`, `reranker` and `planner` are separate search strategies; pass at most one.
+
     With `hybrid=True`, semantic retrieval merges the embedding ranking with a BM25 keyword ranking
     over the document's chunks (reciprocal rank fusion), so exact financial terms count.
 
@@ -55,6 +57,8 @@ class ChromaRetrievalAdapter:
         planner: Planner | None = None,
         reranker: GenerationAdapter | None = None,
     ):
+        if sum([hybrid, planner is not None, reranker is not None]) > 1:
+            raise ValueError("use one of hybrid, planner or reranker; they don't combine")
         self._vectordb = vectordb
         self._reranker = reranker
         self._hybrid = hybrid
