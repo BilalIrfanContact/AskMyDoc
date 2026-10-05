@@ -191,12 +191,13 @@ def score_answer(case: dict[str, Any], run: dict[str, Any], grade_fn: GradeFn | 
 
 
 # "0", "zero", "none", or a statement that the item is absent: "no restructuring line", "not shown",
-# "absent from", "does not report". A stray "no" ("there is no doubt") doesn't count.
+# "isn't broken out", "absent from", "didn't report". A stray "no" ("there is no doubt") doesn't count.
 _SAYS_NONE = re.compile(
-    r"\b(?:0|zero|none|nil|absent)\b"
-    r"|\bno (?:separate |such )?(?:restructuring|line|item|amount|costs?|charges?|expenses?)\b"
-    r"|\bnot (?:separately )?(?:shown|reported|disclosed|listed|included|presented|present|recorded|recognized|found)\b"
-    r"|\b(?:does|did)(?:n't| not) (?:show|report|include|list|disclose|present|record)\b",
+    r"\b(?:0|zero|none|nil|nothing|absent)\b"
+    r"|\bno\s+(?:separate\s+|such\s+|specific\s+)?(?:restructuring|line|item|amount|figure|entry|costs?|charges?|expenses?)\b"
+    r"|(?:\bnot|\bnever|n['’]t)\s+(?:been\s+|be\s+)?(?:separately\s+|specifically\s+)?"
+    r"(?:shown|reported|disclosed|listed|included|presented|present|recorded|recognized|found|provided|mentioned|itemized"
+    r"|broken\s+out|appears?|show|report|include|list|disclose|present|record)\b",
     re.IGNORECASE,
 )
 

@@ -63,6 +63,9 @@ class ScoreAnswerTestCase(unittest.TestCase):
         self.assertFalse(score_answer(case, run("Restructuring costs are shown; there is no doubt about it."), None)["passed"])
         self.assertTrue(score_answer(case, run("Restructuring costs are absent from the income statement."), None)["passed"])
         self.assertTrue(score_answer(case, run("The income statement does not show restructuring costs."), None)["passed"])
+        for wording in ("Restructuring costs aren't reported.", "They are not broken out in the statement.",
+                        "AES didn’t report any restructuring costs.", "Restructuring isn't shown."):
+            self.assertTrue(score_answer(case, run(wording), None)["passed"], wording)
 
     def test_declining_an_answerable_question_fails(self):
         case = {"expected": "answer", "answer_format": "numeric", "key_values": ["93.86"]}
