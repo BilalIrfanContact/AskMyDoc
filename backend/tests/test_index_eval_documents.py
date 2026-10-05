@@ -25,7 +25,7 @@ class IndexEvalDocumentsTestCase(unittest.TestCase):
     def test_indexes_new_pdfs_and_skips_ones_already_in_the_manifest(self):
         known = self._pdf("known.pdf", b"known")
         new = self._pdf("new.pdf", b"new")
-        manifest = {"documents": [{"path": known, "sha256": hashlib.sha256(b"known").hexdigest()}]}
+        manifest = {"documents": [{"path": known, "sha256": hashlib.sha256(b"known").hexdigest(), "document_id": "doc-known"}]}
         indexed = []
         saves = []
 
@@ -33,7 +33,7 @@ class IndexEvalDocumentsTestCase(unittest.TestCase):
             indexed.append(data)
             return {"document_id": "doc-new", "chunk_count": 3, "stored_count": 3}
 
-        failures = self._run([known, new], manifest, index_fn=fake_index, save=saves.append)
+        failures = self._run([known, new], manifest, index_fn=fake_index, count_fn=lambda document_id: 197, save=saves.append)
 
         self.assertEqual(failures, [])
         self.assertEqual(indexed, [b"new"])
@@ -41,51 +41,29 @@ class IndexEvalDocumentsTestCase(unittest.TestCase):
         self.assertEqual(manifest["documents"][1]["document_id"], "doc-new")
         self.assertEqual(manifest["documents"][1]["origin"], "indexed")
 
-    def test_reuses_an_existing_collection_without_embedding_again(self):
+    def test_a_manifest_entry_whose_collection_is_gone_is_indexed_again(self):
         path = self._pdf("amazon.pdf", b"amazon")
-        manifest = {}
+        manifest = {"documents": [{"path": path, "sha256": hashlib.sha256(b"amazon").hexdigest(), "document_id": "doc-cleared"}]}
 
-        def must_not_index(data):
-            raise AssertionError("reused PDFs must not be re-embedded")
-
-        failures = self._run(
+        self._run(
             [path],
             manifest,
-            reuse={path: "doc-amazon"},
-            index_fn=must_not_index,
-            count_fn=lambda document_id: 197,
+            index_fn=lambda data: {"document_id": "doc-new", "chunk_count": 3, "stored_count": 3},
+            count_fn=lambda document_id: 0,
         )
 
-        self.assertEqual(failures, [])
-        self.assertEqual(
-            manifest["documents"][0],
-            {
-                "path": path,
-                "sha256": hashlib.sha256(b"amazon").hexdigest(),
-                "origin": "reused",
-                "document_id": "doc-amazon",
-                "chunk_count": 197,
-                "stored_count": 197,
-            },
-        )
+        self.assertEqual([entry["document_id"] for entry in manifest["documents"]], ["doc-new"])
 
     def test_records_failures_without_adding_them_to_the_manifest(self):
-        empty_reuse = self._pdf("empty.pdf", b"empty")
         broken = self._pdf("broken.pdf", b"broken")
         manifest = {}
 
         def failing_index(data):
             raise ValueError("chunks were created but none were stored")
 
-        failures = self._run(
-            [empty_reuse, broken],
-            manifest,
-            reuse={empty_reuse: "doc-empty"},
-            index_fn=failing_index,
-            count_fn=lambda document_id: 0,
-        )
+        failures = self._run([broken], manifest, index_fn=failing_index)
 
-        self.assertEqual([failure["path"] for failure in failures], [empty_reuse, broken])
+        self.assertEqual([failure["path"] for failure in failures], [broken])
         self.assertEqual(manifest["documents"], [])
 
 

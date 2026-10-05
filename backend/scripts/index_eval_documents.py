@@ -5,8 +5,8 @@ chunks under a new `document_id` (chunk IDs are `<document_id>:chunk:<index>`). 
 Supabase storage and metadata steps, so indexed PDFs don't appear in the app's library.
 
 Results go to a local manifest mapping each PDF path and SHA-256 to its `document_id`. PDFs
-whose SHA-256 is already in the manifest are skipped, so reruns only index what's missing.
-`--reuse PATH=DOCUMENT_ID` records an already-indexed collection without re-embedding it.
+whose SHA-256 is already in the manifest are skipped while their collection still holds chunks,
+so reruns only index what's missing, including PDFs whose Chroma store was cleared.
 
     .venv/bin/python -m backend.scripts.index_eval_documents \
         --corpus evals/financial-filings/manifest.json \
@@ -63,80 +63,61 @@ def index_pdf_bytes(data: bytes) -> dict[str, Any]:
 
 
 def _collection_count(document_id: str) -> int:
-    return get_persisted_collection(document_id).count()
+    """Chunks stored for `document_id`; 0 if its collection no longer exists."""
+    try:
+        return get_persisted_collection(document_id).count()
+    except Exception as exc:
+        if "does not exist" in str(exc).lower():
+            return 0
+        raise
 
 
 def index_documents(
     pdf_paths: list[str],
     manifest: dict[str, Any],
     *,
-    reuse: dict[str, str] | None = None,
     index_fn: IndexFn = index_pdf_bytes,
     count_fn: CountFn = _collection_count,
     save: Callable[[dict[str, Any]], None] = lambda manifest: None,
 ) -> list[dict[str, str]]:
-    """Add each PDF to `manifest["documents"]` unless its SHA-256 is already there.
+    """Add each PDF to `manifest["documents"]` unless its SHA-256 is there with a nonempty collection.
 
-    Calls `save` after every new entry so an interrupted run keeps its progress. Returns one
-    failure record per PDF that could not be indexed or reused.
+    An entry whose collection is gone or empty is dropped and the PDF indexed again. Calls `save`
+    after every new entry so an interrupted run keeps its progress. Returns one failure record per
+    PDF that could not be indexed.
     """
     documents: list[dict[str, Any]] = manifest.setdefault("documents", [])
-    known = {entry["sha256"] for entry in documents}
-    reuse = reuse or {}
     failures: list[dict[str, str]] = []
 
     for path in pdf_paths:
         data = Path(path).read_bytes()
         sha256 = _sha256(data)
-        if sha256 in known:
-            print(f"skip   {path} (already in manifest)", file=sys.stderr)
-            continue
+        entry = next((entry for entry in documents if entry["sha256"] == sha256), None)
+        if entry is not None:
+            if count_fn(entry["document_id"]) > 0:
+                print(f"skip   {path} (already in manifest)", file=sys.stderr)
+                continue
+            print(f"stale  {path}: collection {entry['document_id']} is empty, indexing again", file=sys.stderr)
+            documents.remove(entry)
 
         try:
-            if path in reuse:
-                document_id = reuse[path]
-                count = count_fn(document_id)
-                if count == 0:
-                    raise ValueError(f"collection {document_id} has no chunks")
-                result = {"document_id": document_id, "chunk_count": count, "stored_count": count}
-                origin = "reused"
-            else:
-                result = index_fn(data)
-                origin = "indexed"
+            result = index_fn(data)
         except Exception as exc:
             print(f"FAIL   {path}: {exc}", file=sys.stderr)
             failures.append({"path": path, "error": str(exc)})
             continue
 
-        documents.append({"path": path, "sha256": sha256, "origin": origin, **result})
-        known.add(sha256)
+        documents.append({"path": path, "sha256": sha256, "origin": "indexed", **result})
         save(manifest)
-        print(f"{origin:<6} {path} -> {result['document_id']} ({result['stored_count']} chunks)", file=sys.stderr)
+        print(f"indexed {path} -> {result['document_id']} ({result['stored_count']} chunks)", file=sys.stderr)
 
     return failures
-
-
-def _parse_reuse(values: list[str]) -> dict[str, str]:
-    reuse: dict[str, str] = {}
-    for value in values:
-        path, separator, document_id = value.partition("=")
-        if not separator or not path or not document_id:
-            raise ValueError(f"--reuse expects PATH=DOCUMENT_ID, got {value!r}")
-        reuse[path] = document_id
-    return reuse
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Index eval PDFs into the local Chroma store.")
     parser.add_argument("--corpus", required=True, help="Corpus manifest listing PDFs under `documents[].path`.")
     parser.add_argument("--output", required=True, help="Local manifest of indexed documents (created or extended).")
-    parser.add_argument(
-        "--reuse",
-        action="append",
-        default=[],
-        metavar="PATH=DOCUMENT_ID",
-        help="Record an already-indexed PDF instead of embedding it again. Repeatable.",
-    )
     args = parser.parse_args(argv)
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -145,7 +126,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         corpus = json.loads(Path(args.corpus).read_text(encoding="utf-8"))
         pdf_paths = [entry["path"] for entry in corpus["documents"]]
-        reuse = _parse_reuse(args.reuse)
         output = Path(args.output)
         manifest = json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
     except (OSError, KeyError, ValueError) as exc:
@@ -155,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     def save(current: dict[str, Any]) -> None:
         output.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
 
-    failures = index_documents(pdf_paths, manifest, reuse=reuse, save=save)
+    failures = index_documents(pdf_paths, manifest, save=save)
     save(manifest)
     print(f"{len(manifest['documents'])} documents in {output}; {len(failures)} failed", file=sys.stderr)
     return 1 if failures else 0
