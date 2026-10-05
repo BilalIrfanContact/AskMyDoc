@@ -131,19 +131,33 @@ def _history_prompt(history: Sequence[ConversationExchange]) -> str:
     )
 
 
-def _build_generation_prompt(question: str, context: str) -> str:
+def _rewrite_check_prompt(question: str, user_question: str | None) -> str:
+    """Show the user's own words next to a follow-up rewrite, so the answer model can catch a changed request."""
+    if user_question is None or user_question == question:
+        return ""
+    return (
+        f"The user's own words were {json.dumps(user_question, ensure_ascii=False)}. The question below is how "
+        "that follow-up was read from earlier in the chat. If it changes what the user asked (for example a "
+        "different period, subject, or constraint), set found_in_excerpts to false.\n"
+    )
+
+
+def _build_generation_prompt(question: str, context: str, user_question: str | None = None) -> str:
     return (
         f"{SYSTEM_PROMPT}\n\n"
         f"{_STRUCTURED_OUTPUT_INSTRUCTION}\n\n"
         f"Context:\n{context}\n\n"
+        f"{_rewrite_check_prompt(question, user_question)}"
         f"Question: {question}\n"
         "JSON Response:"
     )
 
 
-def _build_retry_prompt(question: str, context: str, invalid_response: str, error: str) -> str:
+def _build_retry_prompt(
+    question: str, context: str, invalid_response: str, error: str, user_question: str | None = None,
+) -> str:
     return (
-        f"{_build_generation_prompt(question, context)}\n\n"
+        f"{_build_generation_prompt(question, context, user_question)}\n\n"
         "Your previous response did not match the required JSON contract.\n"
         f"Validation error: {error}\n"
         f"Previous response:\n{invalid_response}\n\n"
@@ -263,8 +277,9 @@ def _generate_structured_answer(
     generator: GenerationAdapter,
     question: str,
     context: str,
+    user_question: str | None = None,
 ) -> StructuredAnswerResult:
-    prompt = _build_generation_prompt(question, context)
+    prompt = _build_generation_prompt(question, context, user_question)
     invalid_attempt_count = 0
 
     for attempt in range(_STRUCTURED_OUTPUT_RETRY_LIMIT):
@@ -287,7 +302,7 @@ def _generate_structured_answer(
                     found_in_excerpts=False,
                     invalid_attempt_count=invalid_attempt_count,
                 )
-            prompt = _build_retry_prompt(question, context, response_text, str(exc))
+            prompt = _build_retry_prompt(question, context, response_text, str(exc), user_question)
 
     return StructuredAnswerResult(
         answer=None, found_in_excerpts=False, invalid_attempt_count=invalid_attempt_count
@@ -470,7 +485,8 @@ def answer_question(
     `qa_limit` is the most semantic chunks a QA question may send to the answer model.
     The app uses the default; evaluation scripts override it to compare context sizes.
     Bounded dialogue only rewrites a follow-up into a standalone question for search and answering;
-    the answer model never sees earlier answers, so only retrieved excerpts support its claims.
+    the answer model sees that rewrite beside the user's own words, never earlier answers, so only retrieved
+    excerpts support its claims.
     """
     active_dependencies = dependencies or _default_dependencies()
     retriever = active_dependencies.retrieval_factory(document_id)
@@ -508,6 +524,7 @@ def answer_question(
         active_dependencies.generation,
         standalone_question,
         context.text,
+        question,
     )
     if structured_answer.answer is None:
         decision = _insufficient_context_decision(policy)

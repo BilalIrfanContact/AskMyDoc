@@ -37,6 +37,8 @@ class FollowUpQuestionTests(unittest.TestCase):
         self.assertIn('How did revenue change in 2025?', rewrite_prompt)
         self.assertIn('not document evidence', rewrite_prompt)
         self.assertIn('Question: Why did revenue increase in 2025?', answer_prompt)
+        self.assertIn('The user\'s own words were "Why did that increase?"', answer_prompt,
+                      'The answer model can reject a rewrite that changed the request')
         self.assertNotIn('Revenue increased.', answer_prompt, 'Earlier answers never reach the answer model')
 
     def test_history_and_rewrite_numbers_cannot_supply_missing_evidence(self):
@@ -68,6 +70,7 @@ class FollowUpQuestionTests(unittest.TestCase):
         result = answer_question('doc-1', question, history=history, dependencies=deps)
         self.assertEqual(result.answer_status, 'answered')
         retriever.retrieve.assert_called_once_with('semantic', question, 1)
+        self.assertNotIn("user's own words", generator.invoke.call_args.args[0], 'Unchanged questions get no rewrite note')
         prompt = generator.invoke.call_args_list[0].args[0]
         self.assertNotIn('OLD-0-', prompt)
         self.assertNotIn('OLD-1-', prompt)
