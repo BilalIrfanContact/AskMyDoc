@@ -306,9 +306,15 @@ def rescore_report(
     cases: Sequence[dict[str, Any]],
     score_fn: ScoreFn | None,
 ) -> dict[str, Any]:
-    """Replace every score in a saved report using the current answer key and rules."""
+    """Replace every score in a saved report using the current answer key and rules.
+
+    Only the given cases are kept, so a rescore filtered with `--split` never mixes in old scores.
+    """
     if score_fn is None:
         raise ValueError("--rescore needs scoring; drop --no-score")
+    case_ids = {case["case_id"] for case in cases}
+    report["cases"] = [result for result in report["cases"] if result["case_id"] in case_ids]
+    report["case_count"] = len(report["cases"])
     score_results(cases, report["cases"], score_fn)
     for limit in report["limits"]:
         report["summary"][f"limit_{limit}"]["scores"] = _score_summary(report["cases"], limit)
