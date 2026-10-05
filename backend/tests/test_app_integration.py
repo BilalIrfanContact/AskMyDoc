@@ -709,7 +709,7 @@ class AppIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 502)
         self.assertEqual(
             json.loads(response_body),
-            {"detail": "model unavailable"},
+            {"detail": "Unable to answer your question. Please try again later."},
         )
 
         status, _, response_body = await _request_asgi(
