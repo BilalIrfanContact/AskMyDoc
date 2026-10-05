@@ -251,6 +251,8 @@ Fill in both `.env` files:
 
 The SQL for the Supabase users table is in [`docs/supabase-users.sql`](docs/supabase-users.sql).
 
+Google and password accounts are not automatically linked by email. Google sign-in is rejected if that email already belongs to a different account. Accounts already linked to Google must use Google sign-in.
+
 Then start both servers:
 
 ```bash
