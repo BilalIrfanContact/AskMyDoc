@@ -89,14 +89,32 @@ def write_index_payload(document_id: str, payload: IndexPayload) -> int:
     return collection.count()
 
 
+_STAGING, _PREVIOUS = "-reindex", "-previous"
+
+
+def restore_interrupted_swap(document_id: str) -> bool:
+    """Give the document back its set-aside collection if a swap stopped between its two renames.
+
+    Returns True if it did. Without this, the document would stay unsearchable until fixed by hand.
+    """
+    names = set(_collection_names())
+    previous = f"{document_id}{_PREVIOUS}"
+    if document_id in names or previous not in names:
+        return False
+    get_persisted_collection(previous).modify(name=document_id)
+    return True
+
+
 def replace_index_payload(document_id: str, payload: IndexPayload) -> int:
     """Replace a document's collection with one built from `payload` and return its stored count.
 
     The payload is written to a staging collection first. Once it holds every chunk, the old collection is
     renamed aside, the staging one takes its name, and only then is the old one deleted; if the swap fails,
-    the old collection gets its name back. Any failure leaves the document searchable as before.
+    the old collection gets its name back. A swap the process never finished is undone first (see
+    `restore_interrupted_swap`), so the set-aside copy is only deleted while the document has its own.
     """
-    staging, previous = f"{document_id}-reindex", f"{document_id}-previous"
+    staging, previous = f"{document_id}{_STAGING}", f"{document_id}{_PREVIOUS}"
+    restore_interrupted_swap(document_id)
     delete_vector_store(staging)
     try:
         stored_count = write_index_payload(staging, payload)
@@ -153,8 +171,12 @@ def delete_vector_store(document_id: str) -> None:
             raise
 
 
-def list_document_ids() -> list[str]:
-    """Every document collection in the local store."""
+def _collection_names() -> list[str]:
     _disable_chroma_telemetry()
     client = chromadb.PersistentClient(path=PERSIST_DIRECTORY, settings=_client_settings())
-    return sorted(getattr(collection, "name", collection) for collection in client.list_collections())
+    return [getattr(collection, "name", collection) for collection in client.list_collections()]
+
+
+def list_document_ids() -> list[str]:
+    """Every document collection in the local store, without the temporary ones a re-index swap uses."""
+    return sorted(name for name in _collection_names() if not name.endswith((_STAGING, _PREVIOUS)))

@@ -5,7 +5,13 @@ from unittest.mock import Mock, patch
 import chromadb
 
 from backend.services.chunk_labels import DocumentLabels
-from backend.services.vector_store import IndexPayload, build_vector_store, replace_index_payload, write_index_payload
+from backend.services.vector_store import (
+    IndexPayload,
+    build_vector_store,
+    list_document_ids,
+    replace_index_payload,
+    write_index_payload,
+)
 
 
 class VectorStoreTestCase(unittest.TestCase):
@@ -67,6 +73,20 @@ class VectorStoreTestCase(unittest.TestCase):
 
             self.assertEqual(replace_index_payload("doc-1", new), 1)
             self.assertEqual(client.get_collection("doc-1").get()["documents"], ["new"])
+            self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
+
+    def test_a_swap_interrupted_between_its_renames_is_undone_by_the_next_one(self):
+        old = IndexPayload(ids=["doc-1:chunk:0"], documents=["old"], embeddings=[[1.0, 0.0]], metadatas=[{"chunk_index": 0}])
+        new = IndexPayload(ids=["doc-1:chunk:0"], documents=["new"], embeddings=[[0.0, 1.0]], metadatas=[{"chunk_index": 0}])
+
+        with tempfile.TemporaryDirectory() as directory, patch("backend.services.vector_store.PERSIST_DIRECTORY", directory):
+            write_index_payload("doc-1-previous", old)  # The old copy was set aside, then the process stopped.
+            self.assertEqual(list_document_ids(), [])
+
+            self.assertEqual(replace_index_payload("doc-1", new), 1)
+            client = chromadb.PersistentClient(path=directory)
+            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["new"])
+            self.assertEqual(list_document_ids(), ["doc-1"])
             self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
 
 

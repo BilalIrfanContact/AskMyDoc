@@ -23,11 +23,13 @@ from backend.services.vector_store import (
     list_document_ids,
     prepare_index_payload,
     replace_index_payload,
+    restore_interrupted_swap,
 )
 
 
 def reindex_document(document_id: str, force: bool = False) -> str:
     """Relabel one document in place and return what happened: "reindexed" or "skipped"."""
+    restore_interrupted_swap(document_id)
     stored = get_persisted_collection(document_id).get(include=["documents", "metadatas"])
     rows = sorted(
         zip(stored["ids"], stored["documents"], stored["metadatas"]),
