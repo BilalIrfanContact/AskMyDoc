@@ -23,7 +23,7 @@ router = APIRouter()
         502: {"model": ErrorDetailResponse},
     },
 )
-async def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user)):
+def chat(request: ChatRequest, user_id: str = Depends(require_authenticated_user)):
     try:
         decision = execute_conversation_turn(
             user_id=user_id,

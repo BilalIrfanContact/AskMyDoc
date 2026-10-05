@@ -186,7 +186,8 @@ def _delete_failure(
     )
 
 
-async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
+def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResult:
+    """Process an upload synchronously; the FastAPI sync route runs this in a worker thread."""
     upload_kind = _resolve_upload_kind(file)
     if upload_kind is None:
         return UploadLifecycleResult(
@@ -197,7 +198,7 @@ async def upload_document(file: UploadFile, user_id: str) -> UploadLifecycleResu
             reason_code="invalid_file_type",
         )
 
-    data = await file.read()
+    data = file.file.read()
     try:
         text = upload_kind.extract_text(data)
     except Exception:

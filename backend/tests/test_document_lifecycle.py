@@ -1,16 +1,20 @@
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from io import BytesIO
+from unittest.mock import Mock, patch
+
+from fastapi import UploadFile
+from starlette.datastructures import Headers
 
 from backend.services.document_lifecycle import delete_document, upload_document
 from backend.services.persistence.common import PersistenceError
 
 
-class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
-    async def test_upload_document_returns_completed_result_on_success(self):
-        file = AsyncMock()
-        file.content_type = "application/pdf"
-        file.filename = "report.pdf"
-        file.read.return_value = b"%PDF"
+class DocumentLifecycleTestCase(unittest.TestCase):
+    def test_upload_document_returns_completed_result_on_success(self):
+        file = UploadFile(
+            filename="report.pdf", file=BytesIO(b"%PDF"),
+            headers=Headers({"content-type": "application/pdf"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.extract_text_from_pdf", return_value="alpha beta"),
@@ -23,7 +27,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.insert_document") as insert_document_mock,
             patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.document_id, "doc-1")
@@ -38,11 +42,11 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             storage_url="documents/user-a/doc-1/report.pdf",
         )
 
-    async def test_upload_document_cleans_up_indexed_chunks_when_storage_upload_fails(self):
-        file = AsyncMock()
-        file.content_type = "application/pdf"
-        file.filename = "report.pdf"
-        file.read.return_value = b"%PDF"
+    def test_upload_document_cleans_up_indexed_chunks_when_storage_upload_fails(self):
+        file = UploadFile(
+            filename="report.pdf", file=BytesIO(b"%PDF"),
+            headers=Headers({"content-type": "application/pdf"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.extract_text_from_pdf", return_value="alpha beta"),
@@ -55,7 +59,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.delete_vector_store") as delete_vector_store_mock,
             patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "storage")
@@ -74,11 +78,11 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         )
         delete_vector_store_mock.assert_called_once_with("doc-1")
 
-    async def test_upload_document_returns_structured_failure_when_indexing_raises(self):
-        file = AsyncMock()
-        file.content_type = "application/pdf"
-        file.filename = "report.pdf"
-        file.read.return_value = b"%PDF"
+    def test_upload_document_returns_structured_failure_when_indexing_raises(self):
+        file = UploadFile(
+            filename="report.pdf", file=BytesIO(b"%PDF"),
+            headers=Headers({"content-type": "application/pdf"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.extract_text_from_pdf", return_value="alpha beta"),
@@ -90,7 +94,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.delete_vector_store") as delete_vector_store_mock,
             patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "indexing")
@@ -100,11 +104,11 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.detail, "Embedding provider unavailable")
         delete_vector_store_mock.assert_called_once_with("doc-1")
 
-    async def test_upload_document_cleans_up_storage_and_index_when_metadata_persist_fails(self):
-        file = AsyncMock()
-        file.content_type = "application/pdf"
-        file.filename = "report.pdf"
-        file.read.return_value = b"%PDF"
+    def test_upload_document_cleans_up_storage_and_index_when_metadata_persist_fails(self):
+        file = UploadFile(
+            filename="report.pdf", file=BytesIO(b"%PDF"),
+            headers=Headers({"content-type": "application/pdf"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.extract_text_from_pdf", return_value="alpha beta"),
@@ -122,7 +126,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.delete_storage_object") as delete_storage_object_mock,
             patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.failure_stage, "metadata")
@@ -133,16 +137,17 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         delete_vector_store_mock.assert_called_once_with("doc-1")
         delete_storage_object_mock.assert_called_once_with("documents/user-a/doc-1/report.pdf")
 
-    async def test_upload_document_rejects_non_pdf_files_before_processing(self):
-        file = AsyncMock()
-        file.content_type = "text/plain"
-        file.filename = "notes.txt"
+    def test_upload_document_rejects_non_pdf_files_before_processing(self):
+        file = UploadFile(
+            filename="notes.txt", file=BytesIO(b""),
+            headers=Headers({"content-type": "text/plain"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.extract_text_from_pdf") as extract_text_mock,
             patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store_mock,
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "rejected")
         self.assertEqual(result.failure_stage, "validation")
@@ -152,11 +157,11 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         extract_text_mock.assert_not_called()
         build_vector_store_mock.assert_not_called()
 
-    async def test_upload_document_accepts_markdown_by_extension_and_stores_markdown_content_type(self):
-        file = AsyncMock()
-        file.content_type = "application/octet-stream"
-        file.filename = "notes.md"
-        file.read.return_value = b"# Notes\n\nalpha beta"
+    def test_upload_document_accepts_markdown_by_extension_and_stores_markdown_content_type(self):
+        file = UploadFile(
+            filename="notes.md", file=BytesIO(b"# Notes\n\nalpha beta"),
+            headers=Headers({"content-type": "application/octet-stream"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.chunk_text", return_value=["alpha", "beta"]),
@@ -168,7 +173,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.insert_document") as insert_document_mock,
             patch("backend.services.document_lifecycle.uuid.uuid4", return_value="doc-1"),
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.document_id, "doc-1")
@@ -186,17 +191,17 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             storage_url="documents/user-a/doc-1/notes.md",
         )
 
-    async def test_upload_document_rejects_empty_markdown_files(self):
-        file = AsyncMock()
-        file.content_type = "text/markdown"
-        file.filename = "empty.md"
-        file.read.return_value = b""
+    def test_upload_document_rejects_empty_markdown_files(self):
+        file = UploadFile(
+            filename="empty.md", file=BytesIO(b""),
+            headers=Headers({"content-type": "text/markdown"}),
+        )
 
         with (
             patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store_mock,
             patch("backend.services.document_lifecycle.upload_file_to_storage") as upload_file_to_storage_mock,
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "rejected")
         self.assertEqual(result.failure_stage, "validation")
@@ -205,11 +210,11 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         build_vector_store_mock.assert_not_called()
         upload_file_to_storage_mock.assert_not_called()
 
-    async def test_upload_document_rejects_unreadable_pdf_files(self):
-        file = AsyncMock()
-        file.content_type = "application/octet-stream"
-        file.filename = "broken.pdf"
-        file.read.return_value = b"not-a-real-pdf"
+    def test_upload_document_rejects_unreadable_pdf_files(self):
+        file = UploadFile(
+            filename="broken.pdf", file=BytesIO(b"not-a-real-pdf"),
+            headers=Headers({"content-type": "application/octet-stream"}),
+        )
 
         with (
             patch(
@@ -219,7 +224,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store_mock,
             patch("backend.services.document_lifecycle.upload_file_to_storage") as upload_file_to_storage_mock,
         ):
-            result = await upload_document(file=file, user_id="user-a")
+            result = upload_document(file=file, user_id="user-a")
 
         self.assertEqual(result.status, "rejected")
         self.assertEqual(result.failure_stage, "validation")
@@ -229,7 +234,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         build_vector_store_mock.assert_not_called()
         upload_file_to_storage_mock.assert_not_called()
 
-    async def test_delete_document_runs_through_single_lifecycle_path(self):
+    def test_delete_document_runs_through_single_lifecycle_path(self):
         call_order: list[str] = []
 
         def record(name: str):
@@ -286,7 +291,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.to_response().lifecycle_status, "deleted")
 
-    async def test_delete_document_returns_not_started_when_conversation_lookup_fails(self):
+    def test_delete_document_returns_not_started_when_conversation_lookup_fails(self):
         with patch(
             "backend.services.document_lifecycle.list_document_conversation_ids",
             side_effect=PersistenceError("Failed to load document conversations"),
@@ -299,7 +304,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.cleanup_status, "not-started")
         self.assertEqual(result.http_status, 502)
 
-    async def test_delete_document_returns_partial_failure_when_storage_delete_fails(self):
+    def test_delete_document_returns_partial_failure_when_storage_delete_fails(self):
         with (
             patch(
                 "backend.services.document_lifecycle.list_document_conversation_ids",
@@ -334,7 +339,7 @@ class DocumentLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_delete_document_keeps_metadata_for_a_retry_after_partial_cleanup(self):
+    def test_delete_document_keeps_metadata_for_a_retry_after_partial_cleanup(self):
         delete_messages_mock = Mock(
             side_effect=[
                 PersistenceError("Failed to delete conversation messages"),
