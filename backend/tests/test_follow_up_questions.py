@@ -86,6 +86,15 @@ class FollowUpQuestionTests(unittest.TestCase):
         retriever.retrieve.assert_called_once_with('semantic', 'What about fiscal 2021?', 1)
         self.assertIn('Question: What about fiscal 2021?', generator.invoke.call_args.args[0])
 
+    def test_rewrite_may_expand_a_short_year(self):
+        history = (ConversationExchange(question='How did revenue change in FY2024?', answer='It rose.'),)
+        deps, retriever, _ = self.dependencies('Revenue rose in fiscal 2025.', [
+            '{"intent":"qa","question":"How did revenue change in FY2025?"}',
+            '{"found_in_excerpts":true,"answer":"Revenue rose in fiscal 2025."}',
+        ])
+        answer_question('doc-1', 'And FY25?', history=history, dependencies=deps)
+        retriever.retrieve.assert_called_once_with('semantic', 'How did revenue change in FY2025?', 1)
+
     def test_invalid_rewrite_falls_back_to_the_original_question_without_another_route_call(self):
         history = (ConversationExchange(question='What is the refund window?', answer='It is 30 days.'),)
         deps, retriever, generator = self.dependencies('Refunds are allowed for 30 days.', [

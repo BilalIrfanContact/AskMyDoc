@@ -347,6 +347,12 @@ def _user_numbers(text: str) -> set[str]:
     return {number.replace(",", "") for number in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
 
 
+def _keeps_user_numbers(question: str, rewrite: str) -> bool:
+    """Whether `rewrite` still has every number the user typed; a short year ("FY25") may become "2025"."""
+    kept = _user_numbers(rewrite)
+    return all(n in kept or (len(n) == 2 and f"20{n}" in kept) for n in _user_numbers(question))
+
+
 def _resolve_follow_up(
     question: str, history: Sequence[ConversationExchange], generator: GenerationAdapter,
 ) -> FollowUpRoute:
@@ -367,7 +373,7 @@ def _resolve_follow_up(
         route = FollowUpRoute.model_validate_json(_coerce_response_text(generator.invoke(prompt)))
         if not route.question.strip():
             raise ValueError("Empty standalone question")
-        if not _user_numbers(question) <= _user_numbers(route.question):
+        if not _keeps_user_numbers(question, route.question):
             # The rewrite dropped or changed a year or figure the user typed, so it isn't their question.
             return route.model_copy(update={"question": question})
         return route.model_copy(update={"question": route.question.strip()})
