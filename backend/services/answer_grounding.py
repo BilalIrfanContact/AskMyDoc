@@ -10,12 +10,13 @@ The failure that matters in a filings app is an invented figure, so grounding ch
    standard constant (× 100, ÷ 2 for an average, 365 days...), and the arithmetic must come out to the
    result as shown. Wrong arithmetic rejects the answer. Label words inside the working are ignored
    ("Operating profit 11,512 + D&A 2,763 = 14,275"), and a checked result may feed the next step. In a
-   chain like "365 × ((25,309 + 34,616) ÷ 2) ÷ 116,520 = 365 × 29,962.5 ÷ 116,520 = 93.86", a step whose
-   right side is another calculation of the same value vouches for that side's figures.
+   chain like "365 × ((25,309 + 34,616) ÷ 2) ÷ 116,520 = 365 × 29,962.5 ÷ 116,520 = 93.86", the right
+   side's figures are accepted when each is a value the left side computes (29,962.5), rounded or not.
 3. A result from the app's calculator (see `calculator`) counts as a source when every input of its
-   expression passes rule 1, is a constant or is an earlier calculator result. Shown working that ends
-   in such a result isn't re-checked, so "36.8% − 34.6% = 2.1" passes when the calculator worked out 2.12
-   from the unrounded figures.
+   expression passes rule 1, is a constant or is an earlier calculator result. A number written as a
+   percentage may also be a result × 100 (0.3464 backs "34.64%"). Shown working that ends in such a
+   result isn't re-checked, so "36.8% − 34.6% = 2.1" passes when the calculator worked out 2.12 from the
+   unrounded figures.
 
 Words aren't checked. The model's `found_in_excerpts` flag handles "not in the document", and word
 overlap rejected honest paraphrases ("Yes, it retained card members") while passing wrong answers
@@ -44,6 +45,7 @@ _DATE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 # A "(000)" after an amount means "in thousands", copied from a table header; it isn't a figure.
 _THOUSANDS_MARKER = re.compile(r"\(\s*'?000'?s?\s*\)")
 _OPERATOR_SIGN = re.compile(r"[+\-−–*/×÷]")
+_PERCENT = re.compile(r"\)?\s*(?:%|percent)", re.IGNORECASE)
 # After a shown result: an operator, possibly after a unit, means the right side is itself a calculation
 # ("= 365 × 29,962.5 ÷ …", "= $2,564 million ÷ $4,476 million = 0.57").
 _CONTINUES = re.compile(rf"(?:{_SCALE.pattern})?\s*%?\s*\)?\s*[+\-−–*/×÷]", re.IGNORECASE)
@@ -57,6 +59,7 @@ class Number:
     value: float
     decimals: int
     scaled: bool  # written with a unit like "million" or "bn", so it may be a table figure in other units
+    percent: bool = False  # written as a percentage ("34.6%", "2.1 percentage points")
 
 
 def numbers_in(text: str) -> list[Number]:
@@ -65,7 +68,8 @@ def numbers_in(text: str) -> list[Number]:
         digits = match.group()
         decimals = len(digits.split(".")[1]) if "." in digits else 0
         scaled = bool(_SCALE.match(text, match.end()))
-        found.append(Number(digits, float(digits.replace(",", "")), decimals, scaled))
+        percent = bool(_PERCENT.match(text, match.end()))
+        found.append(Number(digits, float(digits.replace(",", "")), decimals, scaled, percent))
     return found
 
 
@@ -122,7 +126,7 @@ def _failure(reason: str, numbers: list[str]) -> dict[str, object]:
 
 
 def _calculated_numbers(calculations: Iterable[Calculation], sources: list[Number]) -> list[Number]:
-    """Results of the calculations whose inputs are all supported, in full precision and as a percentage.
+    """Results of the calculations whose inputs are all supported, in full precision.
 
     A calculation with an unsupported input is skipped rather than failed: if the answer uses its result,
     that number is reported as unsupported like any other.
@@ -139,8 +143,22 @@ def _calculated_numbers(calculations: Iterable[Calculation], sources: list[Numbe
             return calculated
         for calculation in accepted:
             pending.remove(calculation)
-            for value in (abs(calculation.result), abs(calculation.result) * 100):
-                calculated.append(Number(f"{value:.10g}", value, 10, False))
+            value = abs(calculation.result)
+            calculated.append(Number(f"{value:.10g}", value, 10, False))
+
+
+def _backed(number: Number, sources: list[Number], calculated: list[Number]) -> bool:
+    """`number` passes rule 1 against `sources` or is a calculator result; a percentage may be a result × 100."""
+    if is_supported(number, [*sources, *calculated]):
+        return True
+    return number.percent and is_supported(number, [Number(c.text, c.value * 100, c.decimals, False) for c in calculated])
+
+
+def _intermediates(expression: str) -> list[Number]:
+    """Every value `expression` computes on the way, as full-precision figures."""
+    steps: list[float] = []
+    evaluate(expression, steps)
+    return [Number(f"{abs(v):.10g}", abs(v), 10, False) for v in steps]
 
 
 def find_grounding_failure(
@@ -169,12 +187,18 @@ def find_grounding_failure(
         result = numbers_in(match.group(2))[0]
         chained = _chained_side(answer, match)
         if chained and abs(chained[1] - computed) <= 0.005 * abs(computed) + 1e-9:
-            missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived, *calculated])]
+            missing = [o.text for o in operands if o.value not in _CONSTANTS and not _backed(o, [*sources, *derived], calculated)]
+            # The restated side may only use figures the left side computes (or that are backed anyway).
+            steps = _intermediates(expression)
+            missing += [
+                n.text for n in chained[0]
+                if n.value not in _CONSTANTS and not is_supported(n, steps) and not _backed(n, [*sources, *derived], calculated)
+            ]
             if missing:
                 return _failure("unsupported_numbers", missing)
             derived += [*operands, *chained[0]]  # Same value restated; the next "=" checks the result.
             continue
-        if is_supported(result, calculated):
+        if _backed(result, [], calculated):
             # The calculator produced this result. Its constants (× 100) are vouched for; every other number
             # shown is still checked below.
             derived += [operand for operand in operands if operand.value in _CONSTANTS]
@@ -182,7 +206,7 @@ def find_grounding_failure(
         as_percent = re.match(r"\s*(?:%|percent)", answer[match.end(2):]) is not None
         if not (_rounds_to(abs(computed), result) or (as_percent and _rounds_to(abs(computed) * 100, result))):
             return _failure("calculation_incorrect", [result.text])
-        missing = [o.text for o in operands if o.value not in _CONSTANTS and not is_supported(o, [*sources, *derived, *calculated])]
+        missing = [o.text for o in operands if o.value not in _CONSTANTS and not _backed(o, [*sources, *derived], calculated)]
         if missing:
             return _failure("unsupported_numbers", missing)
         derived += [result, *operands]  # The checked sum vouches for its own constants and result.
@@ -190,7 +214,5 @@ def find_grounding_failure(
     # A calculator call may build on a step the answer showed instead of asking for ("7,230 − 348 = 6,882",
     # then calculate("6882 / 4822")), so its inputs are checked again with the verified working included.
     calculated = _calculated_numbers(calculations, [*sources, *derived])
-    unsupported = {
-        number.text for number in numbers_in(answer) if not is_supported(number, [*sources, *derived, *calculated])
-    }
+    unsupported = {number.text for number in numbers_in(answer) if not _backed(number, [*sources, *derived], calculated)}
     return _failure("unsupported_numbers", sorted(unsupported)) if unsupported else None

@@ -49,10 +49,11 @@ class Calculation:
     result: float
 
 
-def evaluate(expression: str) -> float | None:
+def evaluate(expression: str, steps: list[float] | None = None) -> float | None:
     """The value of plain arithmetic, or None if `expression` is anything else or divides by zero.
 
-    Accepts the symbols models write (−, ×, ÷), thousands commas, "$" and "%".
+    Accepts the symbols models write (−, ×, ÷), thousands commas, "$" and "%". If `steps` is given, the value
+    of every number and sub-calculation is appended to it.
     """
     for symbol, replacement in _OPERATORS.items():
         expression = expression.replace(symbol, replacement)
@@ -66,12 +67,16 @@ def evaluate(expression: str) -> float | None:
         if isinstance(node, ast.Expression):
             return walk(node.body)
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-            return float(node.value)
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-            return -walk(node.operand) if isinstance(node.op, ast.USub) else walk(node.operand)
-        if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
-            return _BINARY[type(node.op)](walk(node.left), walk(node.right))
-        raise ValueError("not plain arithmetic")
+            value = float(node.value)
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            value = -walk(node.operand) if isinstance(node.op, ast.USub) else walk(node.operand)
+        elif isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
+            value = _BINARY[type(node.op)](walk(node.left), walk(node.right))
+        else:
+            raise ValueError("not plain arithmetic")
+        if steps is not None:
+            steps.append(value)
+        return value
 
     try:
         return walk(tree)

@@ -134,6 +134,23 @@ class AnswerGroundingTestCase(unittest.TestCase):
         answer = "The tranche is $114,400 (000) of the total $329,500 (000), so its share is (114,400 ÷ 329,500) × 100 = 34.72%."
         self.assertIsNone(find_grounding_failure(answer, [excerpt], "", [Calculation("114400 / 329500 * 100", 34.7193)]))
 
+    def test_a_calculator_result_backs_100_times_its_value_only_as_a_percentage(self):
+        # Greptile's example on PR #79: 20 + 30 must not back "5,000".
+        calculations = [Calculation("20 + 30", 50.0)]
+        self.assertIsNone(find_grounding_failure("Together they are 50.", ["Parts 20 and 30."], "", calculations))
+        failure = find_grounding_failure("Together they are 5,000.", ["Parts 20 and 30."], "", calculations)
+        self.assertEqual(failure["reason"], "unsupported_numbers")
+
+    def test_a_restated_step_may_only_use_values_the_left_side_computes(self):
+        # Greptile's example on PR #79: the wrong 39.9 must not vouch for itself.
+        self.assert_rejected("17 + 23 = 39.9 + 0 = 39.9", "unsupported_numbers", excerpt="Parts 17 and 23.")
+        self.assert_grounded("(17 + 23) ÷ 2 = 40 ÷ 2 = 20", excerpt="Parts 17 and 23.")
+        self.assert_rejected("(17 + 23) ÷ 2 = 39.9 ÷ 2 = 19.95", "unsupported_numbers", excerpt="Parts 17 and 23.")
+
+    def test_a_labelled_total_is_checked(self):
+        self.assert_grounded("Total = 177,866 + 34,616 = 212,482.")
+        self.assert_rejected("Total = 177,866 + 34,616 = 212,999.", "calculation_incorrect")
+
     def test_a_calculation_from_an_invented_input_vouches_for_nothing(self):
         calculations = [Calculation("190000 / 135987 * 100", 139.72)]
         failure = find_grounding_failure("Sales were 139.7% of the prior year.", [BALANCE_SHEET], "", calculations)
