@@ -26,6 +26,7 @@ class PickEvidenceTestCase(unittest.TestCase):
 
     def test_an_unusable_reply_picks_nothing(self):
         self.assertEqual(pick_evidence("q", CANDIDATES, 4, _generator("none of these")), [])
+        self.assertEqual(pick_evidence("q", CANDIDATES, 4, _generator("3, 1 (passage 2 only covers 2021)")), [])
 
 
 class RerankedRetrievalTestCase(unittest.TestCase):

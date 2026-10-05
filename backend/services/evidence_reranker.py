@@ -6,8 +6,8 @@ rarely gets both near the top. The adapter embeds the question, takes the top `R
 asks a small model which of them are needed, most useful first. The model decides how many to keep, up
 to the caller's limit, so a ratio question can get two statements and a lookup just one.
 
-`pick_evidence` returns positions in the shortlist; an unusable reply returns an empty list and the
-caller falls back to embedding order.
+`pick_evidence` returns positions in the shortlist; an unusable reply (anything but a list of ids)
+returns an empty list and the caller falls back to embedding order.
 """
 
 from __future__ import annotations
@@ -59,6 +59,8 @@ def pick_evidence(
             generator.invoke(RERANK_PROMPT.format(limit=limit, question=question, candidates=listing))
         )
     except Exception:
+        return []
+    if not re.fullmatch(r"[\s\[\],\d]*", reply):
         return []
     picked: list[int] = []
     for match in re.findall(r"\d+", reply):
