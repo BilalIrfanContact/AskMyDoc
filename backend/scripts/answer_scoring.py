@@ -190,8 +190,15 @@ def score_answer(case: dict[str, Any], run: dict[str, Any], grade_fn: GradeFn | 
     return _result(passed, "grader", reason, numbers=number_checks, grader=grade)
 
 
-# "0", "zero", or a statement that the item is absent ("no restructuring line", "not shown", "none").
-_SAYS_NONE = re.compile(r"\b(?:0|zero|none|nil|no|not)\b", re.IGNORECASE)
+# "0", "zero", "none", or a statement that the item is absent: "no restructuring line", "not shown",
+# "absent from", "does not report". A stray "no" ("there is no doubt") doesn't count.
+_SAYS_NONE = re.compile(
+    r"\b(?:0|zero|none|nil|absent)\b"
+    r"|\bno (?:separate |such )?(?:restructuring|line|item|amount|costs?|charges?|expenses?)\b"
+    r"|\bnot (?:separately )?(?:shown|reported|disclosed|listed|included|presented|present|recorded|recognized|found)\b"
+    r"|\b(?:does|did)(?:n't| not) (?:show|report|include|list|disclose|present|record)\b",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_year(quantity: Quantity) -> bool:
