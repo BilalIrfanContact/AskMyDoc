@@ -34,7 +34,8 @@ Questions are split by filing into 51 working cases (12 filings), used to invest
    .venv/bin/python -m backend.scripts.build_eval_cases \
        --proposed evals/financial-filings/cases.json \
        --indexed evals/financial-filings/indexed-documents.local.json \
-       --output evals/financial-filings/cases.local.json
+       --output evals/financial-filings/cases.local.json \
+       --recomputes evals/financial-filings/verification/answer-recomputes.json
    ```
 
 ## How the answer key was checked
