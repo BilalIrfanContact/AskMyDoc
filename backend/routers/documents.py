@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from ..models.schemas import DeleteDocumentResponse, DeleteErrorResponse, DocumentsResponse, ErrorDetailResponse, QuestionSuggestionsResponse
-from ..services.demo_limits import cached_suggestions
+from ..services.demo_limits import SuggestionsPendingError, cached_suggestions
 from ..services.authz import require_user_document
 from ..services.document_lifecycle import delete_document as delete_document_lifecycle
 from ..services.internal_auth import require_authenticated_user
@@ -48,13 +48,23 @@ async def get_document_question_suggestions(
     user_id: str = Depends(require_authenticated_user),
 ):
     await run_in_threadpool(require_user_document, document_id=document_id, user_id=user_id)
+
+    async def load_suggestions():
+        while True:
+            try:
+                return await run_in_threadpool(
+                    cached_suggestions, user_id, document_id, generate_question_suggestions,
+                )
+            except SuggestionsPendingError:
+                # Wait without occupying a worker while the original request generates.
+                await asyncio.sleep(0.5)
+
     try:
-        suggestions = await asyncio.wait_for(
-            run_in_threadpool(cached_suggestions, user_id, document_id, generate_question_suggestions),
-            timeout=20,
-        )
+        suggestions = await asyncio.wait_for(load_suggestions(), timeout=20)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Question suggestions timed out.") from exc
+    except HTTPException:
+        raise
     except SuggestionGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:

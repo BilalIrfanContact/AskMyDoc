@@ -1,6 +1,6 @@
 # Portfolio demo limits
 
-Apply `migrations/202610050001_demo_limits.sql` in the Supabase SQL editor **before deploying either application**. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not run this migration twice.
+Apply `migrations/202610050001_demo_limits.sql`, then `migrations/202610050002_wait_for_suggestions.sql`, in the Supabase SQL editor **before deploying either application**. If the first migration is already applied, run only the second. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not rerun the first migration.
 
 The Supabase project's global Storage file-size limit must be at least 15 MB. Keep the service-role key on the servers. No browser database privileges or public bucket permissions are needed. The restrictive Storage policy keeps this bucket private even if older permissive policies cover other buckets.
 
@@ -12,7 +12,7 @@ The browser first requests upload permission from Next.js. It sends file bytes d
 - 3 successfully processed documents per account. Deleting a document does not refund an upload.
 - 5 question attempts per minute per account, 5 password-login attempts per minute per IP, and 3 signup attempts per hour per IP. Failed attempts still count toward these short cooldowns.
 - 2,000 characters per question. Files may contain up to 15,000,000 bytes, including exactly that size. Larger files show "Please select a smaller file."
-- One suggestion-generation attempt per document, with the result reused. Suggestions are optional; a failed attempt stores an empty result rather than allowing refreshes to repeat paid work.
+- One suggestion-generation attempt per document, with the result reused. Concurrent requests wait for that result, up to the existing 20-second timeout, rather than treating running work as an empty completed result. Suggestions are optional; a failed attempt stores an empty result rather than allowing refreshes to repeat paid work.
 
 Signed upload URLs last two hours. Unfinished uploads and failed signed uploads reserve a slot for two hours plus five minutes, so valid upload permissions cannot accumulate outside the allowance. The UI reports that slots are reserved rather than claiming successful uploads used them. Failed legacy uploads, which do not issue signed permissions, refund immediately.
 

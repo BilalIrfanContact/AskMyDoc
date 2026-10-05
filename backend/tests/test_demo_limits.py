@@ -108,3 +108,25 @@ class DemoLimitsTestCase(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'model unavailable'):
                 demo_limits.cached_suggestions('user', 'doc', Mock(side_effect=RuntimeError('model unavailable')))
         op.assert_called_once_with('complete', 'user', 'suggestions', 'reservation', [])
+
+    def test_running_suggestions_signal_pending_without_calling_the_model(self):
+        generate = Mock()
+        with patch.object(demo_limits, 'rpc', return_value={'generate': False, 'pending': True, 'suggestions': []}):
+            with self.assertRaises(demo_limits.SuggestionsPendingError):
+                demo_limits.cached_suggestions('user', 'doc', generate)
+        generate.assert_not_called()
+
+    def test_failed_legacy_claim_is_in_the_refund_path(self):
+        from backend.routers.upload import upload_pdf
+        calls = []
+        def op(action, *args):
+            calls.append(action)
+            if action == 'claim': raise HTTPException(503, 'Temporary database failure')
+            return {'id': 'reservation'}
+        file = UploadFile(file=BytesIO(b'PDF'), filename='a.pdf')
+        with patch('backend.routers.upload.operation', side_effect=op), patch('backend.routers.upload.upload_document') as process:
+            with self.assertRaises(HTTPException) as error:
+                upload_pdf(file, 'user')
+        self.assertEqual(error.exception.status_code, 503)
+        self.assertEqual(calls, ['reserve', 'claim', 'fail'])
+        process.assert_not_called()

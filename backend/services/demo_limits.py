@@ -51,9 +51,15 @@ def question_allowance(user_id: str):
         operation('complete', user_id, 'question', reservation['id'])
 
 
+class SuggestionsPendingError(Exception):
+    """Another request owns the document's suggestion generation."""
+
+
 def cached_suggestions(user_id: str, document_id: str, generate):
     claim = rpc('demo_suggestions', {'p_user_id': user_id, 'p_document_id': document_id})
     if not claim['generate']:
+        if claim.get('pending'):
+            raise SuggestionsPendingError()
         return claim['suggestions']
     try:
         suggestions = generate(document_id)

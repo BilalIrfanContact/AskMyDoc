@@ -29,8 +29,8 @@ def finish_upload(upload_id: UUID, user_id: str = Depends(require_authenticated_
 def upload_pdf(file: UploadFile = File(...), user_id: str = Depends(require_authenticated_user)):
     # The legacy endpoint remains usable by trusted clients, with the same lifetime allowance.
     reservation = operation('reserve', user_id, 'upload')
-    operation('claim', user_id, 'upload', reservation['id'])
     try:
+        operation('claim', user_id, 'upload', reservation['id'])
         result = upload_document(file=file, user_id=user_id)
         if result.status != 'completed':
             raise result.to_http_exception()

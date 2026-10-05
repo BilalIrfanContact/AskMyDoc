@@ -31,8 +31,9 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
             "create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]); "
             "create table public.documents(id uuid, user_id uuid); create table storage.objects(bucket_id text); alter table storage.objects enable row level security;")
         cls.sql(f"insert into documents select gen_random_uuid(),'{cls.legacy_user}' from generate_series(1,3);")
-        migration = Path(__file__).resolve().parents[2] / 'supabase/migrations/202610050001_demo_limits.sql'
-        cls.sql(migration.read_text())
+        migrations = Path(__file__).resolve().parents[2] / 'supabase/migrations'
+        for migration in sorted(migrations.glob('*.sql')):
+            cls.sql(migration.read_text())
 
     @classmethod
     def stop_database(cls):
@@ -100,14 +101,19 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(lambda _: json.loads(self.sql(query)), range(8)))
         self.assertEqual(sum(result['generate'] for result in results), 1)
+        self.assertTrue(all(result['pending'] for result in results if not result['generate']))
         first = next(result for result in results if result['generate'])
         self.sql(f"select demo_operation('complete','{user}','suggestions','{first['id']}','[\"Question?\"]');")
-        self.assertEqual(json.loads(self.sql(query))['suggestions'], ['Question?'])
+        cached = json.loads(self.sql(query))
+        self.assertEqual(cached['suggestions'], ['Question?'])
+        self.assertFalse(cached['pending'])
 
     def test_public_roles_cannot_bypass_limits_and_bucket_enforces_size(self):
         for role in ('anon', 'authenticated'):
             with self.assertRaisesRegex(AssertionError, 'permission denied'):
                 self.sql(f"set role {role}; select demo_operation('reserve','{uuid4()}','upload');")
+            with self.assertRaisesRegex(AssertionError, 'permission denied'):
+                self.sql(f"set role {role}; select demo_suggestions('{uuid4()}','{uuid4()}');")
             with self.assertRaisesRegex(AssertionError, 'permission denied'):
                 self.sql(f"set role {role}; select * from demo_operations;")
         self.assertEqual(self.sql("select public || ':' || file_size_limit from storage.buckets where id='askmydoc-uploads';"), 'false:15000000')
