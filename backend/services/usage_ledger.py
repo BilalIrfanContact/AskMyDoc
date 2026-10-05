@@ -139,15 +139,15 @@ def free_tokens_left(provider: str, model: str, entries: list[dict[str, Any]]) -
     return max(FREE_TOKENS.get((provider, model), 0) - used, 0)
 
 
-def ensure_budget(provider: str, model: str) -> None:
+def ensure_budget(provider: str, model: str, estimated_tokens: int | None = None) -> None:
     """Before a call, check the model is priced and the call is free or this month's budget isn't spent.
 
-    A model with free tokens left is always allowed, so free embeddings keep working after paid chat
-    spends the budget. Only the call that crosses the end of the allowance can be partly billed.
+    A call whose `estimated_tokens` fit in the model's remaining free allowance is always allowed, so free
+    embeddings keep working after paid chat spends the budget. Without an estimate, only the budget counts.
     """
     price_of(provider, model)
     entries = read_entries()
-    if free_tokens_left(provider, model, entries) > 0:
+    if estimated_tokens is not None and estimated_tokens <= free_tokens_left(provider, model, entries):
         return
     spent = month_spend(entries)
     budget = monthly_budget()

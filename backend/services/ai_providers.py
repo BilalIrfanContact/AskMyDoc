@@ -115,7 +115,9 @@ class VoyageEmbeddings(Embeddings):
         return self._embed([text], "query")[0]
 
     def _embed(self, texts: list[str], input_type: str) -> list[list[float]]:
-        ensure_budget(self.provider, self.model)
+        # One token per 2 characters overestimates English text, so a call is treated as free only if
+        # it surely fits in what's left of the free allowance.
+        ensure_budget(self.provider, self.model, estimated_tokens=sum(len(text) for text in texts) // 2 + len(texts))
         payload = {"input": texts, "model": self.model, "input_type": input_type}
         headers = {"Authorization": f"Bearer {os.getenv('VOYAGE_API_KEY', '')}"}
         for attempt in range(_RETRIES):
