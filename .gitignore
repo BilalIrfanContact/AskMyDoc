@@ -38,3 +38,6 @@ tmp/
 evals/pdfqa-benchmark/
 evals/financial-filings/documents/
 evals/**/*.local.json
+
+# local AI spending log and dashboard
+backend/usage/

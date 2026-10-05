@@ -7,7 +7,9 @@ import chromadb
 from backend.services.chunk_labels import DocumentLabels
 from backend.services.vector_store import (
     IndexPayload,
+    StaleEmbeddings,
     build_vector_store,
+    get_vector_store,
     list_document_ids,
     replace_index_payload,
     write_index_payload,
@@ -15,7 +17,7 @@ from backend.services.vector_store import (
 
 
 class VectorStoreTestCase(unittest.TestCase):
-    def test_build_vector_store_embeds_labelled_text_but_stores_original_chunks(self):
+    def test_build_vector_store_embeds_plain_text_and_keeps_labels_for_reranking(self):
         embeddings = Mock()
         embeddings.embed_documents.return_value = [[0.1], [0.2]]
         collection = Mock()
@@ -35,7 +37,7 @@ class VectorStoreTestCase(unittest.TestCase):
 
         self.assertEqual(stored_count, 2)
         embeddings.embed_documents.assert_called_once_with(
-            ["Acme 10-K\nBalance sheet\n\nalpha", "Acme 10-K\n\nbeta"]
+            ["alpha", "beta"]
         )
         added = collection.add.call_args.kwargs
         self.assertEqual(added["ids"], ["doc-1:chunk:0", "doc-1:chunk:1"])
@@ -43,10 +45,22 @@ class VectorStoreTestCase(unittest.TestCase):
         self.assertEqual(
             added["metadatas"],
             [
-                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0, "label": "Balance sheet"},
-                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1, "label": ""},
+                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0, "label": "Balance sheet", "document_title": "Acme 10-K"},
+                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1, "label": "", "document_title": "Acme 10-K"},
             ],
         )
+        self.assertEqual(client.create_collection.call_args.kwargs["metadata"]["embedding_input"], "plain")
+
+    def test_labelled_voyage_index_must_be_reembedded_before_search(self):
+        collection = Mock(metadata={"embedding_model": "voyage-4-lite"})
+        with (
+            patch("backend.services.vector_store.get_persisted_collection", return_value=collection),
+            patch("backend.services.vector_store.embedding_model_name", return_value="voyage-4-lite"),
+            patch("backend.services.vector_store.get_embedding_model") as embeddings,
+        ):
+            with self.assertRaises(StaleEmbeddings):
+                get_vector_store("doc-1")
+        embeddings.assert_not_called()
 
     def test_replacing_a_collection_keeps_the_old_one_until_the_new_one_is_written(self):
         old = IndexPayload(ids=["doc-1:chunk:0"], documents=["old"], embeddings=[[1.0, 0.0, 0.0]], metadatas=[{"chunk_index": 0}])

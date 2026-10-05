@@ -7,18 +7,17 @@ so the summary also reports the mean number returned.
 from __future__ import annotations
 
 import argparse
-import os
 import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 
 from backend.bootstrap import initialize_backend_environment
 from backend.services.evidence_planner import plan_evidence
-from backend.services.rag_adapters import ChromaRetrievalAdapter, OpenAIChatAdapter
+from backend.services.ai_providers import chat_adapter
+from backend.services.rag_adapters import ChromaRetrievalAdapter
 from backend.services.vector_store import get_vector_store
 
 
@@ -189,9 +188,8 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     initialize_backend_environment()
 
-    generator = OpenAIChatAdapter(ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano"), temperature=0))
-    planner = (lambda question: plan_evidence(question, generator)) if args.planner else None
-    reranker = None if args.no_rerank or args.hybrid or args.planner else generator
+    planner = (lambda question: plan_evidence(question, chat_adapter("plan"))) if args.planner else None
+    reranker = None if args.no_rerank or args.hybrid or args.planner else chat_adapter("rerank")
 
     try:
         report = evaluate_cases(

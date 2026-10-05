@@ -31,7 +31,7 @@ from typing import Any, Callable, Sequence
 from dotenv import load_dotenv
 
 from backend.bootstrap import initialize_backend_environment
-from backend.scripts.answer_scoring import grader_model, openai_grade_fn, score_answer
+from backend.scripts.answer_scoring import grader_model, model_grade_fn, score_answer
 from backend.scripts.evaluate_retrieval import _load_cases
 from backend.services import rag_pipeline
 from backend.services.rag_pipeline import AnswerDecision
@@ -277,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
             cases = [case for case in cases if case.get("split") == args.split]
         score_fn = None
         if not args.no_score:
-            grade_fn = openai_grade_fn()
+            grade_fn = model_grade_fn()
             score_fn = lambda case, run: score_answer(case, run, grade_fn)
         if args.rescore:
             report = rescore_report(json.loads(Path(args.rescore).read_text(encoding="utf-8")), cases, score_fn)

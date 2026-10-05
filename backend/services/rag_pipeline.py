@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Iterable, Literal, Protocol, Sequence
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
 
 from .vector_store import get_vector_store
@@ -423,22 +422,22 @@ def _find_grounding_failure(
 
 
 def _default_generation_adapter() -> GenerationAdapter:
-    from .rag_adapters import OpenAIChatAdapter
+    from .ai_providers import chat_adapter
 
-    model = os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-nano")
-    return OpenAIChatAdapter(ChatOpenAI(model=model, temperature=0))
+    return chat_adapter("answer")
 
 
 def _default_dependencies() -> RagDependencies:
     from .rag_adapters import ChromaRetrievalAdapter
 
-    generation = _default_generation_adapter()
+    from .ai_providers import chat_adapter
+
     return RagDependencies(
         retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
             get_vector_store(document_id=document_id),
-            reranker=generation,
+            reranker=chat_adapter("rerank"),
         ),
-        generation=generation,
+        generation=_default_generation_adapter(),
     )
 
 
