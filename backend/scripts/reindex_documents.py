@@ -19,11 +19,10 @@ from dotenv import load_dotenv
 
 from backend.bootstrap import initialize_backend_environment
 from backend.services.vector_store import (
-    delete_vector_store,
     get_persisted_collection,
     list_document_ids,
     prepare_index_payload,
-    write_index_payload,
+    replace_index_payload,
 )
 
 
@@ -41,10 +40,7 @@ def reindex_document(document_id: str, force: bool = False) -> str:
         raise ValueError("chunk IDs are not a contiguous <document_id>:chunk:<index> sequence")
 
     payload = prepare_index_payload(document_id, [document for _, document, _ in rows])
-    delete_vector_store(document_id)
-    stored_count = write_index_payload(document_id, payload)
-    if stored_count != len(rows):
-        raise ValueError(f"stored {stored_count} of {len(rows)} chunks")
+    replace_index_payload(document_id, payload)
     return "reindexed"
 
 

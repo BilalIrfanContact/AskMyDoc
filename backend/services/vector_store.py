@@ -89,6 +89,26 @@ def write_index_payload(document_id: str, payload: IndexPayload) -> int:
     return collection.count()
 
 
+def replace_index_payload(document_id: str, payload: IndexPayload) -> int:
+    """Replace a document's collection with one built from `payload` and return its stored count.
+
+    The payload is written to a staging collection first; the old collection is deleted only once
+    the new one holds every chunk, so a failed write leaves the document searchable as before.
+    """
+    staging = f"{document_id}-reindex"
+    delete_vector_store(staging)
+    try:
+        stored_count = write_index_payload(staging, payload)
+        if stored_count != len(payload.ids):
+            raise ValueError(f"stored {stored_count} of {len(payload.ids)} chunks")
+    except Exception:
+        delete_vector_store(staging)
+        raise
+    delete_vector_store(document_id)
+    get_persisted_collection(staging).modify(name=document_id)
+    return stored_count
+
+
 def build_vector_store(
     document_id: str,
     chunks: List[str],
