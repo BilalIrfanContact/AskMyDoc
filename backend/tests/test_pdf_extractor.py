@@ -1,10 +1,12 @@
 import unittest
+from unittest.mock import MagicMock, patch
 
 from backend.services.pdf_extractor import (
     _TableContext,
     _extract_page_text,
     _extract_page_text_with_context,
     _serialize_table,
+    extract_pdf_pages,
 )
 
 
@@ -31,6 +33,55 @@ class FakePage:
 
 
 class PdfExtractorTestCase(unittest.TestCase):
+    def test_page_cleanup_preserves_text_and_continued_table_context(self):
+        first_page = FakePage([], [FakeTable([
+            ["Value", "Mass", "Description"],
+            ["$1", "8.10 g", "Susan B. Anthony"],
+            [None, "8.10 g", "Apollo 11 mission insignia"],
+        ], bbox=(0.0, 700.0, 100.0, 730.0))])
+        second_page = FakePage([], [FakeTable([
+            [None, "8.10 g", "Sacagawea"],
+            [None, "8.10 g", "Native American Themes"],
+            [None, "8.10 g", "American Innovation"],
+        ], bbox=(0.0, 400.0, 100.0, 430.0))])
+
+        def release_first_page():
+            first_page._words.clear()
+            first_page._tables.clear()
+
+        first_page.close = MagicMock(side_effect=release_first_page)
+        second_page.close = MagicMock()
+        original_extract_words = second_page.extract_words
+
+        def extract_second_page_words(**kwargs):
+            first_page.close.assert_called_once_with()
+            return original_extract_words(**kwargs)
+
+        second_page.extract_words = extract_second_page_words
+        pdf = MagicMock()
+        pdf.__enter__.return_value.pages = [first_page, second_page]
+        with patch("backend.services.pdf_extractor.pdfplumber.open", return_value=pdf):
+            pages = extract_pdf_pages(b"pdf fixture")
+
+        self.assertEqual(len(pages), 2)
+        self.assertIn("$1 | 8.10 g | Susan B. Anthony", pages[0])
+        self.assertIn("Value | Mass | Description", pages[1])
+        self.assertIn("$1 | 8.10 g | Sacagawea", pages[1])
+        self.assertIn("$1 | 8.10 g | Native American Themes", pages[1])
+        second_page.close.assert_called_once_with()
+
+    def test_page_cleanup_runs_when_extraction_fails(self):
+        page = MagicMock()
+        page.find_tables.return_value = []
+        page.extract_words.side_effect = ValueError("unreadable page")
+        pdf = MagicMock()
+        pdf.__enter__.return_value.pages = [page]
+        with patch("backend.services.pdf_extractor.pdfplumber.open", return_value=pdf):
+            with self.assertRaisesRegex(ValueError, "unreadable page"):
+                extract_pdf_pages(b"pdf fixture")
+
+        page.close.assert_called_once_with()
+
     def test_word_reconstruction_preserves_financial_number_tokens(self):
         page = FakePage(
             words=[
