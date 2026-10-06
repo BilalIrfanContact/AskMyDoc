@@ -336,21 +336,12 @@ export function createWorkspaceStateModule({
 
       dispatch({ type: "delete/success", documentId: documentToDelete.id });
     } catch (error) {
-      if (
-        error instanceof DeleteFlowError &&
-        (
-          error.reasonCode === "conversation_cleanup_failed" ||
-          error.reasonCode === "indexing_cleanup_failed"
-        )
-      ) {
+      if (error instanceof DeleteFlowError && error.cleanupStatus === "partial") {
+        // Cleanup can invalidate this chat even though metadata remains for retrying deletion.
         if (getState().documentId === documentToDelete.id) {
           clearWorkspace();
         }
-        try {
-          await refreshDocuments();
-        } catch {
-          // Keep the original delete error as the visible failure and always exit deleting state.
-        }
+        await refreshDocuments({ suppressFailureError: true });
       }
 
       const message = getDeleteErrorMessage(error);
@@ -482,36 +473,15 @@ function getDeleteErrorMessage(error: unknown) {
     return error.message;
   }
 
-  const recoveryNote =
-    error.cleanupStatus === "not-started"
-      ? " No cleanup steps were applied."
-      : error.cleanupStatus === "partial"
-        ? error.reasonCode === "conversation_cleanup_failed" ||
-          error.reasonCode === "indexing_cleanup_failed"
-          ? " The document has already been removed from the workspace."
-          : " Some cleanup steps already ran. Retry delete to finish removing the document."
-        : "";
-
-  if (error.reasonCode === "conversation_lookup_failed") {
-    return `${error.message}${recoveryNote} Delete did not start, so the document should still be visible.`;
+  if (error.cleanupStatus === "not-started") {
+    return "Deletion did not start. The document is still in your library. Please try again.";
   }
 
-  if (error.reasonCode === "conversation_cleanup_failed") {
-    return `${error.message}${recoveryNote} The document was removed, but chat cleanup is still incomplete.`;
+  if (error.cleanupStatus === "partial") {
+    return "Deletion is incomplete. The document is still in your library, but some content or chat history may already be removed. Retry deletion to finish.";
   }
 
-  if (error.reasonCode === "indexing_cleanup_failed") {
-    return `${error.message}${recoveryNote} The document was removed, but retrieval cleanup is still incomplete.`;
-  }
-
-  if (
-    error.reasonCode === "storage_delete_failed" ||
-    error.reasonCode === "metadata_delete_failed"
-  ) {
-    return `${error.message}${recoveryNote} The document may still appear until deletion finishes.`;
-  }
-
-  return `${error.message}${recoveryNote}`;
+  return error.message;
 }
 
 export type WorkspaceStateModule = ReturnType<typeof createWorkspaceStateModule>;
