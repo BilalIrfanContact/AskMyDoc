@@ -31,6 +31,7 @@ class RequestConcurrencyTestCase(unittest.IsolatedAsyncioTestCase):
         conversation = {"id": "convo-a", "user_id": "user-a", "document_id": "doc-a"}
         results = {
             "backend.services.conversation_turn.require_user_conversation": conversation,
+            "backend.services.conversation_turn.load_turn_history": (),
             "backend.services.conversation_turn.answer_question": AnswerDecision(
                 answer="The refund window is 30 days.", intent="qa", retrieval_mode="semantic",
                 answer_status="answered", citations=[],

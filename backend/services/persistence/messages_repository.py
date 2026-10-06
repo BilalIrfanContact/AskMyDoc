@@ -2,7 +2,8 @@ import json
 import uuid
 from typing import Any, Dict, List
 
-from .common import get_postgrest_client, map_persistence_error
+from .common import PersistenceError, get_postgrest_client, map_persistence_error
+from ..conversation_history import ConversationExchange, bounded_history
 
 
 _ANSWER_ENVELOPE_PREFIX = "askmydoc:answer:v1:"
@@ -56,6 +57,48 @@ def list_conversation_messages(conversation_id: str) -> List[Dict[str, Any]]:
         raise map_persistence_error("Failed to load conversation history", exc) from exc
 
     return [_decode_message(row) for row in (response.data or [])]
+
+
+def load_turn_history(conversation_id: str, request_id: str) -> tuple[ConversationExchange, ...]:
+    """Read completed exchanges before this turn, excluding failed and later submissions.
+
+    The caller must authorize the conversation first. The original question timestamp
+    keeps a failed turn's retry from seeing questions submitted after it.
+    """
+    try:
+        client = get_postgrest_client()
+        current = (client.from_("messages").select("created_at")
+                   .eq("conversation_id", conversation_id).eq("request_id", request_id)
+                   .eq("role", "user").limit(1).execute()).data
+        if not current:
+            raise PersistenceError("Current turn question was not persisted")
+        rows = (client.from_("messages")
+                .select("role, content, request_id, created_at")
+                .eq("conversation_id", conversation_id)
+                .lt("created_at", current[0]["created_at"])
+                .order("created_at", desc=True).limit(24).execute()).data or []
+    except Exception as exc:
+        raise map_persistence_error("Failed to load turn history", exc) from exc
+
+    pending: dict[str, str] = {}
+    legacy_question: str | None = None
+    exchanges = []
+    for row in reversed(rows):
+        message = _decode_message(row)
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        turn_id = message.get("request_id")
+        if message.get("role") == "user":
+            if turn_id:
+                pending[turn_id] = content
+            legacy_question = content if not turn_id else None
+        elif message.get("role") == "assistant":
+            question = pending.pop(turn_id, None) if turn_id else legacy_question
+            if question is not None:
+                exchanges.append(ConversationExchange(question=question, answer=content))
+            legacy_question = None
+    return bounded_history(exchanges)
 
 
 def _decode_message(row: Dict[str, Any]) -> Dict[str, Any]:

@@ -17,7 +17,7 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
             8: ["doc:chunk:95", "doc:chunk:1", "doc:chunk:93"],
         }
 
-        def fake_answer(document_id, question, limit):
+        def fake_answer(document_id, question, limit, history):
             rag_pipeline.logger.info(
                 json.dumps(
                     {
@@ -61,7 +61,7 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
         self.assertEqual(report["summary"]["limit_4"]["mean_context_char_count"], 4000)
 
     def test_fallback_before_model_call_does_not_count_retrieved_chunks_as_context(self):
-        def fake_answer(document_id, question, limit):
+        def fake_answer(document_id, question, limit, history):
             rag_pipeline.logger.info(json.dumps({
                 "event": "answer_policy_decision",
                 "fallback_reason_code": "empty_context",
@@ -87,7 +87,7 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
     def test_abstain_cases_need_no_gold_and_count_only_fallbacks_as_abstaining(self):
         answers = {"Unknown A?": "insufficient_context", "Unknown B?": "answered"}
 
-        def fake_answer(document_id, question, limit):
+        def fake_answer(document_id, question, limit, history):
             rag_pipeline.logger.info(json.dumps({
                 "event": "answer_policy_decision",
                 "retrieved_chunk_ids": ["doc:chunk:1"],
@@ -117,7 +117,7 @@ class AnswerEvaluatorTestCase(unittest.TestCase):
     def test_scores_each_answer_and_keeps_answerable_and_abstain_counts_apart(self):
         answers = {"What is DPO?": "DPO is 93.83 days.", "How many Prime members?": INSUFFICIENT_CONTEXT_ANSWER}
 
-        def fake_answer(document_id, question, limit):
+        def fake_answer(document_id, question, limit, history):
             status = "insufficient_context" if answers[question] == INSUFFICIENT_CONTEXT_ANSWER else "answered"
             rag_pipeline.logger.info(json.dumps({"event": "answer_policy_decision", "answer_model_called": True}))
             return AnswerDecision(
