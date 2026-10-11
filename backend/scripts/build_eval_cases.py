@@ -238,10 +238,10 @@ def build_case(
 
 
 def _load_document(pdf_path: str, document_id: str) -> tuple[list[str], list[tuple[str, str]]]:
-    from backend.services.vector_store import get_persisted_collection
+    from backend.services.vector_store import open_index
 
     pages = extract_pdf_pages(Path(pdf_path).read_bytes())
-    stored = get_persisted_collection(document_id).get(include=["documents", "metadatas"])
+    stored = open_index(document_id).get(include=["documents", "metadatas"])
     rows = sorted(
         zip(stored["ids"], stored["documents"], stored["metadatas"]),
         key=lambda row: (row[2] or {}).get("chunk_index", 0),

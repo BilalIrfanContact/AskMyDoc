@@ -1,22 +1,27 @@
 import os
-import tempfile
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from backend.services import usage_ledger
 from backend.services.usage_dashboard import render_dashboard
+from backend.tests.fake_supabase import FakeSupabase
 
 
 class UsageTestCase(unittest.TestCase):
-    def setUp(self):
-        self._dir = tempfile.TemporaryDirectory()
-        self._env = patch.dict(os.environ, {"AI_USAGE_DIR": self._dir.name, "AI_MONTHLY_BUDGET_USD": "5"})
-        self._env.start()
+    """Each test gets an empty in-memory ledger and a $5 budget."""
 
-    def tearDown(self):
-        self._env.stop()
-        self._dir.cleanup()
+    def setUp(self):
+        self.database = FakeSupabase()
+        for patcher in (
+            patch.dict(os.environ, {"AI_MONTHLY_BUDGET_USD": "5"}),
+            patch("backend.services.usage_ledger.get_postgrest_client", return_value=self.database),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def add_calls(self, *entries: dict) -> None:
+        self.database.tables["ai_usage"].extend({"created_at": entry["time"], **entry} for entry in entries)
 
 
 class UsageLedgerTestCase(UsageTestCase):
@@ -25,27 +30,51 @@ class UsageLedgerTestCase(UsageTestCase):
 
         self.assertAlmostEqual(cost, 0.15 + 0.06)
         self.assertAlmostEqual(usage_ledger.month_spend(), 0.21)
-        self.assertTrue((usage_ledger.usage_directory() / "dashboard.html").exists())
+        [entry] = usage_ledger.read_entries()
+        self.assertEqual((entry["task"], entry["input_tokens"], entry["output_tokens"]), ("answer", 1_000_000, 100_000))
+
+    def test_a_failed_ledger_write_is_retried_without_counting_the_call_twice(self):
+        self.database.failed_writes = 1
+        self.database.lost_write_replies = 1  # The retry lands, but its reply is lost, so it's tried once more.
+
+        with patch("backend.services.usage_ledger.time.sleep"):
+            usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 1_000_000)
+
+        self.assertEqual(len(usage_ledger.read_entries()), 1)
+        self.assertAlmostEqual(usage_ledger.month_spend(), 0.15)
+
+    def test_an_unrecordable_call_keeps_its_reply_and_is_logged(self):
+        self.database.failed_writes = usage_ledger.RECORD_ATTEMPTS
+
+        with patch("backend.services.usage_ledger.time.sleep"), self.assertLogs("backend.services.usage_ledger", "ERROR"):
+            cost = usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 1_000_000)
+
+        self.assertAlmostEqual(cost, 0.15)
+        self.assertEqual(usage_ledger.read_entries(), [])
 
     def test_spend_from_earlier_months_does_not_count(self):
         # 18:59 UTC on Aug 31 is 23:59 in Pakistan, still August; 19:30 UTC is already September there.
         groq = {"provider": "groq", "model": "openai/gpt-oss-20b", "task": "answer", "input_tokens": 1, "output_tokens": 0}
-        entries = [{**groq, "time": "2026-08-31T18:59:00+00:00", "cost_usd": 4.99},
-                   {**groq, "time": "2026-08-31T19:30:00+00:00", "cost_usd": 0.5}]
+        self.add_calls({**groq, "time": "2026-08-31T18:59:00+00:00", "cost_usd": 4.99},
+                       {**groq, "time": "2026-08-31T19:30:00+00:00", "cost_usd": 0.5})
 
-        self.assertEqual(usage_ledger.month_spend(entries, now=datetime(2026, 9, 1, tzinfo=timezone.utc)), 0.5)
+        totals = usage_ledger.usage_totals(now=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        self.assertEqual(usage_ledger.month_spend(totals), 0.5)
 
     def test_free_allowance_calls_bill_nothing_and_only_tokens_past_it_are_billed(self):
         def call(time, tokens):
             return {"time": time, "provider": "voyage", "model": "voyage-4-lite", "task": "embed-document",
                     "input_tokens": tokens, "output_tokens": 0, "cost_usd": tokens * 0.02 / 1_000_000}
 
-        entries = [call("2026-10-01T10:00:00+00:00", 150_000_000), call("2026-10-02T10:00:00+00:00", 100_000_000)]
+        # 150M in September, then 100M in October: 50M of October's tokens are still free.
+        entries = [call("2026-09-20T10:00:00+00:00", 150_000_000), call("2026-10-02T10:00:00+00:00", 100_000_000)]
+        self.add_calls(*entries)
         first, second = usage_ledger.with_billing(entries)
 
         self.assertEqual(first["billed_usd"], 0)
         self.assertAlmostEqual(second["billed_usd"], 50_000_000 * 0.02 / 1_000_000)  # only the 50M past 200M
-        self.assertAlmostEqual(usage_ledger.month_spend(entries, now=datetime(2026, 10, 3, tzinfo=timezone.utc)), 1.0)
+        totals = usage_ledger.usage_totals(now=datetime(2026, 10, 3, tzinfo=timezone.utc))
+        self.assertAlmostEqual(usage_ledger.month_spend(totals), second["billed_usd"])
 
     def test_free_embedding_calls_do_not_use_up_the_budget(self):
         usage_ledger.record("voyage", "voyage-4-lite", "embed-document", 199_000_000)

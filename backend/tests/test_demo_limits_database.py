@@ -35,7 +35,9 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         cls.sql(f"insert into documents select gen_random_uuid(),'{cls.legacy_user}' from generate_series(1,3);")
         migrations = Path(__file__).resolve().parents[2] / 'supabase/migrations'
         for migration in sorted(migrations.glob('*.sql')):
-            cls.sql(migration.read_text())
+            # The chunk store and spend ledger are checked by test_supabase_functions_database.
+            if migration.name not in ('202610110001_document_chunks.sql', '202610110002_ai_usage.sql', '202610110003_usage_ids_and_atomic_import.sql', '202610110004_import_without_table_lock.sql'):
+                cls.sql(migration.read_text())
 
     @classmethod
     def stop_database(cls):

@@ -19,6 +19,14 @@ def insert_document(document_id: str, user_id: str, filename: str, storage_url: 
     return (response.data or [{}])[0]
 
 
+def ping_database() -> None:
+    """Read one row so a health check proves Supabase is reachable and counts as project activity."""
+    try:
+        get_postgrest_client().from_("documents").select("id").limit(1).execute()
+    except Exception as exc:
+        raise map_persistence_error("Failed to reach the database", exc) from exc
+
+
 def list_user_documents(user_id: str) -> List[Dict[str, Any]]:
     try:
         response = (

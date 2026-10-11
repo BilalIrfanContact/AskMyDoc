@@ -1,6 +1,4 @@
 import json
-import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -14,6 +12,7 @@ from backend.routers import chat, conversations, documents, upload
 from backend.services.internal_auth import require_authenticated_user
 from backend.services.persistence.messages_repository import insert_message
 from backend.services.rag_pipeline import AnswerDecision, INSUFFICIENT_CONTEXT_ANSWER
+from backend.tests.fake_supabase import FakeSupabase
 
 
 def _build_test_app() -> FastAPI:
@@ -110,20 +109,18 @@ async def _request_asgi(
     return response_status, response_headers, bytes(response_body)
 
 
-_usage_dir = None
+_usage_ledger = None
 
 
 def setUpModule():
     """Keep metered test calls out of the real AI spending log."""
-    global _usage_dir, _usage_env
-    _usage_dir = tempfile.TemporaryDirectory()
-    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
-    _usage_env.start()
+    global _usage_ledger
+    _usage_ledger = patch("backend.services.usage_ledger.get_postgrest_client", return_value=FakeSupabase())
+    _usage_ledger.start()
 
 
 def tearDownModule():
-    _usage_env.stop()
-    _usage_dir.cleanup()
+    _usage_ledger.stop()
 
 
 class FakeResponse:
@@ -378,24 +375,6 @@ class InMemoryAppState:
         self.vector_deleted.append(document_id)
 
 
-class FakeVectorCollection:
-    def __init__(self, *, count: int, query_result: dict):
-        self._count = count
-        self._query_result = query_result
-        self.query_call_count = 0
-
-    def count(self) -> int:
-        return self._count
-
-    def query(self, *, query_embeddings, n_results: int, include: list[str]) -> dict:
-        self.query_call_count += 1
-        return self._query_result
-
-    def get(self, *, include: list[str]) -> dict:
-        # The whole document, read when the answer step adds the primary statements; none here.
-        return {"ids": [], "documents": [], "metadatas": []}
-
-
 class FakeVectorStore:
     def __init__(
         self,
@@ -410,21 +389,30 @@ class FakeVectorStore:
     ):
         self.embeddings = SimpleNamespace(embed_query=lambda question: [0.1, 0.2, 0.3])
         self.get_call_count = 0
+        self.query_call_count = 0
+        self._count = count
         self._head_result = {
             "documents": head_documents or [],
             "metadatas": head_metadatas or [],
             "ids": head_ids or [],
         }
-        self._collection = FakeVectorCollection(
-            count=count,
-            query_result={
-                "documents": [query_documents or []],
-                "metadatas": [query_metadatas or []],
-                "ids": [query_ids or []],
-            },
-        )
+        self._query_result = {
+            "documents": [query_documents or []],
+            "metadatas": [query_metadatas or []],
+            "ids": [query_ids or []],
+        }
 
-    def get(self, *, limit: int, include: list[str]) -> dict:
+    def count(self) -> int:
+        return self._count
+
+    def query(self, *, query_embeddings, n_results: int, include: list[str]) -> dict:
+        self.query_call_count += 1
+        return self._query_result
+
+    def get(self, *, limit: int | None = None, include: list[str]) -> dict:
+        if limit is None:
+            # The whole document, read when the answer step adds the primary statements; none here.
+            return {"ids": [], "documents": [], "metadatas": []}
         self.get_call_count += 1
         return self._head_result
 
@@ -954,7 +942,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(vectordb.get_call_count, 0)
-        self.assertEqual(vectordb._collection.query_call_count, 1)
+        self.assertEqual(vectordb.query_call_count, 1)
 
     async def test_chat_runs_real_summary_head_retrieval_path_and_persists_citations(self):
         conversation_id = await self._create_conversation()
@@ -1023,7 +1011,7 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(vectordb.get_call_count, 1)
-        self.assertEqual(vectordb._collection.query_call_count, 0)
+        self.assertEqual(vectordb.query_call_count, 0)
 
     async def test_chat_returns_deterministic_fallback_when_model_reports_not_found(self):
         conversation_id = await self._create_conversation()

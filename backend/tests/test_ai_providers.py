@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -8,17 +7,19 @@ import openai
 
 from backend.services import usage_ledger
 from backend.services.ai_providers import MeteredChat, VoyageEmbeddings
+from backend.tests.fake_supabase import FakeSupabase
 
 
 class UsageTestCase(unittest.TestCase):
-    def setUp(self):
-        self._dir = tempfile.TemporaryDirectory()
-        self._env = patch.dict(os.environ, {"AI_USAGE_DIR": self._dir.name, "AI_MONTHLY_BUDGET_USD": "5"})
-        self._env.start()
+    """Each test gets an empty in-memory ledger and a $5 budget."""
 
-    def tearDown(self):
-        self._env.stop()
-        self._dir.cleanup()
+    def setUp(self):
+        for patcher in (
+            patch.dict(os.environ, {"AI_MONTHLY_BUDGET_USD": "5"}),
+            patch("backend.services.usage_ledger.get_postgrest_client", return_value=FakeSupabase()),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
 
 class MeteredChatTestCase(UsageTestCase):

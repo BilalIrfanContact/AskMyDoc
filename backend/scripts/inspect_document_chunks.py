@@ -25,7 +25,7 @@ def _write_json(value: Any, output: str | None) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Read-only inspection of an AskMyDoc document's extraction and Chroma chunks."
+        description="Read-only inspection of an AskMyDoc document's extraction and stored chunks."
     )
     parser.add_argument("--user-id", required=True, help="The owner identity used by the existing document authorization check.")
     parser.add_argument("--document-id", help="The already-ingested document to inspect.")

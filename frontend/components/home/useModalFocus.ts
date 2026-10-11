@@ -10,8 +10,8 @@ const FOCUSABLE_SELECTOR = [
 ].join(",");
 
 export function useModalFocus(
-  dialogRef: RefObject<HTMLElement>,
-  initialFocusRef: RefObject<HTMLElement>
+  dialogRef: RefObject<HTMLElement | null>,
+  initialFocusRef: RefObject<HTMLElement | null>
 ) {
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement

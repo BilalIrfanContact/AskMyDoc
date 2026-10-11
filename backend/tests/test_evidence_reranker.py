@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from backend.services.evidence_reranker import Candidate, pick_evidence
-from backend.services.rag_adapters import ChromaRetrievalAdapter
+from backend.services.rag_adapters import ChunkRetrievalAdapter
 
 
 def _generator(reply):
@@ -34,12 +34,12 @@ class RerankedRetrievalTestCase(unittest.TestCase):
         ids = [f"doc:chunk:{index}" for index in range(5)]
         vectordb = Mock()
         vectordb.embeddings.embed_query.return_value = [0.1]
-        vectordb._collection.query.return_value = {
+        vectordb.query.return_value = {
             "documents": [[f"text {index}" for index in range(5)]],
             "metadatas": [[{"chunk_id": chunk_id} for chunk_id in ids]],
             "ids": [ids],
         }
-        vectordb._collection.get.return_value = {
+        vectordb.get.return_value = {
             "ids": ids,
             "metadatas": [{"chunk_id": chunk_id, "label": f"label {index}"} for index, chunk_id in enumerate(ids)],
         }
@@ -47,7 +47,7 @@ class RerankedRetrievalTestCase(unittest.TestCase):
 
     def test_returns_only_the_chunks_the_model_picked(self):
         generator = _generator("4, 2")
-        adapter = ChromaRetrievalAdapter(self._vectordb(), reranker=generator)
+        adapter = ChunkRetrievalAdapter(self._vectordb(), reranker=generator)
 
         context = adapter.retrieve("semantic", "What were total assets?", 3)
 
@@ -57,10 +57,10 @@ class RerankedRetrievalTestCase(unittest.TestCase):
 
     def test_search_strategies_cannot_be_combined(self):
         with self.assertRaises(ValueError):
-            ChromaRetrievalAdapter(self._vectordb(), hybrid=True, reranker=_generator("1"))
+            ChunkRetrievalAdapter(self._vectordb(), hybrid=True, reranker=_generator("1"))
 
     def test_falls_back_to_embedding_order_when_the_model_reply_is_unusable(self):
-        adapter = ChromaRetrievalAdapter(self._vectordb(), reranker=_generator("sorry"))
+        adapter = ChunkRetrievalAdapter(self._vectordb(), reranker=_generator("sorry"))
 
         context = adapter.retrieve("semantic", "What were total assets?", 3)
 

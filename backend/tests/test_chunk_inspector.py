@@ -39,7 +39,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 return_value=("pdf", ["Revenue: $10 million"], [(1, "Revenue: $10 million")]),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
 
@@ -58,7 +58,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 side_effect=HTTPException(status_code=403, detail="You are not authorized."),
             ),
             patch("backend.services.chunk_inspector.download_storage_object") as download,
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection) as get_collection,
+            patch("backend.services.chunk_inspector.open_index", return_value=collection) as get_collection,
         ):
             with self.assertRaises(HTTPException) as exc:
                 inspect_document_chunks(document_id="doc-b", user_id="user-a")
@@ -92,7 +92,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 "backend.services.chunk_inspector.chunk_text",
                 return_value=["First row: 10%", "Second row: 20%"],
             ),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
 
@@ -120,7 +120,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 ),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Column A\nValue 10"]),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
 
@@ -143,7 +143,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 return_value=("pdf", ["", "Page two content"], [(2, "Page two content")]),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Page two content"]),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
 
@@ -159,7 +159,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
             patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
             patch("backend.services.chunk_inspector._source_pages", return_value=("pdf", [""], [])),
             patch("backend.services.chunk_inspector.chunk_text", return_value=[]),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
             patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store,
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
@@ -194,7 +194,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
                 return_value=("pdf", ["Revenue: $10 million"], [(1, "Revenue: $10 million")]),
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
-            patch("backend.services.chunk_inspector.get_persisted_collection", return_value=collection),
+            patch("backend.services.chunk_inspector.open_index", return_value=collection),
             patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store,
             patch("backend.services.embedder.get_embedding_model") as get_embedding_model,
         ):

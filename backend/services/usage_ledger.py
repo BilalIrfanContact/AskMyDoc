@@ -1,9 +1,10 @@
 """Record what every AI call costs, and stop paid calls once the month's budget is spent.
 
 Every chat and embedding call goes through `ai_providers`, which calls `ensure_budget()` before the
-request and `record()` after it with the token counts the provider reported. Each call becomes one JSON
-line in `backend/usage/ledger.jsonl` (gitignored; `AI_USAGE_DIR` moves it), priced from `PRICES`, and the local dashboard
-(`usage_dashboard.py`) is rebuilt from the ledger.
+request and `record()` after it with the token counts the provider reported. Each call becomes one row in
+Supabase's `ai_usage` table (see `supabase/migrations/202610110002_ai_usage.sql`), priced from `PRICES`, so the
+budget survives restarts. `ensure_budget` works from per-model totals (`usage_totals`) rather than reading every
+row; the spending dashboard (`python -m backend.services.usage_dashboard`) reads every row with `read_entries`.
 
 Costs are our own estimate (reported tokens × list price), not the provider's invoice. Each call keeps its
 list-price cost; `with_billing` works out how much of it a free token allowance covered, and only the billed
@@ -12,17 +13,30 @@ remainder counts against the monthly budget.
 
 from __future__ import annotations
 
-import json
+import logging
 import os
-import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+from postgrest.types import ReturnMethod
+
+from .persistence.common import get_postgrest_client
 
 
 DEFAULT_USAGE_DIRECTORY = Path(__file__).resolve().parents[1] / "usage"
 DEFAULT_MONTHLY_BUDGET_USD = 5.0
+
+# Supabase's API returns at most 1,000 rows per request.
+PAGE_SIZE = 1000
+# Recording a call is retried this many times, waiting 0.5 s, then 1 s, between attempts.
+RECORD_ATTEMPTS = 3
+RECORD_RETRY_SECONDS = 0.5
+
+logger = logging.getLogger(__name__)
 
 # The ledger stores UTC timestamps; months, days and displayed times use Pakistan time.
 LOCAL_TIMEZONE = ZoneInfo("Asia/Karachi")
@@ -45,9 +59,6 @@ FREE_TOKENS: dict[tuple[str, str], int] = {
     ("voyage", "voyage-finance-2"): 50_000_000,
 }
 
-_lock = threading.Lock()
-
-
 class BudgetExceeded(RuntimeError):
     """Raised instead of making a paid AI call once this month's billed spend reaches the budget."""
 
@@ -57,12 +68,8 @@ class UnpricedModel(ValueError):
 
 
 def usage_directory() -> Path:
-    """Where the ledger and dashboard live; `AI_USAGE_DIR` overrides it (tests use a temporary one)."""
+    """Where the dashboard is written; `AI_USAGE_DIR` overrides it."""
     return Path(os.getenv("AI_USAGE_DIR") or DEFAULT_USAGE_DIRECTORY)
-
-
-def ledger_path() -> Path:
-    return usage_directory() / "ledger.jsonl"
 
 
 def monthly_budget() -> float:
@@ -76,11 +83,24 @@ def price_of(provider: str, model: str) -> tuple[float, float]:
         raise UnpricedModel(f"No price recorded for {provider} model {model!r}; add it to usage_ledger.PRICES.") from None
 
 
-def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
-    path = path or ledger_path()
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+def read_entries() -> list[dict[str, Any]]:
+    """Every recorded call, oldest first, with its UTC timestamp as `time`."""
+    rows: list[dict[str, Any]] = []
+    while True:
+        page = (
+            get_postgrest_client()
+            .from_("ai_usage")
+            .select("created_at, provider, model, task, input_tokens, output_tokens, cost_usd")
+            .order("id")
+            .range(len(rows), len(rows) + PAGE_SIZE - 1)
+            .execute()
+            .data
+            or []
+        )
+        rows.extend(page)
+        if len(page) < PAGE_SIZE:
+            break
+    return [{"time": row.pop("created_at"), **row} for row in rows]
 
 
 def local_now() -> datetime:
@@ -127,15 +147,40 @@ def free_allowances(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def month_spend(entries: list[dict[str, Any]] | None = None, now: datetime | None = None) -> float:
-    """Billed spend (after free allowances) for the current calendar month, in Pakistan time."""
-    entries = read_entries() if entries is None else entries
-    return sum(entry["billed_usd"] for entry in in_month(with_billing(entries), now or local_now()))
+def usage_totals(now: datetime | None = None) -> list[dict[str, Any]]:
+    """Per model: tokens used before `now`'s month, and tokens and list-price cost within it (Pakistan time)."""
+    start = (now or local_now()).astimezone(LOCAL_TIMEZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+    return (
+        get_postgrest_client()
+        .rpc("ai_usage_totals", {"p_month_start": start.isoformat(), "p_month_end": end.isoformat()})
+        .execute()
+        .data
+        or []
+    )
 
 
-def free_tokens_left(provider: str, model: str, entries: list[dict[str, Any]]) -> int:
+def month_spend(totals: list[dict[str, Any]] | None = None) -> float:
+    """Billed spend (after free allowances) for the current calendar month, in Pakistan time.
+
+    The same result `with_billing` gives call by call: a month's tokens are free while the allowance left at
+    the month's start lasts, and the rest bill at their share of the month's list-price cost.
+    """
+    spent = 0.0
+    for row in usage_totals() if totals is None else totals:
+        tokens = row["tokens_in_month"]
+        if not tokens:
+            continue
+        free_left = max(FREE_TOKENS.get((row["provider"], row["model"]), 0) - row["tokens_before"], 0)
+        spent += row["cost_in_month"] * (tokens - min(tokens, free_left)) / tokens
+    return spent
+
+
+def free_tokens_left(provider: str, model: str, totals: list[dict[str, Any]]) -> int:
     """Tokens of the model's one-time free allowance not yet used, across the ledger's whole history."""
-    used = sum(e["input_tokens"] + e["output_tokens"] for e in entries if (e["provider"], e["model"]) == (provider, model))
+    used = sum(
+        row["tokens_before"] + row["tokens_in_month"] for row in totals if (row["provider"], row["model"]) == (provider, model)
+    )
     return max(FREE_TOKENS.get((provider, model), 0) - used, 0)
 
 
@@ -146,10 +191,10 @@ def ensure_budget(provider: str, model: str, estimated_tokens: int | None = None
     embeddings keep working after paid chat spends the budget. Without an estimate, only the budget counts.
     """
     price_of(provider, model)
-    entries = read_entries()
-    if estimated_tokens is not None and estimated_tokens <= free_tokens_left(provider, model, entries):
+    totals = usage_totals()
+    if estimated_tokens is not None and estimated_tokens <= free_tokens_left(provider, model, totals):
         return
-    spent = month_spend(entries)
+    spent = month_spend(totals)
     budget = monthly_budget()
     if spent >= budget:
         raise BudgetExceeded(
@@ -159,11 +204,18 @@ def ensure_budget(provider: str, model: str, estimated_tokens: int | None = None
 
 
 def record(provider: str, model: str, task: str, input_tokens: int, output_tokens: int = 0) -> float:
-    """Append one call to the ledger, rebuild the dashboard, and return the call's cost."""
+    """Add one call to the ledger and return its cost. Never raises once the call is priced.
+
+    The provider has already charged for the call, so failing here would throw away a paid reply and invite
+    a retry that pays again. The write is retried under one `usage_id`, so a retry whose first attempt landed
+    can't count twice. If every attempt fails the call is logged instead; the database is then likely down,
+    and `ensure_budget` refuses further paid calls until it can read the ledger again.
+    """
     input_price, output_price = price_of(provider, model)
     cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
     entry = {
-        "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "usage_id": str(uuid4()),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "provider": provider,
         "model": model,
         "task": task,
@@ -171,14 +223,15 @@ def record(provider: str, model: str, task: str, input_tokens: int, output_token
         "output_tokens": output_tokens,
         "cost_usd": round(cost, 8),
     }
-    with _lock:
-        usage_directory().mkdir(parents=True, exist_ok=True)
-        with ledger_path().open("a", encoding="utf-8") as ledger:
-            ledger.write(json.dumps(entry) + "\n")
+    for attempt in range(1, RECORD_ATTEMPTS + 1):
         try:
-            from .usage_dashboard import write_dashboard
-
-            write_dashboard(read_entries(), monthly_budget())
+            get_postgrest_client().from_("ai_usage").upsert(
+                entry, on_conflict="usage_id", ignore_duplicates=True, returning=ReturnMethod.minimal
+            ).execute()
+            return cost
         except Exception:
-            pass  # The ledger is the record; a dashboard failure must never fail an AI call.
+            if attempt == RECORD_ATTEMPTS:
+                logger.exception("Could not record AI usage; this call is missing from the ledger: %s", entry)
+            else:
+                time.sleep(RECORD_RETRY_SECONDS * attempt)
     return cost

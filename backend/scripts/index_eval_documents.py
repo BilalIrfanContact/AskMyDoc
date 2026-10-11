@@ -1,4 +1,4 @@
-"""Index eval PDFs into the local Chroma store, the same way an upload does.
+"""Index eval PDFs into the Supabase chunk store, the same way an upload does.
 
 This runs only the indexing half of `upload_document`: extract text, chunk it, and embed the
 chunks under a new `document_id` (chunk IDs are `<document_id>:chunk:<index>`). It skips the
@@ -6,7 +6,7 @@ Supabase storage and metadata steps, so indexed PDFs don't appear in the app's l
 
 Results go to a local manifest mapping each PDF path and SHA-256 to its `document_id`. PDFs
 whose SHA-256 is already in the manifest are skipped while their collection still holds chunks,
-so reruns only index what's missing, including PDFs whose Chroma store was cleared.
+so reruns only index what's missing, including PDFs whose stored index was cleared.
 
     .venv/bin/python -m backend.scripts.index_eval_documents \
         --corpus evals/financial-filings/manifest.json \
@@ -30,8 +30,9 @@ from backend.services.pdf_extractor import extract_text_from_pdf
 from backend.services.text_chunker import chunk_text
 from backend.services.vector_store import (
     build_vector_store,
+    MissingIndex,
     delete_vector_store,
-    get_persisted_collection,
+    open_index,
 )
 
 
@@ -63,13 +64,11 @@ def index_pdf_bytes(data: bytes) -> dict[str, Any]:
 
 
 def _collection_count(document_id: str) -> int:
-    """Chunks stored for `document_id`; 0 if its collection no longer exists."""
+    """Chunks stored for `document_id`; 0 if it has no stored index."""
     try:
-        return get_persisted_collection(document_id).count()
-    except Exception as exc:
-        if "does not exist" in str(exc).lower():
-            return 0
-        raise
+        return open_index(document_id).count()
+    except MissingIndex:
+        return 0
 
 
 def index_documents(
@@ -115,7 +114,7 @@ def index_documents(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Index eval PDFs into the local Chroma store.")
+    parser = argparse.ArgumentParser(description="Index eval PDFs into the Supabase chunk store.")
     parser.add_argument("--corpus", required=True, help="Corpus manifest listing PDFs under `documents[].path`.")
     parser.add_argument("--output", required=True, help="Local manifest of indexed documents (created or extended).")
     args = parser.parse_args(argv)

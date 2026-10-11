@@ -6,6 +6,15 @@ type ChatInputProps = {
   documentName?: string;
 };
 
+function SendIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m4 4 17 8-17 8 4-8z" />
+      <path d="M8 12h13" />
+    </svg>
+  );
+}
+
 export default function ChatInput({ disabled, onSend, documentName }: ChatInputProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,13 +46,6 @@ export default function ChatInput({ disabled, onSend, documentName }: ChatInputP
       setLoading(false);
     }
   };
-
-  const SendIcon = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m4 4 17 8-17 8 4-8z" />
-      <path d="M8 12h13" />
-    </svg>
-  );
 
   return (
     <form onSubmit={handleSubmit} className="chat-form">

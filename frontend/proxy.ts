@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server
 
 import { auth } from "./auth";
 
-const authenticatedMiddleware = auth((req, _event: NextFetchEvent) => {
+const authenticatedProxy = auth((req, _event: NextFetchEvent) => {
   const isLoggedIn = Boolean(req.auth);
   const pathname = req.nextUrl.pathname;
   const isAuthRoute = pathname.startsWith("/api/auth");
@@ -29,8 +29,8 @@ const authenticatedMiddleware = auth((req, _event: NextFetchEvent) => {
 });
 
 // Lazy Auth.js config returns the wrapper asynchronously in the installed v5 beta.
-export default async function middleware(request: NextRequest, event: NextFetchEvent) {
-  const handler = await authenticatedMiddleware;
+export default async function proxy(request: NextRequest, event: NextFetchEvent) {
+  const handler = await authenticatedProxy;
   return handler(request, event);
 }
 

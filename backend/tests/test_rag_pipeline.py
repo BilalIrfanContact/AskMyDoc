@@ -1,6 +1,4 @@
 import json
-import os
-import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -15,22 +13,21 @@ from backend.services.rag_pipeline import (
     _select_retrieval_policy,
     answer_question,
 )
+from backend.tests.fake_supabase import FakeSupabase
 
 
-_usage_dir = None
+_usage_ledger = None
 
 
 def setUpModule():
     """Keep metered test calls out of the real AI spending log."""
-    global _usage_dir, _usage_env
-    _usage_dir = tempfile.TemporaryDirectory()
-    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
-    _usage_env.start()
+    global _usage_ledger
+    _usage_ledger = patch("backend.services.usage_ledger.get_postgrest_client", return_value=FakeSupabase())
+    _usage_ledger.start()
 
 
 def tearDownModule():
-    _usage_env.stop()
-    _usage_dir.cleanup()
+    _usage_ledger.stop()
 
 
 class RagPipelineTestCase(unittest.TestCase):
@@ -47,14 +44,16 @@ class RagPipelineTestCase(unittest.TestCase):
         query_ids=None,
     ):
         vectordb = Mock()
-        vectordb._collection.count.return_value = count
-        vectordb._collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-        vectordb.similarity_search.return_value = docs or []
-        vectordb.get.return_value = {
+        vectordb.count.return_value = count
+        head = {
             "documents": head_documents or [],
             "metadatas": head_metadatas or [],
             "ids": head_ids or [],
         }
+        # A `limit` read is the document's opening chunks; a full read (primary statements) finds none here.
+        vectordb.get.side_effect = lambda **kwargs: (
+            head if kwargs.get("limit") is not None else {"ids": [], "documents": [], "metadatas": []}
+        )
         query_documents = query_documents if query_documents is not None else [
             getattr(doc, "page_content", None) for doc in (docs or [])
         ]
@@ -62,7 +61,7 @@ class RagPipelineTestCase(unittest.TestCase):
             getattr(doc, "metadata", None) for doc in (docs or [])
         ]
         query_ids = query_ids if query_ids is not None else [None for _ in query_documents]
-        vectordb._collection.query.return_value = {
+        vectordb.query.return_value = {
             "documents": [query_documents],
             "metadatas": [query_metadatas],
             "ids": [query_ids],
@@ -108,7 +107,7 @@ class RagPipelineTestCase(unittest.TestCase):
                 )
             ],
         )
-        vectordb._collection.query.assert_called_once_with(
+        vectordb.query.assert_called_once_with(
             query_embeddings=[[0.1, 0.2, 0.3]],
             n_results=4,
             include=["documents", "metadatas"],
@@ -609,12 +608,12 @@ class RagPipelineTestCase(unittest.TestCase):
         self.assertEqual(answer.retrieval_mode, "semantic")
         self.assertEqual(answer.answer_status, "insufficient_context")
         self.assertEqual(answer.citations, [])
-        vectordb._collection.query.assert_called_once_with(
+        vectordb.query.assert_called_once_with(
             query_embeddings=[[0.1, 0.2, 0.3]],
             n_results=4,
             include=["documents", "metadatas"],
         )
-        vectordb.get.assert_not_called()
+        self.assertFalse([call for call in vectordb.get.call_args_list if call.kwargs.get("limit") is not None])
         chat_openai_mock.assert_called_once()
 
     def test_answer_question_logs_retrieval_quality_metrics_for_answered_decision(self):
@@ -777,7 +776,7 @@ class RagPipelineTestCase(unittest.TestCase):
                 )
             ]
         )
-        vectordb._collection.count.side_effect = RuntimeError("count unavailable")
+        vectordb.count.side_effect = RuntimeError("count unavailable")
         llm = Mock()
         llm.invoke.return_value = SimpleNamespace(
             content='{"found_in_excerpts": true, "answer": "The refund window is 30 days."}'
