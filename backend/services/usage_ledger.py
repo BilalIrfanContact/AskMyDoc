@@ -13,10 +13,13 @@ remainder counts against the monthly budget.
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from postgrest.types import ReturnMethod
@@ -29,6 +32,11 @@ DEFAULT_MONTHLY_BUDGET_USD = 5.0
 
 # Supabase's API returns at most 1,000 rows per request.
 PAGE_SIZE = 1000
+# Recording a call is retried this many times, waiting 0.5 s, then 1 s, between attempts.
+RECORD_ATTEMPTS = 3
+RECORD_RETRY_SECONDS = 0.5
+
+logger = logging.getLogger(__name__)
 
 # The ledger stores UTC timestamps; months, days and displayed times use Pakistan time.
 LOCAL_TIMEZONE = ZoneInfo("Asia/Karachi")
@@ -196,10 +204,17 @@ def ensure_budget(provider: str, model: str, estimated_tokens: int | None = None
 
 
 def record(provider: str, model: str, task: str, input_tokens: int, output_tokens: int = 0) -> float:
-    """Add one call to the ledger and return its cost."""
+    """Add one call to the ledger and return its cost. Never raises once the call is priced.
+
+    The provider has already charged for the call, so failing here would throw away a paid reply and invite
+    a retry that pays again. The write is retried under one `usage_id`, so a retry whose first attempt landed
+    can't count twice. If every attempt fails the call is logged instead; the database is then likely down,
+    and `ensure_budget` refuses further paid calls until it can read the ledger again.
+    """
     input_price, output_price = price_of(provider, model)
     cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000
     entry = {
+        "usage_id": str(uuid4()),
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "provider": provider,
         "model": model,
@@ -208,5 +223,15 @@ def record(provider: str, model: str, task: str, input_tokens: int, output_token
         "output_tokens": output_tokens,
         "cost_usd": round(cost, 8),
     }
-    get_postgrest_client().from_("ai_usage").insert(entry, returning=ReturnMethod.minimal).execute()
+    for attempt in range(1, RECORD_ATTEMPTS + 1):
+        try:
+            get_postgrest_client().from_("ai_usage").upsert(
+                entry, on_conflict="usage_id", ignore_duplicates=True, returning=ReturnMethod.minimal
+            ).execute()
+            return cost
+        except Exception:
+            if attempt == RECORD_ATTEMPTS:
+                logger.exception("Could not record AI usage; this call is missing from the ledger: %s", entry)
+            else:
+                time.sleep(RECORD_RETRY_SECONDS * attempt)
     return cost

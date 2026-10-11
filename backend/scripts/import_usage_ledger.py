@@ -1,7 +1,8 @@
 """One-time import of the old local AI spend ledger (`backend/usage/ledger.jsonl`) into Supabase's `ai_usage`.
 
 Carrying the history over keeps this month's spend and the Voyage free-allowance count, since the deployed app
-uses the same provider accounts. Refuses to run if `ai_usage` already has rows, so nothing is counted twice.
+uses the same provider accounts. The whole history goes in one transaction (`import_ai_usage`), which refuses a
+ledger that already has rows, so nothing is counted twice and an interrupted import can simply be run again.
 
     .venv/bin/python -m backend.scripts.import_usage_ledger          # report only
     .venv/bin/python -m backend.scripts.import_usage_ledger --apply  # import
@@ -15,14 +16,12 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from postgrest.types import ReturnMethod
 
 from backend.services.persistence.common import get_postgrest_client
 from backend.services.usage_ledger import local_now, month_spend, usage_totals
 
 
 LEDGER = Path(__file__).resolve().parents[1] / "usage/ledger.jsonl"
-BATCH_SIZE = 500
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,10 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.apply:
         print(f"Would import {len(rows)} calls from {args.ledger}.", file=sys.stderr)
         return 0
-    for start in range(0, len(rows), BATCH_SIZE):
-        client.from_("ai_usage").insert(rows[start : start + BATCH_SIZE], returning=ReturnMethod.minimal).execute()
+    imported = client.rpc("import_ai_usage", {"p_rows": rows}).execute().data
     print(
-        f"Imported {len(rows)} calls. Billed spend for {local_now():%B %Y} is now ${month_spend(usage_totals()):.4f}.",
+        f"Imported {imported} calls. Billed spend for {local_now():%B %Y} is now ${month_spend(usage_totals()):.4f}.",
         file=sys.stderr,
     )
     return 0

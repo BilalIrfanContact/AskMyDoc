@@ -33,6 +33,25 @@ class UsageLedgerTestCase(UsageTestCase):
         [entry] = usage_ledger.read_entries()
         self.assertEqual((entry["task"], entry["input_tokens"], entry["output_tokens"]), ("answer", 1_000_000, 100_000))
 
+    def test_a_failed_ledger_write_is_retried_without_counting_the_call_twice(self):
+        self.database.failed_writes = 1
+        self.database.lost_write_replies = 1  # The retry lands, but its reply is lost, so it's tried once more.
+
+        with patch("backend.services.usage_ledger.time.sleep"):
+            usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 1_000_000)
+
+        self.assertEqual(len(usage_ledger.read_entries()), 1)
+        self.assertAlmostEqual(usage_ledger.month_spend(), 0.15)
+
+    def test_an_unrecordable_call_keeps_its_reply_and_is_logged(self):
+        self.database.failed_writes = usage_ledger.RECORD_ATTEMPTS
+
+        with patch("backend.services.usage_ledger.time.sleep"), self.assertLogs("backend.services.usage_ledger", "ERROR"):
+            cost = usage_ledger.record("groq", "openai/gpt-oss-120b", "answer", 1_000_000)
+
+        self.assertAlmostEqual(cost, 0.15)
+        self.assertEqual(usage_ledger.read_entries(), [])
+
     def test_spend_from_earlier_months_does_not_count(self):
         # 18:59 UTC on Aug 31 is 23:59 in Pakistan, still August; 19:30 UTC is already September there.
         groq = {"provider": "groq", "model": "openai/gpt-oss-20b", "task": "answer", "input_tokens": 1, "output_tokens": 0}

@@ -36,7 +36,7 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         migrations = Path(__file__).resolve().parents[2] / 'supabase/migrations'
         for migration in sorted(migrations.glob('*.sql')):
             # The chunk store and spend ledger are checked by test_supabase_functions_database.
-            if migration.name not in ('202610110001_document_chunks.sql', '202610110002_ai_usage.sql'):
+            if migration.name not in ('202610110001_document_chunks.sql', '202610110002_ai_usage.sql', '202610110003_usage_ids_and_atomic_import.sql'):
                 cls.sql(migration.read_text())
 
     @classmethod
