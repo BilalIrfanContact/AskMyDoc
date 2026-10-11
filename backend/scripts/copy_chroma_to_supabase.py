@@ -6,7 +6,7 @@ those, only ones embedded with the current model and input format are copied; ol
 anyway and are listed as skipped (re-embed them later with `reindex_documents`). Documents Supabase already has
 are skipped, so the copy can be rerun after a failure.
 
-Reads `backend/chroma_db`, so it needs `chromadb==0.5.5`, which the app no longer installs.
+Reads `backend/chroma_db` (or `--chroma`, such as a benchmark run's store), so it needs `chromadb==0.5.5`, which the app no longer installs.
 
     .venv/bin/python -m backend.scripts.copy_chroma_to_supabase          # report only
     .venv/bin/python -m backend.scripts.copy_chroma_to_supabase --apply  # copy
@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Copy the benchmark filings' Chroma indexes into Supabase.")
     parser.add_argument("--apply", action="store_true", help="Write to Supabase; without it, only report.")
     parser.add_argument("--indexed", type=Path, default=EVAL_INDEX, help="Eval index file listing the documents to copy.")
+    parser.add_argument("--chroma", type=Path, default=CHROMA_DIRECTORY, help="Chroma folder to copy from.")
     args = parser.parse_args(argv)
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -42,8 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     from chromadb.config import Settings
 
     client = chromadb.PersistentClient(
-        path=str(CHROMA_DIRECTORY),
-        settings=Settings(anonymized_telemetry=False, is_persistent=True, persist_directory=str(CHROMA_DIRECTORY)),
+        path=str(args.chroma),
+        settings=Settings(anonymized_telemetry=False, is_persistent=True, persist_directory=str(args.chroma)),
     )
     wanted = {entry["document_id"] for entry in json.loads(args.indexed.read_text())["documents"]}
     already_copied = set(list_document_ids())
