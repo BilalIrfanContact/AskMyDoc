@@ -17,12 +17,12 @@ from dotenv import load_dotenv
 from backend.bootstrap import initialize_backend_environment
 from backend.services.evidence_planner import plan_evidence
 from backend.services.ai_providers import chat_adapter
-from backend.services.rag_adapters import ChromaRetrievalAdapter
+from backend.services.rag_adapters import ChunkRetrievalAdapter
 from backend.services.vector_store import get_vector_store
 
 
 DEFAULT_LIMITS = (4, 8)
-RetrieverFactory = Callable[[str], ChromaRetrievalAdapter]
+RetrieverFactory = Callable[[str], ChunkRetrievalAdapter]
 
 
 def evaluate_chunk_ids(
@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = evaluate_cases(
             _load_cases(args.cases),
-            retriever_factory=lambda document_id: ChromaRetrievalAdapter(
+            retriever_factory=lambda document_id: ChunkRetrievalAdapter(
                 get_vector_store(document_id), hybrid=args.hybrid, planner=planner, reranker=reranker
             ),
             limits=args.limits,

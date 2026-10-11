@@ -12,7 +12,7 @@ from .pdf_extractor import extract_pdf_pages
 from .persistence import PersistenceError
 from .persistence.storage_repository import download_storage_object
 from .text_chunker import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, chunk_text
-from .vector_store import get_persisted_collection
+from .vector_store import open_index
 
 
 _CHUNK_INDEX_PATTERN = re.compile(r":chunk:(\d+)$")
@@ -138,7 +138,7 @@ def _failed_report(document: dict[str, Any], warning: str) -> dict[str, Any]:
 def inspect_document_chunks(document_id: str, user_id: str) -> dict[str, Any]:
     """Build a read-only report for a document owned by ``user_id``.
 
-    This deliberately opens Chroma's persisted collection directly so the
+    This deliberately opens the document's stored index directly so the
     inspection never constructs an embedding model or writes to the index.
     """
     document = require_user_document(document_id=document_id, user_id=user_id)
@@ -171,17 +171,17 @@ def inspect_document_chunks(document_id: str, user_id: str) -> dict[str, Any]:
                 + "."
             )
         warnings.append(
-            "Chroma metadata has no stored page locations; page ranges below are derived by matching chunk text to the source extraction."
+            "Chunk metadata has no stored page locations; page ranges below are derived by matching chunk text to the source extraction."
         )
     else:
         warnings.append("This document has no PDF page metadata; its source is represented as one text section.")
     warnings.append("Heading metadata is not stored; headings remain part of the exact chunk text.")
 
     try:
-        collection = get_persisted_collection(document_id)
+        collection = open_index(document_id)
         stored = collection.get(include=["documents", "metadatas"])
     except Exception:
-        return _failed_report(document, "The persisted Chroma collection could not be read.")
+        return _failed_report(document, "The stored chunk index could not be read.")
 
     ids = stored.get("ids") or []
     texts = stored.get("documents") or []
@@ -208,7 +208,7 @@ def inspect_document_chunks(document_id: str, user_id: str) -> dict[str, Any]:
 
     if len(derived_chunks) != len(rows):
         warnings.append(
-            f"The current extraction/chunking pass produced {len(derived_chunks)} chunks, while Chroma contains {len(rows)}."
+            f"The current extraction/chunking pass produced {len(derived_chunks)} chunks, while the stored index contains {len(rows)}."
         )
 
     chunks: list[dict[str, Any]] = []

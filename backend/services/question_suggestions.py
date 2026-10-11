@@ -4,7 +4,7 @@ from typing import Callable
 
 
 from .ai_providers import chat_adapter
-from .rag_adapters import ChromaRetrievalAdapter
+from .rag_adapters import ChunkRetrievalAdapter
 from .rag_pipeline import GenerationAdapter, RetrievalAdapter
 from .vector_store import get_vector_store
 
@@ -21,7 +21,7 @@ class QuestionSuggestionDependencies:
 
 def _default_dependencies() -> QuestionSuggestionDependencies:
     return QuestionSuggestionDependencies(
-        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
+        retrieval_factory=lambda document_id: ChunkRetrievalAdapter(
             get_vector_store(document_id=document_id),
         ),
         generation=chat_adapter("suggest"),

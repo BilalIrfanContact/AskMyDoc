@@ -35,7 +35,9 @@ class DemoLimitsDatabaseTestCase(unittest.TestCase):
         cls.sql(f"insert into documents select gen_random_uuid(),'{cls.legacy_user}' from generate_series(1,3);")
         migrations = Path(__file__).resolve().parents[2] / 'supabase/migrations'
         for migration in sorted(migrations.glob('*.sql')):
-            cls.sql(migration.read_text())
+            # The chunk store needs pgvector and is checked by test_document_chunks_database.
+            if not migration.name.endswith('_document_chunks.sql'):
+                cls.sql(migration.read_text())
 
     @classmethod
     def stop_database(cls):

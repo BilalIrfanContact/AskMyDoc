@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from backend.services.financial_statements import statement_chunk_positions
-from backend.services.rag_adapters import ChromaRetrievalAdapter
+from backend.services.rag_adapters import ChunkRetrievalAdapter
 from backend.services.rag_pipeline import AnswerCitation, RetrievedContext
 
 
@@ -38,12 +38,12 @@ class RetrievalWithStatementsTestCase(unittest.TestCase):
     def test_statements_follow_the_search_results_without_repeating_them(self):
         texts = ["intro", table("Consolidated Balance Sheets"), "Notes"]
         vectordb = Mock()
-        vectordb._collection.get.return_value = {
+        vectordb.get.return_value = {
             "ids": [f"doc:chunk:{i}" for i in range(3)],
             "documents": texts,
             "metadatas": [{"chunk_id": f"doc:chunk:{i}", "chunk_index": i} for i in range(3)],
         }
-        adapter = ChromaRetrievalAdapter(vectordb, statements=True)
+        adapter = ChunkRetrievalAdapter(vectordb, statements=True)
         searched = RetrievedContext(text="Notes", citations=[AnswerCitation("doc:chunk:2", "Notes")], retrieved_document_count=1)
         adapter._semantic_context = lambda question, limit: searched
 

@@ -27,6 +27,11 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
 
+      - name: Install pgvector for the chunk store database tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "postgresql-$(ls /usr/lib/postgresql | sort -n | tail -1)-pgvector"
+
       - name: Run backend tests
         env:
           ASKMYDOC_REQUIRE_POSTGRES: "1"

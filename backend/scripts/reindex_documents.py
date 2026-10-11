@@ -1,6 +1,6 @@
 """Re-embed already-stored documents in place with the current embedding model, keeping their IDs.
 
-Reads each collection's stored chunks and replaces the collection only once the new vectors are ready, so
+Reads each document's stored chunks and replaces them only once the new vectors are stored, so
 chunk IDs, the app's library and eval gold mappings stay valid. Existing chunk metadata (such as labels from
 the earlier labelling experiment) is kept. No chat model calls are made, only embeddings. Use it after changing
 embedding models.
@@ -19,18 +19,16 @@ from dotenv import load_dotenv
 
 from backend.bootstrap import initialize_backend_environment
 from backend.services.vector_store import (
-    get_persisted_collection,
     list_document_ids,
+    open_index,
     prepare_index_payload,
-    replace_index_payload,
-    restore_interrupted_swap,
+    write_index_payload,
 )
 
 
 def reindex_document(document_id: str) -> str:
     """Re-embed one document in place and return "reembedded"."""
-    restore_interrupted_swap(document_id)
-    stored = get_persisted_collection(document_id).get(include=["documents", "metadatas"])
+    stored = open_index(document_id).get(include=["documents", "metadatas"])
     rows = sorted(
         zip(stored["ids"], stored["documents"], stored["metadatas"]),
         key=lambda row: int(row[0].rsplit(":", 1)[1]),
@@ -41,14 +39,14 @@ def reindex_document(document_id: str) -> str:
 
     chunks = [document for _, document, _ in rows]
     payload = prepare_index_payload(document_id, chunks, [metadata or {} for _, _, metadata in rows])
-    replace_index_payload(document_id, payload)
+    write_index_payload(document_id, payload)
     return "reembedded"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Re-embed stored documents in place with the current embedding model.")
     parser.add_argument("document_ids", nargs="*", help="Documents to re-embed.")
-    parser.add_argument("--all", action="store_true", help="Re-embed every document in the local store.")
+    parser.add_argument("--all", action="store_true", help="Re-embed every document with a stored index.")
     args = parser.parse_args(argv)
     if bool(args.all) == bool(args.document_ids):
         parser.error("pass document IDs or --all, not both")

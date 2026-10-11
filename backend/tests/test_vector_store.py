@@ -1,102 +1,106 @@
-import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-import chromadb
-
 from backend.services.vector_store import (
     IndexPayload,
+    MissingIndex,
     StaleEmbeddings,
     build_vector_store,
+    delete_vector_store,
     get_vector_store,
     list_document_ids,
-    replace_index_payload,
+    open_index,
     write_index_payload,
 )
+from backend.tests.chunk_database_fake import FakeChunkDatabase
+
+
+def _payload(document_id: str, texts: list[str], vectors: list[list[float]]) -> IndexPayload:
+    ids = [f"{document_id}:chunk:{index}" for index in range(len(texts))]
+    return IndexPayload(
+        ids=ids,
+        documents=texts,
+        embeddings=vectors,
+        metadatas=[{"chunk_id": chunk_id, "chunk_index": index} for index, chunk_id in enumerate(ids)],
+    )
 
 
 class VectorStoreTestCase(unittest.TestCase):
-    def test_build_vector_store_embeds_plain_text_without_labelling(self):
-        embeddings = Mock()
-        embeddings.embed_documents.return_value = [[0.1], [0.2]]
-        collection = Mock()
-        collection.count.return_value = 2
-        client = Mock()
-        client.create_collection.return_value = collection
+    def setUp(self):
+        self.database = FakeChunkDatabase()
+        self.embeddings = Mock()
+        for target, value in [
+            ("get_postgrest_client", self.database),
+            ("get_embedding_model", self.embeddings),
+            ("embedding_model_name", "test-model"),
+        ]:
+            patcher = patch(f"backend.services.vector_store.{target}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
-        with (
-            patch("backend.services.vector_store.get_embedding_model", return_value=embeddings),
-            patch("backend.services.vector_store.chromadb.PersistentClient", return_value=client),
-        ):
-            stored_count = build_vector_store("doc-1", ["alpha", "beta"])
+    def test_built_document_is_searchable_nearest_first_in_chroma_shape(self):
+        self.embeddings.embed_documents.return_value = [[1.0, 0.0], [0.0, 1.0], [0.7, 0.7]]
 
-        self.assertEqual(stored_count, 2)
-        embeddings.embed_documents.assert_called_once_with(
-            ["alpha", "beta"]
-        )
-        added = collection.add.call_args.kwargs
-        self.assertEqual(added["ids"], ["doc-1:chunk:0", "doc-1:chunk:1"])
-        self.assertEqual(added["documents"], ["alpha", "beta"])
-        self.assertEqual(
-            added["metadatas"],
-            [
-                {"chunk_id": "doc-1:chunk:0", "chunk_index": 0},
-                {"chunk_id": "doc-1:chunk:1", "chunk_index": 1},
-            ],
-        )
-        self.assertEqual(client.create_collection.call_args.kwargs["metadata"]["embedding_input"], "plain")
+        stored = build_vector_store("doc", ["revenue", "risk factors", "both"])
+        store = get_vector_store("doc")
+        found = store.query(query_embeddings=[[0.0, 1.0]], n_results=2, include=["documents", "metadatas"])
 
-    def test_labelled_voyage_index_must_be_reembedded_before_search(self):
-        collection = Mock(metadata={"embedding_model": "voyage-4-lite"})
-        with (
-            patch("backend.services.vector_store.get_persisted_collection", return_value=collection),
-            patch("backend.services.vector_store.embedding_model_name", return_value="voyage-4-lite"),
-            patch("backend.services.vector_store.get_embedding_model") as embeddings,
-        ):
-            with self.assertRaises(StaleEmbeddings):
-                get_vector_store("doc-1")
-        embeddings.assert_not_called()
+        self.assertEqual(stored, 3)
+        self.embeddings.embed_documents.assert_called_once_with(["revenue", "risk factors", "both"])
+        self.assertEqual(store.count(), 3)
+        self.assertIs(store.embeddings, self.embeddings)
+        self.assertEqual(found["ids"], [["doc:chunk:1", "doc:chunk:2"]])
+        self.assertEqual(found["documents"], [["risk factors", "both"]])
+        self.assertEqual(found["metadatas"][0][0], {"chunk_id": "doc:chunk:1", "chunk_index": 1})
 
-    def test_replacing_a_collection_keeps_the_old_one_until_the_new_one_is_written(self):
-        old = IndexPayload(ids=["doc-1:chunk:0"], documents=["old"], embeddings=[[1.0, 0.0, 0.0]], metadatas=[{"chunk_index": 0}])
-        broken = IndexPayload(ids=["doc-1:chunk:0"], documents=["new"], embeddings=[], metadatas=[{"chunk_index": 0}])
-        new = IndexPayload(ids=["doc-1:chunk:0"], documents=["new"], embeddings=[[0.0, 1.0]], metadatas=[{"chunk_index": 0}])
+    def test_nul_characters_from_pdf_extraction_are_dropped_before_storing(self):
+        write_index_payload("doc", _payload("doc", ["Total\x00 revenue"], [[1.0]]))
 
-        with tempfile.TemporaryDirectory() as directory, patch("backend.services.vector_store.PERSIST_DIRECTORY", directory):
-            write_index_payload("doc-1", old)
-            with self.assertRaises(Exception):
-                replace_index_payload("doc-1", broken)
-            client = chromadb.PersistentClient(path=directory)
-            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["old"])
-            self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
+        self.assertEqual(open_index("doc").get()["documents"], ["Total revenue"])
 
-            real_get = chromadb.api.client.Client.get_collection
-            def failing_swap(client, name, *args, **kwargs):
-                if name == "doc-1-reindex":
-                    raise RuntimeError("rename failed")
-                return real_get(client, name, *args, **kwargs)
-            with patch.object(chromadb.api.client.Client, "get_collection", failing_swap):
-                with self.assertRaises(RuntimeError):
-                    replace_index_payload("doc-1", new)
-            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["old"])
+    def test_failed_reindex_keeps_the_old_chunks_and_removes_the_new_ones(self):
+        write_index_payload("doc", _payload("doc", ["old"], [[1.0, 0.0]]))
+        self.database.fail_commit = True
 
-            self.assertEqual(replace_index_payload("doc-1", new), 1)
-            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["new"])
-            self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
+        with self.assertRaises(RuntimeError):
+            write_index_payload("doc", _payload("doc", ["new 0", "new 1"], [[0.0, 1.0], [1.0, 1.0]]))
 
-    def test_a_swap_interrupted_between_its_renames_is_undone_by_the_next_one(self):
-        old = IndexPayload(ids=["doc-1:chunk:0"], documents=["old"], embeddings=[[1.0, 0.0]], metadatas=[{"chunk_index": 0}])
-        new = IndexPayload(ids=["doc-1:chunk:0"], documents=["new"], embeddings=[[0.0, 1.0]], metadatas=[{"chunk_index": 0}])
+        self.assertEqual(open_index("doc").get()["documents"], ["old"])
+        self.assertEqual(len(self.database.tables["document_chunks"]), 1)
 
-        with tempfile.TemporaryDirectory() as directory, patch("backend.services.vector_store.PERSIST_DIRECTORY", directory):
-            write_index_payload("doc-1-previous", old)  # The old copy was set aside, then the process stopped.
-            self.assertEqual(list_document_ids(), [])
+        self.database.fail_commit = False
+        write_index_payload("doc", _payload("doc", ["new 0", "new 1"], [[0.0, 1.0], [1.0, 1.0]]))
+        self.assertEqual(open_index("doc").get()["documents"], ["new 0", "new 1"])
+        self.assertEqual(len(self.database.tables["document_chunks"]), 2)
 
-            self.assertEqual(replace_index_payload("doc-1", new), 1)
-            client = chromadb.PersistentClient(path=directory)
-            self.assertEqual(client.get_collection("doc-1").get()["documents"], ["new"])
-            self.assertEqual(list_document_ids(), ["doc-1"])
-            self.assertEqual([getattr(c, "name", c) for c in client.list_collections()], ["doc-1"])
+    def test_reads_page_past_the_api_row_cap_and_honor_ids_and_limit(self):
+        texts = [f"chunk {index}" for index in range(5)]
+        write_index_payload("doc", _payload("doc", texts, [[1.0, float(index)] for index in range(5)]))
+        store = open_index("doc")
+
+        with patch("backend.services.vector_store.PAGE_SIZE", 2):
+            self.assertEqual(store.get()["documents"], texts)
+            self.assertEqual(store.get(limit=3)["documents"], texts[:3])
+            self.assertEqual(store.get(ids=["doc:chunk:4", "doc:chunk:1"])["ids"], ["doc:chunk:1", "doc:chunk:4"])
+            self.assertEqual(store.get(ids=[]), {"ids": [], "documents": [], "metadatas": []})
+
+    def test_search_refuses_documents_embedded_with_another_model_or_not_indexed(self):
+        write_index_payload("old", _payload("old", ["text"], [[1.0]]), embedding_model="voyage-3")
+
+        with self.assertRaises(StaleEmbeddings):
+            get_vector_store("old")
+        with self.assertRaises(MissingIndex):
+            get_vector_store("never-indexed")
+
+    def test_deleting_removes_the_index_and_its_chunks(self):
+        write_index_payload("keep", _payload("keep", ["a"], [[1.0]]))
+        write_index_payload("drop", _payload("drop", ["b", "c"], [[1.0], [0.5]]))
+
+        delete_vector_store("drop")
+        delete_vector_store("never-indexed")
+
+        self.assertEqual(list_document_ids(), ["keep"])
+        self.assertEqual({row["document_id"] for row in self.database.tables["document_chunks"]}, {"keep"})
 
 
 if __name__ == "__main__":

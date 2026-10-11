@@ -13,7 +13,7 @@ class UploadResponse(BaseModel):
     lifecycle_status: Literal["ready"] = Field(..., description="Lifecycle state for the upload flow")
     document_id: str = Field(..., description="UUID for the uploaded document")
     chunk_count: int = Field(..., description="Number of chunks stored for retrieval")
-    stored_count: int = Field(..., description="Number of chunks persisted in Chroma")
+    stored_count: int = Field(..., description="Number of chunks stored in the search index")
 
 
 class UploadErrorDetail(BaseModel):

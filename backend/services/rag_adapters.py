@@ -4,6 +4,7 @@ from .evidence_reranker import RERANK_POOL, Candidate, pick_evidence
 from .financial_statements import statement_chunk_positions
 from .keyword_search import bm25_rank, reciprocal_rank_fusion
 from .rag_pipeline import AnswerCitation, GenerationAdapter, RetrievedContext
+from .vector_store import ChunkStore
 
 
 RetrievalMode = Literal["head", "semantic"]
@@ -33,8 +34,8 @@ def select_with_reserved_slots(question_ranking: Sequence[str], need_rankings: S
     return picked
 
 
-class ChromaRetrievalAdapter:
-    """Keep Chroma's concrete and private details outside the answer policy.
+class ChunkRetrievalAdapter:
+    """Retrieve one document's chunks from its `ChunkStore`, keeping search strategy outside the answer policy.
 
     `hybrid`, `reranker` and `planner` are separate search strategies; pass at most one.
 
@@ -56,7 +57,7 @@ class ChromaRetrievalAdapter:
 
     def __init__(
         self,
-        vectordb,
+        store: ChunkStore,
         hybrid: bool = False,
         planner: Planner | None = None,
         reranker: GenerationAdapter | None = None,
@@ -64,7 +65,7 @@ class ChromaRetrievalAdapter:
     ):
         if sum([hybrid, planner is not None, reranker is not None]) > 1:
             raise ValueError("use one of hybrid, planner or reranker; they don't combine")
-        self._vectordb = vectordb
+        self._store = store
         self._statements = statements
         self._reranker = reranker
         self._hybrid = hybrid
@@ -74,7 +75,7 @@ class ChromaRetrievalAdapter:
 
     def count(self) -> int | None:
         try:
-            return self._vectordb._collection.count()
+            return self._store.count()
         except Exception:
             return None
 
@@ -93,7 +94,7 @@ class ChromaRetrievalAdapter:
 
     def _with_statements(self, context: RetrievedContext) -> RetrievedContext:
         """`context` followed by the primary statement chunks it doesn't already hold."""
-        stored = self._vectordb._collection.get(include=["documents", "metadatas"])
+        stored = self._store.get(include=["documents", "metadatas"])
         rows = sorted(
             zip(stored.get("ids") or [], stored.get("documents") or [], stored.get("metadatas") or []),
             key=lambda row: (row[2] or {}).get("chunk_index", 0),
@@ -113,7 +114,7 @@ class ChromaRetrievalAdapter:
         )
 
     def _head_context(self, limit: int) -> RetrievedContext:
-        result = self._vectordb.get(limit=limit, include=["documents", "metadatas"])
+        result = self._store.get(limit=limit, include=["documents", "metadatas"])
         documents: Sequence[str] = result.get("documents") or []
         metadatas: Sequence[dict | None] = result.get("metadatas") or []
         ids: Sequence[str | None] = result.get("ids") or []
@@ -134,11 +135,11 @@ class ChromaRetrievalAdapter:
         )
 
     def _semantic_context(self, question: str, limit: int) -> RetrievedContext:
-        embedding_function = getattr(self._vectordb, "embeddings", None)
+        embedding_function = self._store.embeddings
         if embedding_function is None:
             raise ValueError("Vector store is missing an embedding function.")
         query_embedding = embedding_function.embed_query(question)
-        result = self._vectordb._collection.query(
+        result = self._store.query(
             query_embeddings=[query_embedding],
             n_results=limit,
             include=["documents", "metadatas"],
@@ -188,7 +189,7 @@ class ChromaRetrievalAdapter:
         """Legacy labels for the eval scripts' evidence picker; new uploads have none."""
         if not chunk_ids:
             return {}
-        stored = self._vectordb._collection.get(ids=list(chunk_ids), include=["metadatas"])
+        stored = self._store.get(ids=list(chunk_ids), include=["metadatas"])
         return {
             chunk_id: (metadata or {}).get("label") or ""
             for chunk_id, metadata in zip(stored.get("ids") or [], stored.get("metadatas") or [])
@@ -199,19 +200,18 @@ class ChromaRetrievalAdapter:
             self._plans[question] = self._planner(question)
         needs = self._plans[question]
         self.last_plan = needs
-        embedding_function = getattr(self._vectordb, "embeddings", None)
+        embedding_function = self._store.embeddings
         if embedding_function is None:
             raise ValueError("Vector store is missing an embedding function.")
-        collection = self._vectordb._collection
         queries = [question, *needs]
-        found = collection.query(
+        found = self._store.query(
             query_embeddings=embedding_function.embed_documents(queries),
             n_results=max(PLANNED_CANDIDATES, limit),
             include=[],
         )
         rankings = found.get("ids") or [[] for _ in queries]
         chosen = select_with_reserved_slots(rankings[0], rankings[1:], limit)
-        stored = collection.get(ids=chosen, include=["documents", "metadatas"])
+        stored = self._store.get(ids=chosen, include=["documents", "metadatas"])
         by_id = {
             chunk_id: (document, metadata)
             for chunk_id, document, metadata in zip(stored.get("ids") or [], stored.get("documents") or [], stored.get("metadatas") or [])
@@ -234,17 +234,16 @@ class ChromaRetrievalAdapter:
         )
 
     def _hybrid_context(self, question: str, limit: int) -> RetrievedContext:
-        embedding_function = getattr(self._vectordb, "embeddings", None)
+        embedding_function = self._store.embeddings
         if embedding_function is None:
             raise ValueError("Vector store is missing an embedding function.")
-        collection = self._vectordb._collection
-        semantic = collection.query(
+        semantic = self._store.query(
             query_embeddings=[embedding_function.embed_query(question)],
             n_results=HYBRID_CANDIDATES,
             include=[],
         )
         semantic_ids = (semantic.get("ids") or [[]])[0]
-        stored = collection.get(include=["documents", "metadatas"])
+        stored = self._store.get(include=["documents", "metadatas"])
         ids: Sequence[str] = stored.get("ids") or []
         documents: Sequence[str | None] = stored.get("documents") or []
         metadatas: Sequence[dict | None] = stored.get("metadatas") or []

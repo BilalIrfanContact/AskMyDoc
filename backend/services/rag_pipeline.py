@@ -301,10 +301,10 @@ def _default_generation_adapter() -> GenerationAdapter:
 
 
 def _default_dependencies() -> RagDependencies:
-    from .rag_adapters import ChromaRetrievalAdapter
+    from .rag_adapters import ChunkRetrievalAdapter
 
     return RagDependencies(
-        retrieval_factory=lambda document_id: ChromaRetrievalAdapter(
+        retrieval_factory=lambda document_id: ChunkRetrievalAdapter(
             get_vector_store(document_id=document_id), statements=True
         ),
         generation=_default_generation_adapter(),
