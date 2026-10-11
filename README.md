@@ -222,13 +222,13 @@ flowchart LR
     FREE -- no --> SPENT{This month's billed spend<br/>below the budget?}
     SPENT -- yes --> RUN
     SPENT -- no --> STOP[Refuse with a clear message]
-    RUN --> LOG[Record reported tokens and cost<br/>in the ledger] --> DASH[Rebuild the local dashboard]
+    RUN --> LOG[Record reported tokens and cost<br/>in the Supabase ledger]
 ```
 
 - **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark used `openai/gpt-oss-120b` for answers; the default is the smaller `gpt-oss-20b`.
-- **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a local ledger (`backend/usage/ledger.jsonl`) and prices them from a table of list prices.
+- **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a ledger table in Supabase (`ai_usage`) and prices them from a table of list prices. Keeping it in the database means the budget survives restarts and redeploys.
 - **A monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, new paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working. Cost is recorded after a call returns, so calls already in flight when the limit is reached can take spend slightly past it, by cents at this app's scale.
-- **A local dashboard.** `backend/usage/dashboard.html` shows spend against the budget, by model and by job, and how much of the free allowance is used.
+- **A local dashboard.** `python -m backend.services.usage_dashboard` writes `backend/usage/dashboard.html` from the ledger, showing spend against the budget, by model and by job, and how much of the free allowance is used.
 
 ---
 
