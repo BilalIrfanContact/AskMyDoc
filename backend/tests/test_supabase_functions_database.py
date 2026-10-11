@@ -1,4 +1,5 @@
-"""Exercise the chunk store's production SQL with a disposable local PostgreSQL server and pgvector, never Supabase."""
+"""Exercise the chunk store's and spend ledger's production SQL with a disposable local PostgreSQL server and
+pgvector, never Supabase."""
 import glob
 import os
 from pathlib import Path
@@ -8,17 +9,20 @@ import unittest
 from uuid import uuid4
 
 
-MIGRATION = Path(__file__).resolve().parents[2] / "supabase/migrations/202610110001_document_chunks.sql"
+MIGRATIONS = [
+    Path(__file__).resolve().parents[2] / "supabase/migrations" / name
+    for name in ("202610110001_document_chunks.sql", "202610110002_ai_usage.sql")
+]
 
 
-class DocumentChunksDatabaseTestCase(unittest.TestCase):
+class SupabaseFunctionsDatabaseTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         binaries = sorted(glob.glob("/usr/lib/postgresql/*/bin/pg_ctl"))
         if not binaries or os.getuid() == 0:
             cls.unavailable("Local PostgreSQL binaries and a non-root user are required")
         cls.bin = Path(binaries[-1]).parent
-        cls.temp = tempfile.TemporaryDirectory(prefix="askmydoc-chunks-")
+        cls.temp = tempfile.TemporaryDirectory(prefix="askmydoc-functions-")
         cls.data = Path(cls.temp.name) / "data"
         subprocess.run([str(cls.bin / "initdb"), "-D", str(cls.data), "-A", "trust", "--no-locale", "-E", "UTF8"], check=True, capture_output=True)
         subprocess.run([str(cls.bin / "pg_ctl"), "-D", str(cls.data), "-l", str(Path(cls.temp.name) / "server.log"),
@@ -29,7 +33,8 @@ class DocumentChunksDatabaseTestCase(unittest.TestCase):
         # Like Supabase: the service role bypasses row-level security, and every API role can use `extensions`.
         cls.sql("create role anon; create role authenticated; create role service_role bypassrls; "
             "create schema extensions; grant usage on schema extensions to anon, authenticated, service_role;")
-        cls.sql(MIGRATION.read_text())
+        for migration in MIGRATIONS:
+            cls.sql(migration.read_text())
 
     @classmethod
     def unavailable(cls, reason):
@@ -91,6 +96,23 @@ class DocumentChunksDatabaseTestCase(unittest.TestCase):
     def test_browser_roles_cannot_read_chunks(self):
         with self.assertRaisesRegex(AssertionError, "permission denied"):
             self.sql("set role anon; select count(*) from public.document_chunks;")
+
+    def test_usage_totals_split_tokens_at_the_month_start_and_sum_only_that_months_cost(self):
+        self.sql("set role service_role; insert into public.ai_usage (created_at, provider, model, task, input_tokens, output_tokens, cost_usd) values "
+            "('2026-09-30 18:59:59+00','voyage','voyage-4-lite','embed',100,0,0.002),"
+            "('2026-09-30 19:00:00+00','voyage','voyage-4-lite','embed',40,0,0.0008),"
+            "('2026-10-05 00:00:00+00','groq','openai/gpt-oss-120b','answer',1000,200,0.27),"
+            "('2026-11-01 00:00:00+00','groq','openai/gpt-oss-120b','answer',5,5,0.01);")
+
+        totals = self.sql("set role service_role; select string_agg(concat_ws('|', provider, tokens_before, tokens_in_month, cost_in_month), ',' order by provider) "
+            "from public.ai_usage_totals('2026-10-01 00:00:00+05', '2026-11-01 00:00:00+05');")
+
+        # October in Pakistan time starts at 2026-09-30 19:00 UTC; the November row falls after the month.
+        self.assertEqual(totals, "groq|0|1200|0.27,voyage|100|40|0.0008")
+
+    def test_browser_roles_cannot_read_usage(self):
+        with self.assertRaisesRegex(AssertionError, "permission denied"):
+            self.sql("set role authenticated; select count(*) from public.ai_usage;")
 
 
 if __name__ == "__main__":

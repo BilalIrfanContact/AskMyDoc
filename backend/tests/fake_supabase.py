@@ -1,15 +1,16 @@
-"""In-memory stand-in for the Supabase chunk tables, answering the PostgREST calls `vector_store` makes.
+"""In-memory stand-in for Supabase, answering the PostgREST calls `vector_store` and `usage_ledger` make.
 
-`commit_document_index` and `match_document_chunks` mirror the SQL functions in
-`supabase/migrations/202610110001_document_chunks.sql`; `test_document_chunks_database` checks the real SQL.
+Its functions mirror the SQL in `supabase/migrations/202610110001_document_chunks.sql` and
+`202610110002_ai_usage.sql`; `test_supabase_functions_database` checks the real SQL.
 """
 
 import math
+from datetime import datetime
 
 
-class FakeChunkDatabase:
+class FakeSupabase:
     def __init__(self):
-        self.tables: dict[str, list[dict]] = {"document_indexes": [], "document_chunks": []}
+        self.tables: dict[str, list[dict]] = {"document_indexes": [], "document_chunks": [], "ai_usage": []}
         self.fail_commit = False
         self.request_count = 0
 
@@ -49,6 +50,23 @@ class FakeChunkDatabase:
         return [{key: row[key] for key in ("chunk_id", "chunk_index", "content", "metadata")} for row in rows[:p_count]]
 
 
+    def ai_usage_totals(self, p_month_start, p_month_end):
+        start, end = datetime.fromisoformat(p_month_start), datetime.fromisoformat(p_month_end)
+        totals: dict[tuple[str, str], dict] = {}
+        for row in self.tables["ai_usage"]:
+            total = totals.setdefault(
+                (row["provider"], row["model"]),
+                {"provider": row["provider"], "model": row["model"], "tokens_before": 0, "tokens_in_month": 0, "cost_in_month": 0.0},
+            )
+            tokens, created = row["input_tokens"] + row["output_tokens"], datetime.fromisoformat(row["created_at"])
+            if created < start:
+                total["tokens_before"] += tokens
+            elif created < end:
+                total["tokens_in_month"] += tokens
+                total["cost_in_month"] += row["cost_usd"]
+        return list(totals.values())
+
+
 def _cosine_distance(left, right) -> float:
     dot = sum(a * b for a, b in zip(left, right))
     return 1 - dot / (math.hypot(*left) * math.hypot(*right))
@@ -63,7 +81,7 @@ class _Result:
 
 
 class _Query:
-    def __init__(self, database: FakeChunkDatabase, table: str):
+    def __init__(self, database: FakeSupabase, table: str):
         self._database = database
         self._table = table
         self._action = "select"
@@ -77,8 +95,8 @@ class _Query:
         self._columns = [column.strip() for column in columns.split(",")]
         return self
 
-    def insert(self, rows: list[dict], returning=None) -> "_Query":
-        self._action, self._rows = "insert", rows
+    def insert(self, rows: list[dict] | dict, returning=None) -> "_Query":
+        self._action, self._rows = "insert", rows if isinstance(rows, list) else [rows]
         return self
 
     def delete(self) -> "_Query":
@@ -110,7 +128,7 @@ class _Query:
         self._database.request_count += 1
         table = self._database.tables[self._table]
         if self._action == "insert":
-            table.extend(dict(row) for row in self._rows)
+            table.extend({"id": len(table) + offset + 1, **row} for offset, row in enumerate(self._rows))
             return _Result([])
         matches = [row for row in table if all(keep(row) for keep in self._filters)]
         if self._action == "delete":

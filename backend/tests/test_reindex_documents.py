@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 from backend.scripts.reindex_documents import reindex_document
 from backend.services.vector_store import IndexPayload, open_index, write_index_payload
-from backend.tests.chunk_database_fake import FakeChunkDatabase
+from backend.tests.fake_supabase import FakeSupabase
 
 
 class ReembedTestCase(unittest.TestCase):
@@ -12,7 +12,7 @@ class ReembedTestCase(unittest.TestCase):
             {"chunk_id": "doc:chunk:0", "chunk_index": 0, "label": "Balance sheet", "document_title": "Acme 10-K"},
             {"chunk_id": "doc:chunk:1", "chunk_index": 1},
         ]
-        database = FakeChunkDatabase()
+        database = FakeSupabase()
         embeddings = Mock()
         embeddings.embed_documents.return_value = [[1.0, 0.0], [0.0, 1.0]]
         with (

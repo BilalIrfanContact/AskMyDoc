@@ -1,6 +1,4 @@
 import json
-import os
-import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -15,22 +13,21 @@ from backend.services.rag_pipeline import (
     _select_retrieval_policy,
     answer_question,
 )
+from backend.tests.fake_supabase import FakeSupabase
 
 
-_usage_dir = None
+_usage_ledger = None
 
 
 def setUpModule():
     """Keep metered test calls out of the real AI spending log."""
-    global _usage_dir, _usage_env
-    _usage_dir = tempfile.TemporaryDirectory()
-    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
-    _usage_env.start()
+    global _usage_ledger
+    _usage_ledger = patch("backend.services.usage_ledger.get_postgrest_client", return_value=FakeSupabase())
+    _usage_ledger.start()
 
 
 def tearDownModule():
-    _usage_env.stop()
-    _usage_dir.cleanup()
+    _usage_ledger.stop()
 
 
 class RagPipelineTestCase(unittest.TestCase):

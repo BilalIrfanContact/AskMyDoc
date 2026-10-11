@@ -1,6 +1,4 @@
 import json
-import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -14,6 +12,7 @@ from backend.routers import chat, conversations, documents, upload
 from backend.services.internal_auth import require_authenticated_user
 from backend.services.persistence.messages_repository import insert_message
 from backend.services.rag_pipeline import AnswerDecision, INSUFFICIENT_CONTEXT_ANSWER
+from backend.tests.fake_supabase import FakeSupabase
 
 
 def _build_test_app() -> FastAPI:
@@ -110,20 +109,18 @@ async def _request_asgi(
     return response_status, response_headers, bytes(response_body)
 
 
-_usage_dir = None
+_usage_ledger = None
 
 
 def setUpModule():
     """Keep metered test calls out of the real AI spending log."""
-    global _usage_dir, _usage_env
-    _usage_dir = tempfile.TemporaryDirectory()
-    _usage_env = patch.dict(os.environ, {"AI_USAGE_DIR": _usage_dir.name})
-    _usage_env.start()
+    global _usage_ledger
+    _usage_ledger = patch("backend.services.usage_ledger.get_postgrest_client", return_value=FakeSupabase())
+    _usage_ledger.start()
 
 
 def tearDownModule():
-    _usage_env.stop()
-    _usage_dir.cleanup()
+    _usage_ledger.stop()
 
 
 class FakeResponse:

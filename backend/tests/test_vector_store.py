@@ -12,7 +12,7 @@ from backend.services.vector_store import (
     open_index,
     write_index_payload,
 )
-from backend.tests.chunk_database_fake import FakeChunkDatabase
+from backend.tests.fake_supabase import FakeSupabase
 
 
 def _payload(document_id: str, texts: list[str], vectors: list[list[float]]) -> IndexPayload:
@@ -27,7 +27,7 @@ def _payload(document_id: str, texts: list[str], vectors: list[list[float]]) -> 
 
 class VectorStoreTestCase(unittest.TestCase):
     def setUp(self):
-        self.database = FakeChunkDatabase()
+        self.database = FakeSupabase()
         self.embeddings = Mock()
         for target, value in [
             ("get_postgrest_client", self.database),

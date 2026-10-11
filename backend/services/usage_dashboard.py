@@ -1,7 +1,7 @@
-"""Render the local AI spending dashboard from the usage ledger.
+"""Render the local AI spending dashboard from the usage ledger in Supabase.
 
-A developer-only HTML file at `backend/usage/dashboard.html` (gitignored), rebuilt after every recorded
-call and reloading itself every 30 seconds. It isn't served by the app. To rebuild it by hand:
+A developer-only HTML file at `backend/usage/dashboard.html` (gitignored). It isn't served by the app, and
+it isn't rebuilt after each call, so rebuild it to see current spend:
 
     .venv/bin/python -m backend.services.usage_dashboard
 """
@@ -458,6 +458,9 @@ def write_dashboard(entries: list[dict[str, Any]], budget: float) -> Path:
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+
     from .usage_ledger import monthly_budget, read_entries
 
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     print(write_dashboard(read_entries(), monthly_budget()))
