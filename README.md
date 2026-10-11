@@ -73,7 +73,7 @@ flowchart TD
     G -- yes --> A[Answer shown]
 ```
 
-1. **Indexing.** On upload, the text is extracted (`pdfplumber`, with table-aware handling), split into chunks of about 2,000 characters with 200 characters of overlap, embedded with Voyage `voyage-4-lite`, and stored in a Chroma collection for that document.
+1. **Indexing.** On upload, the text is extracted (`pdfplumber`, with table-aware handling), split into chunks of about 2,000 characters with 200 characters of overlap, embedded with Voyage `voyage-4-lite`, and stored in Supabase Postgres with pgvector, under that document's ID.
 2. **Routing.** The answer model decides whether the question asks for a summary or a specific answer. Summaries read the start of the document; questions use semantic search.
 3. **Retrieval.** The 15 chunks closest to the question are retrieved. Financial questions often need a line from a statement that a similarity search ranks low, so the filing's three primary statements (income statement, balance sheet, cash flow statement) are added as well. They're detected by a statement title near the top of a chunk and a dense block of figures; a statement that the text extraction mangles badly enough can be missed, and then nothing is added for it.
 4. **Answering.** The answer model (Groq-hosted `gpt-oss`) writes a structured reply: whether the answer is in the excerpts, and the answer itself. It has one tool, `calculate`, and is told to use it for every arithmetic step. The calculator reads plain arithmetic only, by walking Python's syntax tree, so nothing the model sends can run as code.
@@ -168,7 +168,7 @@ A run of all 51 working questions costs about $0.12 in model calls.
 ```bash
 # 1. Download each PDF in evals/financial-filings/manifest.json to its `path`, and check its SHA-256.
 
-# 2. Index the filings into the local Chroma store, the same way an upload does
+# 2. Index the filings into the Supabase chunk store, the same way an upload does
 .venv/bin/python -m backend.scripts.index_eval_documents \
     --corpus evals/financial-filings/manifest.json \
     --output evals/financial-filings/indexed-documents.local.json
@@ -269,8 +269,7 @@ The backend runs at `http://localhost:8000` and the frontend at `http://localhos
 flowchart LR
     U([Browser]) --> FE["Next.js app<br/>NextAuth sign-in"]
     FE -- "signed identity header" --> BE["FastAPI backend<br/>ownership checks"]
-    BE --> SB[("Supabase<br/>users, documents,<br/>conversations, files")]
-    BE --> CH[("Chroma<br/>one collection<br/>per document")]
+    BE --> SB[("Supabase<br/>users, documents, conversations,<br/>files, pgvector chunks")]
     BE --> AI["ai_providers<br/>metered + budget"]
     AI --> GQ["Groq<br/>gpt-oss chat"]
     AI --> VY["Voyage AI<br/>voyage-4-lite embeddings"]
@@ -281,7 +280,7 @@ flowchart LR
 - **FastAPI** for the HTTP API, with signed internal auth headers and server-side ownership checks.
 - **pdfplumber** for text and table extraction; Markdown is read directly.
 - **LangChain** text splitting and model wrappers.
-- **ChromaDB**, one local collection per document.
+- **pgvector** in Supabase Postgres for each document's chunks and embeddings, so indexes survive restarts.
 - **Groq** (`gpt-oss`) for chat and **Voyage AI** (`voyage-4-lite`) for embeddings, both behind the metered `ai_providers` module.
 - **Supabase** for users, document metadata, conversations, messages and stored files.
 
@@ -290,7 +289,7 @@ Key modules:
 | Module | Role |
 |---|---|
 | `services/rag_pipeline.py` | The answer policy: routing, retrieval, the calculator loop, the structured reply and the fallbacks |
-| `services/rag_adapters.py` | Chroma retrieval, including the three-statements addition |
+| `services/rag_adapters.py` | Chunk retrieval, including the three-statements addition |
 | `services/financial_statements.py` | Finds the primary statements in a filing |
 | `services/calculator.py` | The calculator tool and its safe evaluator |
 | `services/answer_grounding.py` | The number check |
@@ -326,7 +325,7 @@ Key modules:
 ## Data handling
 
 - Uploaded files are processed in memory, then stored in Supabase Storage.
-- Embeddings live in a Chroma collection per document; conversations and messages live in Supabase, scoped to their owner.
+- Embeddings live in Supabase (pgvector), keyed by document; conversations and messages live in Supabase, scoped to their owner.
 - Deleting a document removes its metadata, the stored file, its conversations and messages, and its vector index. A partial failure is reported and can be retried.
 - The usage ledger records token counts and costs only, never prompts or answers.
 - Benchmark filings and local index IDs are kept out of the repository; only the questions, answer key, scoring rules and verification records are committed.

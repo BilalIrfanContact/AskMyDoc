@@ -1,10 +1,14 @@
 # Portfolio demo limits
 
-Apply `migrations/202610050001_demo_limits.sql`, `migrations/202610050002_wait_for_suggestions.sql`, `migrations/202610050003_expire_suggestion_wait.sql`, then `migrations/202610050004_chat_turns.sql`, in the Supabase SQL editor **before deploying either application**. If the first migration is already applied, run the remaining migrations in order. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not rerun the first migration.
+Apply `migrations/202610050001_demo_limits.sql`, `migrations/202610050002_wait_for_suggestions.sql`, `migrations/202610050003_expire_suggestion_wait.sql`, `migrations/202610050004_chat_turns.sql`, then `migrations/202610110001_document_chunks.sql`, in the Supabase SQL editor **before deploying either application**. If the first migration is already applied, run the remaining migrations in order. The migration is transactional and requires the existing `public.documents` table. It creates the server-only rate functions, durable allowance receipts, and a private `askmydoc-uploads` bucket capped at 15,000,000 bytes. Existing documents count toward the upload allowance. Do not rerun the first migration.
 
 The Supabase project's global Storage file-size limit must be at least 15 MB. Keep the service-role key on the servers. No browser database privileges or public bucket permissions are needed. The restrictive Storage policy keeps this bucket private even if older permissive policies cover other buckets.
 
 The browser first requests upload permission from Next.js. It sends file bytes directly to the signed Storage URL, then asks Next.js to tell FastAPI to process the server-selected object. FastAPI checks actual bytes, ownership, and processing state. Finishing an already completed upload returns its original receipt.
+
+## Search index
+
+`202610110001_document_chunks.sql` enables pgvector and stores every document's searchable chunks in `document_chunks`, with one `document_indexes` row per document naming its current chunks and embedding model. The backend no longer keeps a local Chroma folder, so indexes survive restarts and redeploys. To move indexes from an existing local `backend/chroma_db`, run `python -m backend.scripts.copy_chroma_to_supabase` to see what would be copied, then again with `--apply`. It reuses the stored vectors and makes no embedding calls.
 
 ## Allowances
 
