@@ -1,0 +1,12 @@
+# Local-only data that must never be uploaded by a CLI deploy (Hobby caps uploads at 100 MB).
+.venv
+**/__pycache__
+backend/chroma_db
+backend/usage
+evals/financial-filings/documents
+frontend/node_modules
+frontend/.next
+tmp
+docs
+handoffs
+demo-video
