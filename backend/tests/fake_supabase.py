@@ -12,13 +12,20 @@ class FakeSupabase:
     def __init__(self):
         self.tables: dict[str, list[dict]] = {"document_indexes": [], "document_chunks": [], "ai_usage": []}
         self.fail_commit = False
+        # Injected failures: the next N writes fail before landing, or land and then lose their reply.
+        self.failed_writes = 0
+        self.lost_write_replies = 0
+        self.lose_commit_reply = False
         self.request_count = 0
 
     def from_(self, table: str) -> "_Query":
         return _Query(self, table)
 
     def rpc(self, name: str, params: dict) -> "_Result":
-        return _Result(getattr(self, name)(**params))
+        result = _Result(getattr(self, name)(**params))
+        if name == "commit_document_index" and self.lose_commit_reply:
+            raise TimeoutError("reply lost after commit")
+        return result
 
     def commit_document_index(self, p_document_id, p_generation, p_embedding_model, p_embedding_input, p_expected_count):
         chunks = self.tables["document_chunks"]
@@ -99,6 +106,11 @@ class _Query:
         self._action, self._rows = "insert", rows if isinstance(rows, list) else [rows]
         return self
 
+    def upsert(self, rows: list[dict] | dict, on_conflict: str, ignore_duplicates: bool, returning=None) -> "_Query":
+        assert ignore_duplicates, "only ON CONFLICT DO NOTHING is modelled"
+        self._action, self._rows, self._conflict = "upsert", rows if isinstance(rows, list) else [rows], on_conflict
+        return self
+
     def delete(self) -> "_Query":
         self._action = "delete"
         return self
@@ -127,8 +139,18 @@ class _Query:
     def execute(self) -> _Result:
         self._database.request_count += 1
         table = self._database.tables[self._table]
-        if self._action == "insert":
-            table.extend({"id": len(table) + offset + 1, **row} for offset, row in enumerate(self._rows))
+        if self._action in ("insert", "upsert"):
+            if self._database.failed_writes:
+                self._database.failed_writes -= 1
+                raise ConnectionError("write failed")
+            rows = self._rows
+            if self._action == "upsert":
+                taken = {row.get(self._conflict) for row in table}
+                rows = [row for row in rows if row[self._conflict] not in taken]
+            table.extend({"id": len(table) + offset + 1, **row} for offset, row in enumerate(rows))
+            if self._database.lost_write_replies:
+                self._database.lost_write_replies -= 1
+                raise TimeoutError("reply lost after write")
             return _Result([])
         matches = [row for row in table if all(keep(row) for keep in self._filters)]
         if self._action == "delete":

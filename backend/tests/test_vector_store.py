@@ -65,13 +65,30 @@ class VectorStoreTestCase(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             write_index_payload("doc", _payload("doc", ["new 0", "new 1"], [[0.0, 1.0], [1.0, 1.0]]))
 
+        # The uncommitted rows stay until the next write, but reads only see the committed generation.
         self.assertEqual(open_index("doc").get()["documents"], ["old"])
-        self.assertEqual(len(self.database.tables["document_chunks"]), 1)
 
         self.database.fail_commit = False
         write_index_payload("doc", _payload("doc", ["new 0", "new 1"], [[0.0, 1.0], [1.0, 1.0]]))
         self.assertEqual(open_index("doc").get()["documents"], ["new 0", "new 1"])
         self.assertEqual(len(self.database.tables["document_chunks"]), 2)
+
+    def test_a_commit_whose_reply_is_lost_keeps_the_new_chunks(self):
+        write_index_payload("doc", _payload("doc", ["old"], [[1.0, 0.0]]))
+        self.database.lose_commit_reply = True
+
+        stored = write_index_payload("doc", _payload("doc", ["new 0", "new 1"], [[0.0, 1.0], [1.0, 1.0]]))
+
+        self.assertEqual(stored, 2)
+        self.assertEqual(open_index("doc").get()["documents"], ["new 0", "new 1"])
+
+    def test_a_failed_chunk_insert_removes_what_it_wrote(self):
+        self.database.failed_writes = 1
+
+        with self.assertRaises(ConnectionError):
+            write_index_payload("doc", _payload("doc", ["a"], [[1.0]]))
+
+        self.assertEqual(self.database.tables["document_chunks"], [])
 
     def test_reads_page_past_the_api_row_cap_and_honor_ids_and_limit(self):
         texts = [f"chunk {index}" for index in range(5)]

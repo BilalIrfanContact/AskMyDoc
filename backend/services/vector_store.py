@@ -194,6 +194,11 @@ def write_index_payload(
     try:
         for start in range(0, len(rows), INSERT_BATCH_SIZE):
             client.from_("document_chunks").insert(rows[start : start + INSERT_BATCH_SIZE], returning=ReturnMethod.minimal).execute()
+    except Exception:
+        # Nothing has been committed, so this generation can't be the current one.
+        client.from_("document_chunks").delete().eq("document_id", document_id).eq("generation", generation).execute()
+        raise
+    try:
         stored: Any = client.rpc(
             "commit_document_index",
             {
@@ -205,9 +210,30 @@ def write_index_payload(
             },
         ).execute().data
     except Exception:
-        client.from_("document_chunks").delete().eq("document_id", document_id).eq("generation", generation).execute()
+        # The commit may have gone through even though its reply was lost, and it has then already deleted the
+        # old chunks, so this generation is never deleted here. If it isn't current, reads ignore it, and the
+        # document's next write or `delete_vector_store` removes it.
+        if _current_generation(document_id) == generation:
+            return len(rows)
         raise
     return int(stored)
+
+
+def _current_generation(document_id: str) -> str | None:
+    """The document's committed generation, or None if it has none or it can't be read right now."""
+    try:
+        rows = (
+            get_postgrest_client()
+            .from_("document_indexes")
+            .select("generation")
+            .eq("document_id", document_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception:
+        return None
+    return rows[0]["generation"] if rows else None
 
 
 def build_vector_store(document_id: str, chunks: List[str]) -> int:
