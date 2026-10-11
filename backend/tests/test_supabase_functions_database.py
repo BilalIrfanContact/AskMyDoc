@@ -11,7 +11,9 @@ from uuid import uuid4
 
 MIGRATIONS = [
     Path(__file__).resolve().parents[2] / "supabase/migrations" / name
-    for name in ("202610110001_document_chunks.sql", "202610110002_ai_usage.sql", "202610110003_usage_ids_and_atomic_import.sql")
+    for name in ("202610110001_document_chunks.sql", "202610110002_ai_usage.sql", "202610110003_usage_ids_and_atomic_import.sql",
+        "202610110004_import_without_table_lock.sql",
+    )
 ]
 
 
@@ -120,21 +122,22 @@ class SupabaseFunctionsDatabaseTestCase(unittest.TestCase):
 
         self.assertEqual(self.sql(f"select count(*) from ai_usage where usage_id = '{usage_id}'"), "1")
 
-    def test_history_import_is_all_or_nothing(self):
-        self.sql("create schema scratch; create table scratch.ai_usage (like public.ai_usage including all);")
-        # Run the import against an empty copy of the ledger so the other usage tests' rows don't matter.
-        function = Path(MIGRATIONS[2]).read_text().split("create function", 1)[1].split("$$;", 1)[0]
-        self.sql("create function" + function.replace("public.ai_usage", "scratch.ai_usage").replace("public.import_ai_usage", "scratch.import_ai_usage") + "$$;")
+    def test_history_import_is_all_or_nothing_for_the_service_role(self):
+        # The import needs an empty ledger; put back whatever other tests left once this one finishes.
+        self.sql("create table saved_usage as select * from public.ai_usage; delete from public.ai_usage;")
+        self.addCleanup(self.sql, "delete from public.ai_usage; insert into public.ai_usage overriding system value "
+            "select * from saved_usage; drop table saved_usage;")
         good = '{"created_at":"2026-10-01T00:00:00+00:00","provider":"groq","model":"m","task":"t","input_tokens":1,"output_tokens":0,"cost_usd":0.1}'
+        import_rows = lambda rows: self.sql(f"set role service_role; select public.import_ai_usage('[{rows}]');")
 
-        with self.assertRaises(AssertionError):
-            self.sql(f"""select scratch.import_ai_usage('[{good}, {{"provider":"groq"}}]');""")
-        self.assertEqual(self.sql("select count(*) from scratch.ai_usage"), "0")
+        with self.assertRaisesRegex(AssertionError, "null value"):
+            import_rows(f'{good}, {{"provider":"groq"}}')
+        self.assertEqual(self.sql("select count(*) from public.ai_usage"), "0")
 
-        self.assertEqual(self.sql(f"select scratch.import_ai_usage('[{good}, {good}]');"), "2")
+        self.assertEqual(import_rows(f"{good}, {good}"), "2")
         with self.assertRaisesRegex(AssertionError, "already has rows"):
-            self.sql(f"select scratch.import_ai_usage('[{good}]');")
-        self.assertEqual(self.sql("select count(*) from scratch.ai_usage"), "2")
+            import_rows(good)
+        self.assertEqual(self.sql("select count(*) from public.ai_usage"), "2")
 
     def test_browser_roles_cannot_read_usage(self):
         with self.assertRaisesRegex(AssertionError, "permission denied"):
