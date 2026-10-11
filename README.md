@@ -200,9 +200,9 @@ Also available:
 
 | Layer | What it covers | How to run |
 |---|---|---|
-| **Backend unit and integration tests** (224) | Ownership and auth, upload and delete lifecycles, the answer pipeline and its fallbacks, the number check, the calculator, statement detection, the scorer, gold-chunk mapping, the usage ledger and budget, re-indexing against a real temporary Chroma store, and the API contract staying in sync | `.venv/bin/python -m unittest discover -s backend/tests -p 'test_*.py'` |
+| **Backend unit and integration tests** (301) | Ownership and auth, upload and delete lifecycles, the answer pipeline and its fallbacks, the number check, the calculator, statement detection, the scorer, gold-chunk mapping, the usage ledger and budget, safe re-indexing and ledger retries, the Supabase SQL functions run against a throwaway local PostgreSQL with pgvector, and the API contract staying in sync | `.venv/bin/python -m unittest discover -s backend/tests -p 'test_*.py'` |
 | **Frontend tests** | The workspace state machine (upload, select, send, delete, recovery, stale async updates), upload validation and the backend proxy | `cd frontend && npm test` |
-| **Lint and type checks** | Next.js lint and TypeScript | `cd frontend && npm run lint && npx tsc --noEmit` |
+| **Lint and type checks** | ESLint (Next.js rules) and TypeScript | `cd frontend && npm run lint && npx tsc --noEmit` |
 | **Benchmark** | End-to-end answer quality on real filings | See [The benchmark](#the-benchmark) |
 
 CI runs the backend tests, frontend tests, lint and type checks on every pull request, and `main` only accepts branches that are up to date and green.
@@ -226,7 +226,7 @@ flowchart LR
 ```
 
 - **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark used `openai/gpt-oss-120b` for answers; the default is the smaller `gpt-oss-20b`.
-- **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a ledger table in Supabase (`ai_usage`) and prices them from a table of list prices. Keeping it in the database means the budget survives restarts and redeploys.
+- **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a ledger table in Supabase (`ai_usage`) and prices them from a table of list prices. Keeping it in the database means the budget survives restarts and redeploys. A failed ledger write is retried under the same ID, so it can't count twice, and an answer that was already paid for is never thrown away because recording it failed.
 - **A monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, new paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working. Cost is recorded after a call returns, so calls already in flight when the limit is reached can take spend slightly past it, by cents at this app's scale.
 - **A local dashboard.** `python -m backend.services.usage_dashboard` writes `backend/usage/dashboard.html` from the ledger, showing spend against the budget, by model and by job, and how much of the free allowance is used.
 
