@@ -234,11 +234,11 @@ flowchart LR
 
 ## Run it locally
 
-You need Python 3.11, Node.js 20, a Supabase project, and API keys for Groq and Voyage AI.
+You need Python 3.12 (3.11 also works), Node.js 22, a Supabase project, and API keys for Groq and Voyage AI.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/pip install -r requirements.txt
 cd frontend && npm ci && cd ..
 cp -n backend/.env.example backend/.env
 cp -n frontend/.env.example frontend/.env
@@ -260,6 +260,15 @@ Then start both servers:
 ```
 
 The backend runs at `http://localhost:8000` and the frontend at `http://localhost:3000`. Ctrl+C stops both.
+
+## Deploy
+
+Both halves run on Vercel's free Hobby plan, as two projects from this repository, in Tokyo (`hnd1`) next to the Supabase database. The backend keeps no files on its server, so it runs as serverless functions.
+
+- **Backend project:** root directory is the repository root. Vercel serves the FastAPI app from [`index.py`](index.py) on Python 3.12; [`vercel.json`](vercel.json) sets the region, the 300-second limit and what to leave out of the bundle. Environment variables are the ones in `backend/.env.example`.
+- **Frontend project:** root directory is `frontend`. Environment variables are the ones in `frontend/.env.example`, plus `INTERNAL_API_SECRET`, with the same value as the backend's. Set `NEXT_PUBLIC_API_BASE` to the backend project's URL, and add `https://<frontend-domain>/api/auth/callback/google` to the Google OAuth client.
+
+Apply the migrations listed in [`supabase/README.md`](supabase/README.md) before the first deploy.
 
 ---
 
