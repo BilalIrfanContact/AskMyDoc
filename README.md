@@ -269,8 +269,9 @@ The backend runs at `http://localhost:8000` and the frontend at `http://localhos
 flowchart LR
     U([Browser]) --> FE["Next.js app<br/>NextAuth sign-in"]
     FE -- "signed identity header" --> BE["FastAPI backend<br/>ownership checks"]
-    BE --> SB[("Supabase<br/>users, documents, conversations,<br/>files, pgvector chunks")]
+    BE --> SB[("Supabase<br/>users, documents, conversations,<br/>files, pgvector chunks, AI spend ledger")]
     BE --> AI["ai_providers<br/>metered + budget"]
+    AI -- "records each call,<br/>checks the month's spend" --> SB
     AI --> GQ["Groq<br/>gpt-oss chat"]
     AI --> VY["Voyage AI<br/>voyage-4-lite embeddings"]
 ```
