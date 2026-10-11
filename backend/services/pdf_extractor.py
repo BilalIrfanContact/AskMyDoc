@@ -256,8 +256,12 @@ def extract_pdf_pages(data: bytes) -> List[str]:
     table_context: _TableContext | None = None
     with pdfplumber.open(BytesIO(data)) as pdf:
         for page in pdf.pages:
-            text, table_context = _extract_page_text_with_context(page, table_context)
-            pages.append(text)
+            try:
+                text, table_context = _extract_page_text_with_context(page, table_context)
+                pages.append(text)
+            finally:
+                # Release cached page layouts before parsing the next page.
+                page.close()
 
     return pages
 
