@@ -298,7 +298,7 @@ Key modules:
 
 **Frontend** (`frontend/`)
 
-- **Next.js 14** App Router with TypeScript and Tailwind.
+- **Next.js 16** App Router with TypeScript and Tailwind.
 - **NextAuth.js** for email/password and Google sign-in.
 - Route handlers that proxy browser requests to the backend with signed identity.
 - `lib/api-contract.ts`, generated from the backend's OpenAPI schema.
