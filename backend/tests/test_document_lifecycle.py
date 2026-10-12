@@ -304,19 +304,20 @@ class DocumentLifecycleTestCase(unittest.TestCase):
         self.assertEqual(result.cleanup_status, "not-started")
         self.assertEqual(result.http_status, 502)
 
-    def test_delete_document_returns_partial_failure_when_storage_delete_fails(self):
+    def test_delete_document_returns_partial_failure_and_keeps_metadata_when_storage_delete_fails(self):
         with (
             patch(
                 "backend.services.document_lifecycle.list_document_conversation_ids",
                 return_value=["convo-1"],
             ),
-            patch("backend.services.document_lifecycle.delete_messages_for_conversation"),
-            patch("backend.services.document_lifecycle.delete_user_document_conversations"),
-            patch("backend.services.document_lifecycle.delete_vector_store"),
+            patch("backend.services.document_lifecycle.delete_messages_for_conversation") as delete_messages_mock,
+            patch("backend.services.document_lifecycle.delete_user_document_conversations") as delete_conversations_mock,
+            patch("backend.services.document_lifecycle.delete_vector_store") as delete_vector_store_mock,
             patch(
                 "backend.services.document_lifecycle.delete_storage_object",
                 side_effect=PersistenceError("Failed to delete document from Supabase Storage"),
             ),
+            patch("backend.services.document_lifecycle.delete_document_record") as delete_document_record_mock,
         ):
             result = delete_document(
                 document_id="doc-1",
@@ -338,6 +339,11 @@ class DocumentLifecycleTestCase(unittest.TestCase):
                 "cleanup_status": "partial",
             },
         )
+        # Everything before storage was cleaned up, and the record stays so the user can retry.
+        delete_messages_mock.assert_called_once_with("convo-1")
+        delete_conversations_mock.assert_called_once_with(user_id="user-a", document_id="doc-1")
+        delete_vector_store_mock.assert_called_once_with("doc-1")
+        delete_document_record_mock.assert_not_called()
 
     def test_delete_document_keeps_metadata_for_a_retry_after_partial_cleanup(self):
         delete_messages_mock = Mock(
