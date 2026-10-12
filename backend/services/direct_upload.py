@@ -8,7 +8,7 @@ from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
 from .demo_limits import MAX_UPLOAD_BYTES, SMALLER_FILE_MESSAGE, UPLOAD_BUCKET, operation
-from .document_lifecycle import upload_document
+from .document_lifecycle import UploadProgress, upload_document
 from .persistence.common import _base_headers, _get_supabase_url, get_storage_client
 
 
@@ -44,7 +44,7 @@ def download_upload(path: str) -> bytes:
     return bytes(data)
 
 
-def complete_upload(user_id: str, upload_id: str):
+def complete_upload(user_id: str, upload_id: str, on_progress: UploadProgress | None = None):
     reservation = operation('claim', user_id, 'upload', upload_id)
     if reservation['state'] == 'completed':
         return reservation['result']
@@ -58,7 +58,7 @@ def complete_upload(user_id: str, upload_id: str):
         file = UploadFile(filename=metadata['filename'], file=BytesIO(data),
             headers=Headers({'content-type': metadata['content_type']}))
         result = upload_document(file, user_id, document_id=upload_id,
-            existing_storage_url=f'{UPLOAD_BUCKET}/{path}')
+            existing_storage_url=f'{UPLOAD_BUCKET}/{path}', on_progress=on_progress)
         if result.status != 'completed':
             raise result.to_http_exception()
         response = result.to_response().model_dump()
