@@ -1013,169 +1013,46 @@ class ChatPipelineIntegrationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vectordb.get_call_count, 1)
         self.assertEqual(vectordb.query_call_count, 0)
 
-    async def test_chat_returns_deterministic_fallback_when_model_reports_not_found(self):
-        conversation_id = await self._create_conversation()
-        vectordb = FakeVectorStore(
-            query_documents=["The onboarding checklist covers payroll setup and laptop pickup."],
-            query_metadatas=[{"chunk_id": "doc-a:chunk:3"}],
-            query_ids=[None],
-        )
-        llm = SimpleNamespace(
-            invoke=lambda prompt, **_kwargs: SimpleNamespace(content='{"found_in_excerpts": false, "answer": ""}')
-        )
-
-        with (
-            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm) as chat_openai_mock,
-        ):
-            status, payload = await self._chat(conversation_id, "What is the refund window?")
-
-        self.assertEqual(status, 200)
-        self.assertEqual(
-            payload,
-            {
-                "answer": INSUFFICIENT_CONTEXT_ANSWER,
-                "intent": "qa",
-                "retrieval_mode": "semantic",
-                "answer_status": "insufficient_context",
-                "citations": [],
-            },
-        )
-        chat_openai_mock.assert_called_once()
-        self.assertEqual(
-            await self._messages(conversation_id),
-            [
-                {
-                    "id": "msg-1",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "user",
-                    "content": "What is the refund window?",
-                    "created_at": "2026-06-11T12:01:00Z",
-                },
-                {
-                    "id": "msg-2",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "assistant",
-                    "content": INSUFFICIENT_CONTEXT_ANSWER,
-                    "answer_status": "insufficient_context",
-                    "citations": [],
-                    "created_at": "2026-06-11T12:02:00Z",
-                },
-            ],
-        )
-
-    async def test_chat_rejects_ungrounded_model_answer_before_persisting_response_citations(self):
-        conversation_id = await self._create_conversation()
-        vectordb = FakeVectorStore(
-            query_documents=["The refund window is 30 days from the purchase date."],
-            query_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
-            query_ids=[None],
-        )
-        llm = SimpleNamespace(
-            invoke=lambda prompt, **_kwargs: SimpleNamespace(
-                content='{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}'
-            )
-        )
-
-        with (
-            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
-        ):
-            status, payload = await self._chat(conversation_id, "What is the refund window?")
-
-        self.assertEqual(status, 200)
-        self.assertEqual(
-            payload,
-            {
-                "answer": INSUFFICIENT_CONTEXT_ANSWER,
-                "intent": "qa",
-                "retrieval_mode": "semantic",
-                "answer_status": "insufficient_context",
-                "citations": [],
-            },
-        )
-        self.assertEqual(
-            await self._messages(conversation_id),
-            [
-                {
-                    "id": "msg-1",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "user",
-                    "content": "What is the refund window?",
-                    "created_at": "2026-06-11T12:01:00Z",
-                },
-                {
-                    "id": "msg-2",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "assistant",
-                    "content": INSUFFICIENT_CONTEXT_ANSWER,
-                    "answer_status": "insufficient_context",
-                    "citations": [],
-                    "created_at": "2026-06-11T12:02:00Z",
-                },
-            ],
-        )
-
-    async def test_chat_falls_back_when_model_repeatedly_breaks_structured_output_contract(self):
-        conversation_id = await self._create_conversation()
-        vectordb = FakeVectorStore(
-            query_documents=["The refund window is 30 days from the purchase date."],
-            query_metadatas=[{"chunk_id": "doc-a:chunk:0"}],
-            query_ids=[None],
-        )
-        llm = Mock()
-        llm.invoke.side_effect = [
-            SimpleNamespace(content="qa"),
-            SimpleNamespace(content="The refund window is 30 days."),
-            SimpleNamespace(content='{"found_in_excerpts": true, "answer": ""}'),
+    async def test_chat_persists_the_fallback_when_the_model_answer_cannot_be_used(self):
+        refund = ("The refund window is 30 days from the purchase date.", "doc-a:chunk:0")
+        cases = [
+            ("model reports not found", ("The onboarding checklist covers payroll setup and laptop pickup.", "doc-a:chunk:3"),
+                ["qa", '{"found_in_excerpts": false, "answer": ""}']),
+            ("answer not grounded in the excerpts", refund,
+                ["qa", '{"found_in_excerpts": true, "answer": "The refund window is 45 days and includes free returns."}']),
+            ("structured output broken twice", refund,
+                ["qa", "The refund window is 30 days.", '{"found_in_excerpts": true, "answer": ""}']),
         ]
+        for name, (excerpt, chunk_id), replies in cases:
+            with self.subTest(name):
+                conversation_id = await self._create_conversation()
+                vectordb = FakeVectorStore(query_documents=[excerpt], query_metadatas=[{"chunk_id": chunk_id}], query_ids=[None])
+                llm = Mock()
+                llm.invoke.side_effect = [SimpleNamespace(content=reply) for reply in replies]
 
-        with (
-            patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
-            patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
-        ):
-            status, payload = await self._chat(conversation_id, "What is the refund window?")
+                with (
+                    patch("backend.services.rag_pipeline.get_vector_store", return_value=vectordb),
+                    patch("backend.services.ai_providers.ChatOpenAI", return_value=llm),
+                ):
+                    status, payload = await self._chat(conversation_id, "What is the refund window?")
 
-        self.assertEqual(status, 200)
-        self.assertEqual(
-            payload,
-            {
-                "answer": INSUFFICIENT_CONTEXT_ANSWER,
-                "intent": "qa",
-                "retrieval_mode": "semantic",
-                "answer_status": "insufficient_context",
-                "citations": [],
-            },
-        )
-        self.assertEqual(
-            await self._messages(conversation_id),
-            [
-                {
-                    "id": "msg-1",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "user",
-                    "content": "What is the refund window?",
-                    "created_at": "2026-06-11T12:01:00Z",
-                },
-                {
-                    "id": "msg-2",
-                    "request_id": self.request_id,
-                    "conversation_id": conversation_id,
-                    "role": "assistant",
-                    "content": INSUFFICIENT_CONTEXT_ANSWER,
+                self.assertEqual(status, 200)
+                self.assertEqual(payload, {
+                    "answer": INSUFFICIENT_CONTEXT_ANSWER,
+                    "intent": "qa",
+                    "retrieval_mode": "semantic",
                     "answer_status": "insufficient_context",
                     "citations": [],
-                    "created_at": "2026-06-11T12:02:00Z",
-                },
-            ],
-        )
-        self.assertEqual(llm.invoke.call_count, 3)
-
+                })
+                self.assertEqual(llm.invoke.call_count, len(replies))
+                messages = [{k: v for k, v in message.items() if k not in ("id", "created_at")}
+                    for message in await self._messages(conversation_id)]
+                self.assertEqual(messages, [
+                    {"request_id": self.request_id, "conversation_id": conversation_id, "role": "user",
+                        "content": "What is the refund window?"},
+                    {"request_id": self.request_id, "conversation_id": conversation_id, "role": "assistant",
+                        "content": INSUFFICIENT_CONTEXT_ANSWER, "answer_status": "insufficient_context", "citations": []},
+                ])
 
 if __name__ == "__main__":
     unittest.main()
