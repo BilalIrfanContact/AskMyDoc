@@ -356,34 +356,7 @@ test("restores answer status and citations from persisted messages", async () =>
   }]);
 });
 
-test("send appends the user question and assistant answer in chat view", async () => {
-  const harness = createHarness();
-  harness.setState({
-    ...createInitialWorkspaceState(),
-    documentId: "doc-a",
-    conversationId: "conv-a",
-    documentMeta: { fileName: "alpha.pdf" },
-    view: "chat"
-  });
-
-  const workspaceModule = harness.createModule();
-  await workspaceModule.handleSend("What is alpha?");
-
-  assert.deepEqual(harness.getState().messages, [
-    { role: "user", content: "What is alpha?", requestId: harness.getState().messages[0].requestId },
-    {
-      role: "assistant",
-      content: "answer:What is alpha?",
-      requestId: harness.getState().messages[0].requestId,
-      answerStatus: "answered",
-      citations: []
-    }
-  ]);
-  assert.equal(harness.getState().isAssistantTyping, false);
-  assert.equal(harness.getState().error, null);
-});
-
-test("send preserves answer status and citations for the grounded answer UI", async () => {
+test("send appends the question and the cited answer, then clears loading and errors", async () => {
   const harness = createHarness();
   harness.services.askQuestion = async (): Promise<ChatResponseBody> => ({
     answer: "The launch remains on October 14.",
@@ -403,13 +376,20 @@ test("send preserves answer status and citations for the grounded answer UI", as
   const workspaceModule = harness.createModule();
   await workspaceModule.handleSend("When is the launch?");
 
-  assert.deepEqual(harness.getState().messages[1], {
-    role: "assistant",
-    content: "The launch remains on October 14.",
-    requestId: harness.getState().messages[0].requestId,
-    answerStatus: "answered",
-    citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }]
-  });
+  const requestId = harness.getState().messages[0].requestId;
+  assert.equal(typeof requestId, "string");
+  assert.deepEqual(harness.getState().messages, [
+    { role: "user", content: "When is the launch?", requestId },
+    {
+      role: "assistant",
+      content: "The launch remains on October 14.",
+      requestId,
+      answerStatus: "answered",
+      citations: [{ chunk_id: "chunk-12", excerpt: "Maintain the October 14 public launch." }]
+    }
+  ]);
+  assert.equal(harness.getState().isAssistantTyping, false);
+  assert.equal(harness.getState().error, null);
 });
 
 test("send failure keeps the user question and surfaces the chat error", async () => {
