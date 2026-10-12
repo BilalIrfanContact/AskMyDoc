@@ -4,6 +4,8 @@
 
 AskMyDoc is a document Q&A app built for financial filings. You upload a filing, ask a question in plain English ("What was Amazon's FY2017 days payable outstanding?"), and get an answer drawn only from that document. When a figure has to be calculated, the app does the arithmetic with a calculator, not the language model, and checks every number in the answer against the filing before showing it. When the filing doesn't contain the answer, it says so instead of guessing.
 
+**Try it at [askmydoc-drab.vercel.app](https://askmydoc-drab.vercel.app).** Sign up with email or Google. Each account can upload 3 documents (up to 15 MB each) and ask 20 questions, which keeps the demo inside its AI budget.
+
 <p align="center">
   <img src=".github/readme/pipeline.svg" alt="A question goes to search, then to the answer model, which uses a calculator for every step, then to a number check; backed answers are shown, anything else becomes &quot;not in the document&quot;." width="100%">
 </p>
@@ -29,7 +31,7 @@ Where these numbers come from, and what they don't show, is explained in [The be
 - [The benchmark](#the-benchmark)
 - [Testing](#testing)
 - [Keeping AI costs under a fixed budget](#keeping-ai-costs-under-a-fixed-budget)
-- [Run it locally](#run-it-locally)
+- [Deploy](#deploy)
 - [Architecture](#architecture)
 - [Design decisions](#design-decisions)
 - [Data handling](#data-handling)
@@ -42,6 +44,7 @@ Where these numbers come from, and what they don't show, is explained in [The be
 **For someone reading a filing**
 
 - Sign in with email and password or Google, upload a PDF (or Markdown) filing, and ask questions about it in a chat workspace modelled on modern assistant apps.
+- While a filing is indexed, a progress bar shows the real step: pages read out of the total, then passages embedded and saved. A long 10-K takes about a minute.
 - Each document has its own conversation, saved and restored when you come back.
 - Answers come only from the uploaded document. Calculated figures show their working, for example `(177,866 − 135,987) ÷ 135,987 × 100 = 30.8%`.
 - If the filing doesn't answer the question, or the app can't back up its answer, you get "I couldn't find enough information in the document to answer that question" rather than a confident guess.
@@ -50,6 +53,7 @@ Where these numbers come from, and what they don't show, is explained in [The be
 
 - Every protected request is authorised on the server: the Next.js frontend signs an internal header with the user's identity, and the FastAPI backend checks it and enforces ownership of every document and conversation.
 - Uploads and deletions are explicit, step-by-step lifecycles with typed failure reasons, so a half-finished upload or a partly failed cleanup is reported and can be retried rather than left in a broken state.
+- Google and password accounts are not linked automatically by email. Google sign-in is refused if the email already belongs to a password account, and an account linked to Google must sign in with Google.
 - The frontend's request and response types are generated from the backend's OpenAPI schema, so the two sides can't drift apart silently.
 - Every AI call is metered against a monthly budget (see [below](#keeping-ai-costs-under-a-fixed-budget)).
 
@@ -73,7 +77,7 @@ flowchart TD
     G -- yes --> A[Answer shown]
 ```
 
-1. **Indexing.** On upload, the text is extracted (`pdfplumber`, with table-aware handling), split into chunks of about 2,000 characters with 200 characters of overlap, embedded with Voyage `voyage-4-lite`, and stored in Supabase Postgres with pgvector, under that document's ID.
+1. **Indexing.** The browser uploads the file straight to Supabase Storage. The backend then reads it from there and extracts the text (`pdfplumber`, with table-aware handling), reporting each page as it goes. The text is split into chunks of about 2,000 characters with 200 characters of overlap, embedded with Voyage `voyage-4-lite`, and stored in Supabase Postgres with pgvector, under that document's ID.
 2. **Routing.** The answer model decides whether the question asks for a summary or a specific answer. Summaries read the start of the document; questions use semantic search.
 3. **Retrieval.** The 15 chunks closest to the question are retrieved. Financial questions often need a line from a statement that a similarity search ranks low, so the filing's three primary statements (income statement, balance sheet, cash flow statement) are added as well. They're detected by a statement title near the top of a chunk and a dense block of figures; a statement that the text extraction mangles badly enough can be missed, and then nothing is added for it.
 4. **Answering.** The answer model (Groq-hosted `gpt-oss`) writes a structured reply: whether the answer is in the excerpts, and the answer itself. It has one tool, `calculate`, and is told to use it for every arithmetic step. The calculator reads plain arithmetic only, by walking Python's syntax tree, so nothing the model sends can run as code.
@@ -192,7 +196,7 @@ A run of all 51 working questions costs about $0.12 in model calls.
 Also available:
 
 - `evaluate_retrieval` measures whether the gold chunks are retrieved at all. Its experimental switches (`--hybrid` keyword search, `--planner`, and the reranker) can be compared there.
-- `reindex_documents` re-embeds stored documents in place after an embedding model change. It writes to a staging collection first, so a failed run never leaves a document unsearchable.
+- `reindex_documents` re-embeds stored documents after an embedding model change. The new chunks are written alongside the old ones and swapped in by one database transaction, so a failed run never leaves a document unsearchable.
 
 ---
 
@@ -200,8 +204,8 @@ Also available:
 
 | Layer | What it covers | How to run |
 |---|---|---|
-| **Backend unit and integration tests** (301) | Ownership and auth, upload and delete lifecycles, the answer pipeline and its fallbacks, the number check, the calculator, statement detection, the scorer, gold-chunk mapping, the usage ledger and budget, safe re-indexing and ledger retries, the Supabase SQL functions run against a throwaway local PostgreSQL with pgvector, and the API contract staying in sync | `.venv/bin/python -m unittest discover -s backend/tests -p 'test_*.py'` |
-| **Frontend tests** | The workspace state machine (upload, select, send, delete, recovery, stale async updates), upload validation and the backend proxy | `cd frontend && npm test` |
+| **Backend unit and integration tests** | Ownership and auth, upload and delete lifecycles, the answer pipeline and its fallbacks, the number check, the calculator, statement detection, the scorer, gold-chunk mapping, the usage ledger and budget, safe re-indexing and ledger retries, the Supabase SQL functions run against a throwaway local PostgreSQL with pgvector, and the API contract staying in sync | `.venv/bin/python -m unittest discover -s backend/tests -p 'test_*.py'` |
+| **Frontend tests** | The workspace state machine (upload, select, send, delete, recovery, stale async updates), upload validation, the direct upload and its progress stream, and the backend proxy | `cd frontend && npm test` |
 | **Lint and type checks** | ESLint (Next.js rules) and TypeScript | `cd frontend && npm run lint && npx tsc --noEmit` |
 | **Benchmark** | End-to-end answer quality on real filings | See [The benchmark](#the-benchmark) |
 
@@ -225,41 +229,12 @@ flowchart LR
     RUN --> LOG[Record reported tokens and cost<br/>in the Supabase ledger]
 ```
 
-- **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark used `openai/gpt-oss-120b` for answers; the default is the smaller `gpt-oss-20b`.
+- **Cheap, capable providers.** Chat runs on [Groq](https://groq.com/)-hosted open-weight `gpt-oss` models, and embeddings on [Voyage AI](https://www.voyageai.com/) `voyage-4-lite`. The model is chosen per job in the environment: `AI_ANSWER_MODEL` for routing, summaries and answers, `AI_CHAT_MODEL` for suggested questions, `AI_GRADER_MODEL` for the eval grader, and `AI_EMBEDDING_MODEL`. The benchmark and the live demo both use `openai/gpt-oss-120b` for answers. If `AI_ANSWER_MODEL` isn't set, the code falls back to the smaller `gpt-oss-20b`.
 - **Every call is metered.** All AI calls go through one module (`backend/services/ai_providers.py`), which records the tokens the provider reported in a ledger table in Supabase (`ai_usage`) and prices them from a table of list prices. Keeping it in the database means the budget survives restarts and redeploys. A failed ledger write is retried under the same ID, so it can't count twice, and an answer that was already paid for is never thrown away because recording it failed.
 - **A monthly stop.** Before each paid call, this month's billed spend is checked against `AI_MONTHLY_BUDGET_USD` (default $5). Once it's reached, new paid calls are refused with a clear message. Calls covered by Voyage's free token allowance keep working. Cost is recorded after a call returns, so calls already in flight when the limit is reached can take spend slightly past it, by cents at this app's scale.
 - **A local dashboard.** `python -m backend.services.usage_dashboard` writes `backend/usage/dashboard.html` from the ledger, showing spend against the budget, by model and by job, and how much of the free allowance is used.
 
 ---
-
-## Run it locally
-
-You need Python 3.12 (3.11 also works), Node.js 22, a Supabase project, and API keys for Groq and Voyage AI.
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cd frontend && npm ci && cd ..
-cp -n backend/.env.example backend/.env
-cp -n frontend/.env.example frontend/.env
-```
-
-Fill in both `.env` files:
-
-- **Backend:** `GROQ_API_KEY`, `VOYAGE_API_KEY`, the Supabase URL, service-role key and storage bucket, and `INTERNAL_API_SECRET`.
-- **Frontend:** the NextAuth and Google sign-in settings and the same Supabase values. Set the frontend's `NEXTAUTH_SECRET` to the same value as the backend's `INTERNAL_API_SECRET`, or protected requests will fail.
-
-The SQL for the Supabase users table is in [`docs/supabase-users.sql`](docs/supabase-users.sql).
-
-Google and password accounts are not automatically linked by email. Google sign-in is rejected if that email already belongs to a different account. Accounts already linked to Google must use Google sign-in.
-
-Then start both servers:
-
-```bash
-./dev.sh
-```
-
-The backend runs at `http://localhost:8000` and the frontend at `http://localhost:3000`. Ctrl+C stops both.
 
 ## Deploy
 
@@ -268,7 +243,7 @@ Both halves run on Vercel's free Hobby plan, as two projects from this repositor
 - **Backend project:** root directory is the repository root. Vercel serves the FastAPI app from [`index.py`](index.py) on Python 3.12; [`vercel.json`](vercel.json) sets the region, the 300-second limit and what to leave out of the bundle. Environment variables are the ones in `backend/.env.example`.
 - **Frontend project:** root directory is `frontend`. Environment variables are the ones in `frontend/.env.example`, plus `INTERNAL_API_SECRET`, with the same value as the backend's. Set `NEXT_PUBLIC_API_BASE` to the backend project's URL, and add `https://<frontend-domain>/api/auth/callback/google` to the Google OAuth client.
 
-Apply the migrations listed in [`supabase/README.md`](supabase/README.md) before the first deploy.
+Before the first deploy, create the users table from [`docs/supabase-users.sql`](docs/supabase-users.sql) and apply the migrations listed in [`supabase/README.md`](supabase/README.md).
 
 ---
 
@@ -277,6 +252,7 @@ Apply the migrations listed in [`supabase/README.md`](supabase/README.md) before
 ```mermaid
 flowchart LR
     U([Browser]) --> FE["Next.js app<br/>NextAuth sign-in"]
+    U -- "uploads the file directly<br/>(signed URL)" --> SB
     FE -- "signed identity header" --> BE["FastAPI backend<br/>ownership checks"]
     BE --> SB[("Supabase<br/>users, documents, conversations,<br/>files, pgvector chunks, AI spend ledger")]
     BE --> AI["ai_providers<br/>metered + budget"]
@@ -334,7 +310,7 @@ Key modules:
 
 ## Data handling
 
-- Uploaded files are processed in memory, then stored in Supabase Storage.
+- Uploaded files go from the browser straight to private Supabase Storage through a short-lived signed URL. The backend reads the file from there and indexes it in memory; nothing is written to the server's disk.
 - Embeddings live in Supabase (pgvector), keyed by document; conversations and messages live in Supabase, scoped to their owner.
 - Deleting a document removes its metadata, the stored file, its conversations and messages, and its vector index. A partial failure is reported and can be retried.
 - The usage ledger records token counts and costs only, never prompts or answers.
@@ -345,6 +321,5 @@ Key modules:
 ## What's next
 
 - **A finance-aware agent** for the misses that remain: questions where the model misreads what's being asked (segments vs products, regions vs countries, signs on loss-year tax rates).
-- **Citations in the chat UI.** They're already returned by the API.
 - **OCR** for scanned filings, and questions that span more than one filing.
 - **Streaming answers.**
