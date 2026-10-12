@@ -24,7 +24,7 @@ class ChunkInspectorTestCase(unittest.TestCase):
         }
         return collection
 
-    def test_authorized_inspection_returns_source_and_stored_chunks(self):
+    def test_authorized_inspection_returns_source_and_stored_chunks_without_embedding_or_indexing(self):
         collection = self._collection(
             ["doc-a:chunk:0"],
             ["Revenue: $10 million"],
@@ -40,6 +40,8 @@ class ChunkInspectorTestCase(unittest.TestCase):
             ),
             patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
             patch("backend.services.chunk_inspector.open_index", return_value=collection),
+            patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store,
+            patch("backend.services.embedder.get_embedding_model") as get_embedding_model,
         ):
             report = inspect_document_chunks(document_id="doc-a", user_id="user-a")
 
@@ -49,6 +51,8 @@ class ChunkInspectorTestCase(unittest.TestCase):
         self.assertEqual(report["status"], "ready_with_warnings")
         self.assertEqual(report["source"]["pages"][0]["text"], "Revenue: $10 million")
         self.assertEqual(report["chunks"][0]["text"], "Revenue: $10 million")
+        build_vector_store.assert_not_called()
+        get_embedding_model.assert_not_called()
 
     def test_unauthorized_document_is_rejected_before_reading_source_or_chroma(self):
         collection = self._collection([], [], [])
@@ -179,29 +183,6 @@ class ChunkInspectorTestCase(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertIn("could not be extracted", report["warnings"][0])
         self.assertNotIn("secret parser detail", str(report))
-
-    def test_inspection_does_not_construct_embeddings_or_call_indexing(self):
-        collection = self._collection(
-            ["doc-a:chunk:0"],
-            ["Revenue: $10 million"],
-            [{"chunk_id": "doc-a:chunk:0", "chunk_index": 0}],
-        )
-        with (
-            patch("backend.services.chunk_inspector.require_user_document", return_value=self.document),
-            patch("backend.services.chunk_inspector.download_storage_object", return_value=b"pdf"),
-            patch(
-                "backend.services.chunk_inspector._source_pages",
-                return_value=("pdf", ["Revenue: $10 million"], [(1, "Revenue: $10 million")]),
-            ),
-            patch("backend.services.chunk_inspector.chunk_text", return_value=["Revenue: $10 million"]),
-            patch("backend.services.chunk_inspector.open_index", return_value=collection),
-            patch("backend.services.document_lifecycle.build_vector_store") as build_vector_store,
-            patch("backend.services.embedder.get_embedding_model") as get_embedding_model,
-        ):
-            inspect_document_chunks(document_id="doc-a", user_id="user-a")
-
-        build_vector_store.assert_not_called()
-        get_embedding_model.assert_not_called()
 
 
 if __name__ == "__main__":

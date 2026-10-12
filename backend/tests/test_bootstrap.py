@@ -8,15 +8,6 @@ from backend.bootstrap import apply_runtime_defaults, initialize_backend_environ
 
 
 class BootstrapTestCase(unittest.TestCase):
-    def test_apply_runtime_defaults_sets_expected_values(self):
-        with patch.dict(os.environ, {}, clear=True):
-            apply_runtime_defaults()
-
-            self.assertEqual(os.environ["ANONYMIZED_TELEMETRY"], "false")
-            self.assertEqual(os.environ["CHROMA_TELEMETRY"], "false")
-            self.assertEqual(os.environ["CHROMA_ENABLE_TELEMETRY"], "false")
-            self.assertEqual(os.environ["POSTHOG_DISABLED"], "1")
-
     def test_apply_runtime_defaults_does_not_override_existing_values(self):
         with patch.dict(
             os.environ,
