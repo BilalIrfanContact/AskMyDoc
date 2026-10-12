@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["hnd1"],
+  "framework": "fastapi",
+  "regions": [
+    "hnd1"
+  ],
   "functions": {
     "index.py": {
       "maxDuration": 300,
