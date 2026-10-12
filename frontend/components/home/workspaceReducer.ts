@@ -1,4 +1,4 @@
-import type { PersistedDocument } from "../../lib/api";
+import type { PersistedDocument, UploadProgress } from "../../lib/api";
 import type { DocumentMeta, Message, TransitionMode, ViewState, WorkspaceState } from "./types";
 
 export type WorkspaceAction =
@@ -15,6 +15,7 @@ export type WorkspaceAction =
   | { type: "search/finish-close" }
   | { type: "sidebar/toggle" }
   | { type: "workflow/upload-pending"; documentMeta: DocumentMeta }
+  | { type: "workflow/upload-progress"; progress: UploadProgress }
   | { type: "workflow/upload-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/select-start"; documentId: string; documentMeta: DocumentMeta }
   | { type: "workflow/chat-ready"; conversationId: string; messages: Message[] }
@@ -48,6 +49,7 @@ const initialState: Omit<WorkspaceState, "filteredDocuments"> = {
   resetSignal: 0,
   view: "upload",
   transitionMode: "indexing",
+  uploadProgress: null,
   loadingDocuments: true,
   busyDocumentId: null,
   isSidebarOpen: true,
@@ -146,11 +148,17 @@ export function workspaceReducer(
         documentId: null,
         conversationId: null,
         documentMeta: action.documentMeta,
+        uploadProgress: null,
         messages: [],
         suggestedQuestions: [],
         loadingSuggestions: false,
         isAssistantTyping: false,
         error: null
+      };
+    case "workflow/upload-progress":
+      return {
+        ...state,
+        uploadProgress: action.progress
       };
     case "workflow/upload-start":
       return {

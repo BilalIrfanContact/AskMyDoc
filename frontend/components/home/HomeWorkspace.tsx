@@ -1,4 +1,4 @@
-import type { PersistedDocument } from "../../lib/api";
+import type { PersistedDocument, UploadProgress } from "../../lib/api";
 import ChatInput from "../ChatInput";
 import ChatWindow from "../ChatWindow";
 import PDFUploader from "../PDFUploader";
@@ -14,6 +14,7 @@ type HomeWorkspaceProps = {
   busyDocumentId: string | null;
   view: ViewState;
   transitionMode: TransitionMode;
+  uploadProgress: UploadProgress | null;
   documentId: string | null;
   conversationId: string | null;
   documentMeta: DocumentMeta | null;
@@ -42,6 +43,7 @@ export default function HomeWorkspace({
   busyDocumentId,
   view,
   transitionMode,
+  uploadProgress,
   documentId,
   conversationId,
   documentMeta,
@@ -167,11 +169,15 @@ export default function HomeWorkspace({
               </div>
             </div>
             <div className="processing-rule" />
-            <div className="processing-status">
-              <LoadingMark />
-              <h2>{transitionMode === "loading" ? "Restoring conversation" : "Indexing document"}</h2>
-              <p>{transitionMode === "loading" ? "Loading your document and previous messages." : "Reading the file and building a searchable index. This can take a moment."}</p>
-            </div>
+            {transitionMode === "loading" ? (
+              <div className="processing-status">
+                <LoadingMark />
+                <h2>Restoring conversation</h2>
+                <p>Loading your document and previous messages.</p>
+              </div>
+            ) : (
+              <UploadProgressStatus progress={uploadProgress} />
+            )}
             <button type="button" className="button-secondary processing-cancel" onClick={onClear}>Cancel</button>
             <p className="processing-helper">Cancelling returns to the library.</p>
           </div>
@@ -226,6 +232,40 @@ function WorkspaceSkeleton() {
       <div className="workspace-preview-rail"><span /><span /><span /><span /></div>
       <div className="workspace-preview-main"><span /><span className="preview-answer" /><span /><span /><span className="preview-input" /></div>
     </aside>
+  );
+}
+
+const UPLOAD_STEPS: Record<UploadProgress["step"], { number: number; title: string; unit: string }> = {
+  uploading: { number: 1, title: "Uploading the file", unit: "" },
+  reading: { number: 2, title: "Reading pages", unit: "Page" },
+  embedding: { number: 3, title: "Making the text searchable", unit: "Batch" },
+  saving: { number: 4, title: "Saving the index", unit: "Batch" }
+};
+
+// Shows the step the backend last reported, with a bar of real pages or batches done (no estimated percentages).
+function UploadProgressStatus({ progress }: { progress: UploadProgress | null }) {
+  const step = progress ? UPLOAD_STEPS[progress.step] : null;
+  const counted = progress !== null && progress.total > 0;
+  const finished = progress?.step === "saving" && progress.done === progress.total;
+  const title = finished ? "Opening the chat" : step?.title ?? "Starting the upload";
+
+  return (
+    <div className="processing-status">
+      <p className="processing-step">Step {step?.number ?? 1} of 4</p>
+      <h2>{title}</h2>
+      <div
+        className={`processing-bar ${counted ? "" : "is-indeterminate"}`}
+        role="progressbar"
+        aria-label={title}
+        aria-valuemin={0}
+        aria-valuemax={counted ? progress.total : undefined}
+        aria-valuenow={counted ? progress.done : undefined}
+      >
+        <span style={counted ? { width: `${(progress.done / progress.total) * 100}%` } : undefined} />
+      </div>
+      <p className="processing-count">{counted && step ? `${step.unit} ${progress.done} of ${progress.total}` : "\u00a0"}</p>
+      <p>Long filings take about a minute, mostly spent reading each page&rsquo;s text and tables.</p>
+    </div>
   );
 }
 

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { File } from "node:buffer";
 import test from "node:test";
-import { uploadPdf } from "./api";
+import { uploadPdf, UploadFlowError } from "./api";
 import { getUploadValidationError, MAX_UPLOAD_BYTES, SMALLER_FILE_MESSAGE } from "./uploadValidation";
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+const stream = (...lines: unknown[]) => new Response(lines.map((line) => `${JSON.stringify(line)}\n`).join(""), { headers: { "content-type": "application/x-ndjson" } });
+const ready = { document_id: "upload-id", status: "success", lifecycle_status: "ready", chunk_count: 1, stored_count: 1 };
 
 test("size boundaries allow 10 MB and exactly 15 MB, and reject larger files", () => {
   for (const size of [10_000_000, MAX_UPLOAD_BYTES]) {
@@ -27,7 +29,7 @@ test("file bytes go directly to storage; Next.js receives only authorization and
     calls.push({ url: String(url), init });
     if (calls.length === 1) return response({ upload_id: "upload-id", signed_url: "https://storage.test/signed", content_type: "application/pdf" });
     if (calls.length === 2) return response({});
-    return response({ document_id: "upload-id", status: "success", lifecycle_status: "ready", chunk_count: 1, stored_count: 1 });
+    return stream({ type: "result", status: 200, body: ready });
   });
   const result = await uploadPdf(file as unknown as globalThis.File);
   assert.equal(result.document_id, "upload-id");
@@ -53,4 +55,41 @@ test("storage rejection stops processing and displays a friendly size error", as
     : response({}, 413));
   await assert.rejects(uploadPdf(new File(["PDF"], "a.pdf") as unknown as globalThis.File), /Please select a smaller file/);
   assert.equal(calls, 2);
+});
+
+test("indexing progress is reported as it streams, then the document is returned", async (context) => {
+  let calls = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    calls += 1;
+    if (calls === 1) return response({ upload_id: "upload-id", signed_url: "https://storage.test/signed", content_type: "application/pdf" });
+    if (calls === 2) return response({});
+    return stream(
+      { type: "progress", step: "reading", done: 1, total: 2 },
+      { type: "progress", step: "reading", done: 2, total: 2 },
+      { type: "progress", step: "saving", done: 1, total: 1 },
+      { type: "result", status: 200, body: ready }
+    );
+  });
+  const progress: unknown[] = [];
+  const result = await uploadPdf(new File(["PDF"], "a.pdf") as unknown as globalThis.File, (step) => progress.push(step));
+  assert.equal(result.document_id, "upload-id");
+  assert.deepEqual(progress, [
+    { step: "uploading", done: 0, total: 0 },
+    { step: "reading", done: 1, total: 2 },
+    { step: "reading", done: 2, total: 2 },
+    { step: "saving", done: 1, total: 1 }
+  ]);
+});
+
+test("a failure in the stream's result keeps the backend's error details", async (context) => {
+  let calls = 0;
+  context.mock.method(globalThis, "fetch", async () => ++calls === 1
+    ? response({ upload_id: "upload-id", signed_url: "https://storage.test/signed", content_type: "application/pdf" })
+    : calls === 2 ? response({}) : stream(
+      { type: "progress", step: "reading", done: 1, total: 9 },
+      { type: "result", status: 400, body: { detail: { message: "No extractable text found in the PDF file.", lifecycle_status: "rejected", failure_stage: "validation", reason_code: "no_extractable_text" } } }
+    ));
+  await assert.rejects(uploadPdf(new File(["PDF"], "a.pdf") as unknown as globalThis.File), (error: unknown) =>
+    error instanceof UploadFlowError && error.message === "No extractable text found in the PDF file." &&
+    error.lifecycleStatus === "rejected" && error.reasonCode === "no_extractable_text");
 });

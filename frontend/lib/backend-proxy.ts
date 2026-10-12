@@ -46,6 +46,8 @@ export type BackendForwardOptions = {
   body?: BodyInit | null;
   prepareBody?: () => BodyInit | Promise<BodyInit>;
   cache?: RequestCache;
+  // Pass a successful response's body through as it arrives, instead of waiting for all of it.
+  stream?: boolean;
 };
 
 type BackendSession = {
@@ -84,6 +86,13 @@ export async function forwardToBackend(
     ...(requestBody !== undefined ? { body: requestBody } : {}),
     ...(options.cache !== undefined ? { cache: options.cache } : {})
   });
+
+  if (options.stream && response.ok && response.body) {
+    return new Response(response.body, {
+      status: response.status,
+      headers: { "content-type": response.headers.get("content-type") || "application/x-ndjson" }
+    });
+  }
 
   const body = await response.text();
   return new NextResponse(body, {

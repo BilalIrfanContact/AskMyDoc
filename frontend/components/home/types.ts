@@ -1,4 +1,4 @@
-import type { PersistedDocument } from "../../lib/api";
+import type { PersistedDocument, UploadProgress } from "../../lib/api";
 import type { AnswerCitation, ChatResponseBody } from "../../lib/api-contract";
 
 export type Message = {
@@ -46,6 +46,8 @@ export type WorkspaceState = {
   resetSignal: number;
   view: ViewState;
   transitionMode: TransitionMode;
+  // The latest step reported while an upload is indexed; null before the first report.
+  uploadProgress: UploadProgress | null;
   loadingDocuments: boolean;
   busyDocumentId: string | null;
   isSidebarOpen: boolean;
