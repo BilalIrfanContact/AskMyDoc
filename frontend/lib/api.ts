@@ -185,7 +185,81 @@ export type PersistedDocument = DocumentRecord;
 export type PersistedConversation = ConversationRecord;
 export type PersistedMessage = MessageRecord;
 
-export async function uploadPdf(file: File) {
+// One step of indexing an upload. "uploading" is the browser sending the file to storage; the rest are reported
+// by the backend as it reads pages, embeds batches of chunks and saves them.
+export type UploadProgress = {
+  step: "uploading" | "reading" | "embedding" | "saving";
+  done: number;
+  total: number;
+};
+
+type CompletionLine =
+  | ({ type: "progress" } & UploadProgress)
+  | { type: "result"; status: number; body: unknown };
+
+function toUploadFlowError(error: unknown): UploadFlowError {
+  const detail = isRecord(error) ? error.detail : undefined;
+
+  if (isRecord(detail)) {
+    return new UploadFlowError(
+      typeof detail.message === "string" ? detail.message : "Upload failed.",
+      {
+        lifecycleStatus:
+          detail.lifecycle_status === "rejected" || detail.lifecycle_status === "failed"
+            ? detail.lifecycle_status
+            : "failed",
+        failureStage:
+          detail.failure_stage === "validation" ||
+          detail.failure_stage === "indexing" ||
+          detail.failure_stage === "storage" ||
+          detail.failure_stage === "metadata"
+            ? detail.failure_stage
+            : null,
+        reasonCode: parseUploadReasonCode(detail),
+        cleanupStatus:
+          detail.cleanup_status === "not-needed" ||
+          detail.cleanup_status === "completed" ||
+          detail.cleanup_status === "failed"
+            ? detail.cleanup_status
+            : null
+      }
+    );
+  }
+
+  return new UploadFlowError(typeof detail === "string" ? detail : "Upload failed.");
+}
+
+// The backend streams JSON lines: progress for each page or batch, then one result with the HTTP status and body.
+async function readCompletion(res: Response, onProgress?: (progress: UploadProgress) => void) {
+  if (!res.ok || !res.body) {
+    throw toUploadFlowError(await res.json().catch(() => ({ detail: { message: "Upload failed." } })));
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffered += decoder.decode(value, { stream: !done });
+    const lines = buffered.split("\n");
+    buffered = done ? "" : lines.pop() ?? "";
+    for (const line of lines.filter((text) => text.trim())) {
+      const event = JSON.parse(line) as CompletionLine;
+      if (event.type === "progress") {
+        onProgress?.({ step: event.step, done: event.done, total: event.total });
+      } else if (event.status === 200) {
+        return event.body as UploadPdfResponse;
+      } else {
+        throw toUploadFlowError(event.body);
+      }
+    }
+    if (done) {
+      throw new UploadFlowError("The connection closed before the document was ready. Check your library in a minute, or try again.");
+    }
+  }
+}
+
+export async function uploadPdf(file: File, onProgress?: (progress: UploadProgress) => void) {
   const validationError = getUploadValidationError(file);
   if (validationError) throw new UploadFlowError(validationError, { lifecycleStatus: "rejected" });
   const authorization = await fetch(`${API_BASE}/upload`, {
@@ -194,6 +268,7 @@ export async function uploadPdf(file: File) {
   });
   if (!authorization.ok) throw new UploadFlowError(await getErrorMessage(authorization, "Unable to start upload."));
   const { upload_id, signed_url, content_type } = await authorization.json() as UploadInitResponseBody;
+  onProgress?.({ step: "uploading", done: 0, total: 0 });
   const stored = await fetch(signed_url, {
     method: "PUT", headers: { "Content-Type": content_type, "x-upsert": "false" }, body: file
   });
@@ -201,41 +276,7 @@ export async function uploadPdf(file: File) {
     throw new UploadFlowError(stored.status === 413 ? SMALLER_FILE_MESSAGE : "File upload failed. Please try again later.");
   }
   const res = await fetch(`${API_BASE}/upload/${encodeURIComponent(upload_id)}/complete`, { method: "POST" });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: { message: "Upload failed." } }));
-    const detail = error?.detail;
-
-    if (isRecord(detail)) {
-      throw new UploadFlowError(
-        typeof detail.message === "string" ? detail.message : "Upload failed.",
-        {
-          lifecycleStatus:
-            detail.lifecycle_status === "rejected" || detail.lifecycle_status === "failed"
-              ? detail.lifecycle_status
-              : "failed",
-          failureStage:
-            detail.failure_stage === "validation" ||
-            detail.failure_stage === "indexing" ||
-            detail.failure_stage === "storage" ||
-            detail.failure_stage === "metadata"
-              ? detail.failure_stage
-              : null,
-          reasonCode: parseUploadReasonCode(detail),
-          cleanupStatus:
-            detail.cleanup_status === "not-needed" ||
-            detail.cleanup_status === "completed" ||
-            detail.cleanup_status === "failed"
-              ? detail.cleanup_status
-              : null
-        }
-      );
-    }
-
-    throw new UploadFlowError(typeof detail === "string" ? detail : "Upload failed.");
-  }
-
-  return res.json() as Promise<UploadPdfResponse>;
+  return readCompletion(res, onProgress);
 }
 
 export async function createConversation(documentId: string) {

@@ -125,12 +125,18 @@ class DeleteLifecycleResult:
         }
 
 
+# Called with (step, done, total) while an upload is processed. Steps run in order: "reading" counts PDF
+# pages, "embedding" counts embedding requests, and "saving" counts chunk inserts.
+UploadProgress = Callable[[Literal["reading", "embedding", "saving"], int, int], None]
+
+
 @dataclass(frozen=True)
 class SupportedUploadKind:
     label: str
     content_type: str
     fallback_filename: str
-    extract_text: Callable[[bytes], str]
+    # Takes the file's bytes and an optional per-page callback, which only PDFs call.
+    extract_text: Callable[[bytes, Callable[[int, int], None] | None], str]
 
 
 def _resolve_upload_kind(file: UploadFile) -> SupportedUploadKind | None:
@@ -151,7 +157,7 @@ def _resolve_upload_kind(file: UploadFile) -> SupportedUploadKind | None:
             label="Markdown",
             content_type="text/markdown",
             fallback_filename="document.md",
-            extract_text=extract_text_from_markdown,
+            extract_text=lambda data, _on_page: extract_text_from_markdown(data),
         )
 
     return None
@@ -200,8 +206,10 @@ def upload_document(
     *,
     document_id: str | None = None,
     existing_storage_url: str | None = None,
+    on_progress: UploadProgress | None = None,
 ) -> UploadLifecycleResult:
     """Process an upload synchronously; the FastAPI sync route runs this in a worker thread."""
+    report = on_progress or (lambda _step, _done, _total: None)
     upload_kind = _resolve_upload_kind(file)
     if upload_kind is None:
         return UploadLifecycleResult(
@@ -222,7 +230,7 @@ def upload_document(
             reason_code="file_too_large",
         )
     try:
-        text = upload_kind.extract_text(data)
+        text = upload_kind.extract_text(data, lambda done, total: report("reading", done, total))
     except Exception:
         logger.exception("Document extraction failed")
         return UploadLifecycleResult(
@@ -254,7 +262,12 @@ def upload_document(
 
     document_id = document_id or str(uuid.uuid4())
     try:
-        stored_count = build_vector_store(document_id=document_id, chunks=chunks)
+        stored_count = build_vector_store(
+            document_id=document_id,
+            chunks=chunks,
+            on_embed=lambda done, total: report("embedding", done, total),
+            on_save=lambda done, total: report("saving", done, total),
+        )
     except Exception:
         logger.exception("Document indexing failed")
         cleanup_status = _cleanup_failed_upload(document_id)

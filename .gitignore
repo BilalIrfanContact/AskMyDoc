@@ -41,3 +41,5 @@ evals/**/*.local.json
 
 # local AI spending log and dashboard
 backend/usage/
+.vercel
+.env.local

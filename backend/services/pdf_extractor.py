@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Iterable, List
+from typing import Any, Callable, Iterable, List
 
 import pdfplumber
 
@@ -247,14 +247,18 @@ def _extract_page_text(page: Any) -> str:
     return text
 
 
-def extract_pdf_pages(data: bytes) -> List[str]:
-    """Extract one text value per PDF page using the application's PDF parser."""
+def extract_pdf_pages(data: bytes, on_page: Callable[[int, int], None] | None = None) -> List[str]:
+    """Extract one text value per PDF page using the application's PDF parser.
+
+    `on_page(done, total)` is called after each page, so uploads can report how far reading has got.
+    """
     if not data:
         return []
 
     pages: List[str] = []
     table_context: _TableContext | None = None
     with pdfplumber.open(BytesIO(data)) as pdf:
+        total = len(pdf.pages)
         for page in pdf.pages:
             try:
                 text, table_context = _extract_page_text_with_context(page, table_context)
@@ -262,12 +266,14 @@ def extract_pdf_pages(data: bytes) -> List[str]:
             finally:
                 # Release cached page layouts before parsing the next page.
                 page.close()
+            if on_page:
+                on_page(len(pages), total)
 
     return pages
 
 
-def extract_text_from_pdf(data: bytes) -> str:
+def extract_text_from_pdf(data: bytes, on_page: Callable[[int, int], None] | None = None) -> str:
     """Return the same page-joined text used by document ingestion."""
-    pages = [page for page in extract_pdf_pages(data) if page]
+    pages = [page for page in extract_pdf_pages(data, on_page) if page]
 
     return "\n\n".join(pages).strip()

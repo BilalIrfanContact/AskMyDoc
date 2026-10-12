@@ -10,7 +10,7 @@ inspector and the eval scripts were written against.
 """
 
 from dataclasses import dataclass
-from typing import Any, List, Sequence
+from typing import Any, Callable, List, Sequence
 from uuid import uuid4
 
 from postgrest.types import ReturnMethod
@@ -27,6 +27,9 @@ INSERT_BATCH_SIZE = 50
 # Supabase's API returns at most 1,000 rows per request.
 PAGE_SIZE = 1000
 EMBEDDING_INPUT = "plain"
+
+# Called with (batches done, total batches) after each embedding request or chunk insert.
+BatchProgress = Callable[[int, int], None]
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,7 @@ def prepare_index_payload(
     document_id: str,
     chunks: List[str],
     kept_metadata: Sequence[dict] | None = None,
+    on_batch: BatchProgress | None = None,
 ) -> IndexPayload:
     """Embed chunks without touching the store.
 
@@ -149,17 +153,20 @@ def prepare_index_payload(
     return IndexPayload(
         ids=ids,
         documents=list(chunks),
-        embeddings=_embed_in_batches(list(chunks)),
+        embeddings=_embed_in_batches(list(chunks), on_batch),
         metadatas=metadatas,
     )
 
 
-def _embed_in_batches(texts: List[str]) -> list[list[float]]:
+def _embed_in_batches(texts: List[str], on_batch: BatchProgress | None = None) -> list[list[float]]:
     """Embed in batches of `EMBED_BATCH_SIZE`, keeping each request well under provider token caps."""
     model = get_embedding_model()
     vectors: list[list[float]] = []
-    for start in range(0, len(texts), EMBED_BATCH_SIZE):
+    starts = range(0, len(texts), EMBED_BATCH_SIZE)
+    for done, start in enumerate(starts, 1):
         vectors.extend(model.embed_documents(texts[start : start + EMBED_BATCH_SIZE]))
+        if on_batch:
+            on_batch(done, len(starts))
     return vectors
 
 
@@ -168,6 +175,7 @@ def write_index_payload(
     payload: IndexPayload,
     embedding_model: str | None = None,
     embedding_input: str = EMBEDDING_INPUT,
+    on_batch: BatchProgress | None = None,
 ) -> int:
     """Make `payload` the document's chunks, replacing any it had, and return the stored count.
 
@@ -192,8 +200,11 @@ def write_index_payload(
         )
     ]
     try:
-        for start in range(0, len(rows), INSERT_BATCH_SIZE):
+        starts = range(0, len(rows), INSERT_BATCH_SIZE)
+        for done, start in enumerate(starts, 1):
             client.from_("document_chunks").insert(rows[start : start + INSERT_BATCH_SIZE], returning=ReturnMethod.minimal).execute()
+            if on_batch:
+                on_batch(done, len(starts))
     except Exception:
         # Nothing has been committed, so this generation can't be the current one.
         client.from_("document_chunks").delete().eq("document_id", document_id).eq("generation", generation).execute()
@@ -236,9 +247,15 @@ def _current_generation(document_id: str) -> str | None:
     return rows[0]["generation"] if rows else None
 
 
-def build_vector_store(document_id: str, chunks: List[str]) -> int:
+def build_vector_store(
+    document_id: str,
+    chunks: List[str],
+    on_embed: BatchProgress | None = None,
+    on_save: BatchProgress | None = None,
+) -> int:
     """Embed and store a document's chunks under `<document_id>:chunk:<index>` IDs."""
-    return write_index_payload(document_id, prepare_index_payload(document_id, chunks))
+    payload = prepare_index_payload(document_id, chunks, on_batch=on_embed)
+    return write_index_payload(document_id, payload, on_batch=on_save)
 
 
 def open_index(document_id: str) -> ChunkStore:

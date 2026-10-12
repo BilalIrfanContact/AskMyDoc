@@ -218,7 +218,9 @@ export function createWorkspaceStateModule({
     });
 
     try {
-      const response = await services.uploadPdf(file);
+      const response = await services.uploadPdf(file, (progress) => {
+        if (workflowRuns.isActive(runId)) dispatch({ type: "workflow/upload-progress", progress });
+      });
       if (!workflowRuns.isActive(runId)) {
         await refreshDocuments({ suppressFailureError: true });
         return { status: "cancelled" };

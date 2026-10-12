@@ -53,6 +53,17 @@ class VectorStoreTestCase(unittest.TestCase):
         self.assertEqual(found["documents"], [["risk factors", "both"]])
         self.assertEqual(found["metadatas"][0][0], {"chunk_id": "doc:chunk:1", "chunk_index": 1})
 
+    def test_building_reports_each_embedding_request_and_chunk_insert(self):
+        self.embeddings.embed_documents.side_effect = lambda texts: [[1.0]] * len(texts)
+        progress = []
+
+        with patch("backend.services.vector_store.EMBED_BATCH_SIZE", 2), patch("backend.services.vector_store.INSERT_BATCH_SIZE", 3):
+            build_vector_store("doc", ["a", "b", "c", "d", "e"],
+                on_embed=lambda done, total: progress.append(("embed", done, total)),
+                on_save=lambda done, total: progress.append(("save", done, total)))
+
+        self.assertEqual(progress, [("embed", 1, 3), ("embed", 2, 3), ("embed", 3, 3), ("save", 1, 2), ("save", 2, 2)])
+
     def test_nul_characters_from_pdf_extraction_are_dropped_before_storing(self):
         write_index_payload("doc", _payload("doc", ["Total\x00 revenue"], [[1.0]]))
 

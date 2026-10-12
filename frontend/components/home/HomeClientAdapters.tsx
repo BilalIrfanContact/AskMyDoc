@@ -79,6 +79,7 @@ export function HomeWorkspaceAdapter({
       busyDocumentId={state.busyDocumentId}
       view={state.view}
       transitionMode={state.transitionMode}
+      uploadProgress={state.uploadProgress}
       documentId={state.documentId}
       conversationId={state.conversationId}
       documentMeta={state.documentMeta}
